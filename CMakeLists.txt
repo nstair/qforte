@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.4)
 set (CMAKE_CXX_STANDARD 14)
+set(USE_MKLDNN OFF)
+set(USE_MKL OFF)
 
 # optionally use OpenMP, if so use OpenMP compatible compiler
 OPTION (USE_OpenMP "Use OpenMP to enamble <omp.h>" OFF)
@@ -30,6 +32,7 @@ endif()
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17")
 #set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
 project(qforte)
 
@@ -49,6 +52,7 @@ pybind11_add_module(qforte ${SOURCES} "${SOURCE_DIR}/bindings.cc"
     "${SOURCE_DIR}/qubit_basis.cc"
     "${SOURCE_DIR}/circuit.cc"
     "${SOURCE_DIR}/computer.cc"
+    "${SOURCE_DIR}/fermion_computer.cc"
     "${SOURCE_DIR}/gate.cc"
     "${SOURCE_DIR}/qubit_operator.cc"
     "${SOURCE_DIR}/qubit_op_pool.cc"
@@ -67,6 +71,9 @@ if(USE_OpenMP)
   endif()
 endif(USE_OpenMP)
 
+find_package(Torch REQUIRED)
+target_link_libraries(qforte PUBLIC ${TORCH_LIBRARIES})
+
 SET(TEST_DIR "tests")
 SET(TESTS ${SOURCES}
     "${TEST_DIR}/test_main.cc"
@@ -80,6 +87,8 @@ add_executable("${PROJECT_NAME}_test" ${TESTS})
 #include_directories(${SOURCE_DIR})
 #include_directories(lib/catch2/single_include/catch2)
 include_directories(lib/fmt/include)
+include_directories(/Users/nstair/anaconda3/envs/qforte_env_v1/lib/python3.8/site-packages/torch/include/torch/csrc/api/include)
+include_directories(/Users/nstair/anaconda3/envs/qforte_env_v1/lib/python3.8/site-packages/torch/include)
 
 add_executable("${PROJECT_NAME}_benchmarks"
     benchmarks/benchmarks.cc
@@ -88,6 +97,7 @@ add_executable("${PROJECT_NAME}_benchmarks"
     "${SOURCE_DIR}/qubit_basis.cc"
     "${SOURCE_DIR}/circuit.cc"
     "${SOURCE_DIR}/computer.cc"
+    "${SOURCE_DIR}/fermion_computer.cc"
     "${SOURCE_DIR}/gate.cc"
     "${SOURCE_DIR}/qubit_operator.cc"
     "${SOURCE_DIR}/qubit_op_pool.cc"

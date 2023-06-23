@@ -36,10 +36,27 @@ class CMakeBuild(build_ext):
             self.build_extension(ext)
 
     def build_extension(self, ext):
+
+        # if "TORCHPATH" in os.environ:
+        #     self.torchpath = os.environ["TORCHPATH"]
+
+        # if self.torchpath in [None, "None", ""]:
+        #     msg = """
+        #         Please specifiy a correct ambit path. This can be done in two ways:
+        #         1) Set the environmental variable TORCHPATH to the ambit install directory.
+        #         2) Modify the setup.cfg file to include the lines:
+        #             >[CMakeBuild]
+        #             >torchpath=<path to pytorch-cpu install dir>
+        #     """
+        
+
         extdir = os.path.abspath(
             os.path.dirname(self.get_ext_fullpath(ext.name)))
         cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
-                      '-DPYTHON_EXECUTABLE=' + sys.executable]
+                      '-DPYTHON_EXECUTABLE=' + sys.executable,
+                    #   '-DCMAKE_PREFIX_PATH=' + self.torchpath]
+                    #   '-DCMAKE_PREFIX_PATH=/Users/nstair/anaconda3/envs/qforte_env_v1/lib/python3.8/site-packages/torch']
+                      '-DCMAKE_PREFIX_PATH=/Users/nstair/anaconda3/envs/qforte_env_v1/lib/python3.8/site-packages/torchshare/cmake']
 
         cfg = 'Debug' if self.debug else 'Release'
         build_args = ['--config', cfg]

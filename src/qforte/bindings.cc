@@ -3,6 +3,7 @@
 #include <pybind11/complex.h>
 
 #include "fmt/format.h"
+#include "torch/torch.h"
 
 #include "qubit_basis.h"
 #include "circuit.h"
