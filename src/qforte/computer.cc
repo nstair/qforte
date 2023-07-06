@@ -1006,6 +1006,65 @@ void Computer::apply_2x2(const complex_2_2_mat& mat, size_t target) {
     std::fill(new_coeff_.begin(), new_coeff_.end(), 0.0);
 }
 
+void Computer::apply_2x2_simple(const complex_2_2_mat& mat, size_t target) {
+
+    bool p = (mat[0][1] == 2.0);
+
+    const size_t block_size = std::pow(2, target);
+    const size_t block_offset = 2 * block_size;
+
+    auto op_0_0 = 0.0;
+    auto op_0_1 = 0.0;
+    auto op_1_0 = 0.0;
+    auto op_1_1 = 0.0;
+
+    if (p) {
+        op_0_1 = 2.0;
+
+        size_t block_start_0 = 0;
+        size_t block_end_0 = block_start_0 + block_size;
+        for (; block_end_0 <= nbasis_;) {
+        for (size_t I0 = block_start_0; I0 < block_end_0; ++I0) {
+            const auto x0 = coeff_[I0];
+            coeff_[I0] = op_0_1 * coeff_[I0 + block_size];
+            coeff_[I0 + block_size] = 0;
+        }
+        block_start_0 += block_offset;
+        block_end_0 += block_offset;
+        }
+
+    }
+    else {
+        op_1_0 = 2.0;
+
+        size_t block_start_0 = 0;
+        size_t block_end_0 = block_start_0 + block_size;
+        for (; block_end_0 <= nbasis_;) {
+        for (size_t I0 = block_start_0; I0 < block_end_0; ++I0) {
+            const auto x0 = coeff_[I0];
+            coeff_[I0] = 0;
+            coeff_[I0 + block_size] = op_1_0 * x0;
+        }
+        block_start_0 += block_offset;
+        block_end_0 += block_offset;
+        }
+    }
+
+    // size_t block_start_0 = 0;
+    // size_t block_end_0 = block_start_0 + block_size;
+    // for (; block_end_0 <= nbasis_;) {
+    //     for (size_t I0 = block_start_0; I0 < block_end_0; ++I0) {
+    //         const auto x0 = coeff_[I0];
+    //         coeff_[I0] = op_0_1 * coeff_[I0 + block_size];
+    //         coeff_[I0 + block_size] = op_1_0 * x0;
+    //     }
+    //     block_start_0 += block_offset;
+    //     block_end_0 += block_offset;
+    // }
+
+
+}
+
 
 
 void Computer::apply_sq_operator(const SQOperator& mysqop){
@@ -1046,7 +1105,7 @@ void Computer::apply_sq_operator(const SQOperator& mysqop){
         for (j = std::get<2>(mysqop.terms()[i]).size() - 1; j >= 0; j--){
 
             z_chain(std::get<2>(mysqop.terms()[i])[j]);
-            apply_2x2(sigma_plus, std::get<2>(mysqop.terms()[i])[j]);
+            apply_2x2_simple(sigma_plus, std::get<2>(mysqop.terms()[i])[j]);
             apply_constant(0.5);
 
 
@@ -1056,7 +1115,7 @@ void Computer::apply_sq_operator(const SQOperator& mysqop){
         for (k = std::get<1>(mysqop.terms()[i]).size() - 1; k >= 0; k--){
 
             z_chain(std::get<1>(mysqop.terms()[i])[k]);
-            apply_2x2(sigma_minus, std::get<1>(mysqop.terms()[i])[k]);
+            apply_2x2_simple(sigma_minus, std::get<1>(mysqop.terms()[i])[k]);
             apply_constant(0.5);
 
 

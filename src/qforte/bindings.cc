@@ -147,6 +147,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("apply_sq_operator", &Computer::apply_sq_operator)
         .def("z_chain", &Computer::z_chain)
         .def("apply_2x2", &Computer::apply_2x2)
+        .def("apply_2x2_simple", &Computer::apply_2x2_simple)
         .def("coeff", &Computer::coeff)
         .def("get_coeff_vec", &Computer::get_coeff_vec)
         .def("get_nqubit", &Computer::get_nqubit)

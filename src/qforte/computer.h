@@ -111,6 +111,9 @@ class Computer {
     /// apply a 2 by 2 matrix
     void apply_2x2(const complex_2_2_mat& mat, size_t target);
 
+    /// apply a 2 by 2 matrix solely for applying SQOperator
+    void apply_2x2_simple(const complex_2_2_mat& mat, size_t target);
+
     /// apply second quantized operator without having to do a Jordan Wigner Transformation
     void apply_sq_operator(const SQOperator& sqop);
 
