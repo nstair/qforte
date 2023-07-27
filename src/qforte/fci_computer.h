@@ -13,6 +13,7 @@ class SQOperator;
 class TensorOperator;
 class Tensor;
 
+
 class FCIComputer {
   public:
     /// default constructor: create a 'FCI' quantum computer 

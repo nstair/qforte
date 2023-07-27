@@ -131,8 +131,42 @@ void apply_tensor_spin_12_body(const TensorOperator& top){
     // Stuff
 }
 
-void apply_sqop(const SQOperator& sqop){
-    // Stuff
+void FCIComputer::apply_sqop(const SQOperator& sqop){
+    
+
+    int i;
+    int j;
+
+    Tensor old = state_;
+    Tensor result;
+
+    for (i = 0; i < sqop.terms().size(); i++){
+       std::complex<double> outside_coef = (std::get<0>(sqop.terms()[i])); 
+
+
+        for (j = std::get<2>(sqop.terms()[i]).size() - 1; j >= 0; j--){
+            
+            scale(0.5);
+        }
+
+        for (j = std::get<1>(sqop.terms()[i]).size() - 1; j >= 0; j--){
+
+            scale(0.5);
+        }
+
+
+        scale(outside_coef);
+        // ??
+        std::transform(result.data().begin(), result.data().end, state_.data().begin(), result.data().begin(), std::plus());
+
+        set_state(old);
+
+
+    }
+    
+
+    set_state(result);
+
 }
 
 /// apply a constant to the FCI quantum computer.
