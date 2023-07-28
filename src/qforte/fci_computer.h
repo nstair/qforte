@@ -43,6 +43,12 @@ class FCIComputer {
     /// apply a second quantized operator, must be number and spin conserving.
     void apply_sqop(const SQOperator& sqop);
 
+    void apply_sqop_single_term(std::complex<double>,  
+                                std::vector<int>,
+                                std::vector<int>, 
+                                std::vector<int>, 
+                                std::vector<int>);
+
     /// apply a constant to the FCI quantum computer.
     void scale(const std::complex<double> a);
 

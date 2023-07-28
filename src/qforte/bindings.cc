@@ -194,6 +194,9 @@ PYBIND11_MODULE(qforte, m) {
 
     py::class_<FCIComputer>(m, "FCIComputer")
         .def(py::init<int, int, int>(), "nel"_a, "sz"_a, "norb"_a, "Make a FCIComputer with nel, sz, and norb")
+        .def("get_state", &FCIComputer::get_state)
+        .def("apply_sqop_single_term", &FCIComputer::apply_sqop_single_term)
+        .def("apply_sqop", &FCIComputer::apply_sqop)
         .def("str", &FCIComputer::str, 
             py::arg("print_data") = true, 
             py::arg("print_complex") = false)
