@@ -161,10 +161,13 @@ void FCIComputer::apply_sqop_single_term(std::complex<double> coeff,
         auto& target = source; //FqeData object which is basically nalpha, nbeta, norb
 
         // lenb and lena is the length of beta/alpha configuration space??
-        std::vector<std::vector<uint64_t>> ualphamap(source.lena(), std::vector<uint64_t>(3, 0));
-        std::vector<std::vector<uint64_t>> ubetamap(source.lenb(), std::vector<uint64_t>(3, 0));
+        std::vector<std::vector<uint64_t>> ualphamap(source[0], std::vector<uint64_t>(3, 0));
+        std::vector<std::vector<uint64_t>> ubetamap(source[1], std::vector<uint64_t>(3, 0));
 
-        // https://chat.openai.com/c/2d3a2468-afd2-4fcb-8eea-59e562662ab1
+        int acount = source._core.make_mapping_each(ualphamap, true, daga, undaga);
+        int bcount = source._core.make_mapping_each(ubetamap, false, dagb, undagb);
+        ualphamap.resize(acount);
+        ubetamap.resize(bcount);
 
     }
 
