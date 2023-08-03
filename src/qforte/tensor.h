@@ -290,6 +290,19 @@ void gemm(
     const std::complex<double> beta,
     const bool multOnRight);
 
+// void gemv(
+//     const Tensor& B,
+//     const char trans,
+//     const std::complex<double> alpha,
+//     const std::complex<double> beta,
+//     const bool mult_B_on_right);
+
+void gemv(
+    const Tensor& vec,
+    const char trans,
+    const std::complex<double> alpha,
+    const std::complex<double> beta);
+
 /// NICK: Comment out the functions below for now, will need external lib
 // => Tensor Multiplication/Permutation <= //
 

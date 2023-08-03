@@ -413,6 +413,60 @@ void Tensor::gemm(
 
 }
 
+// void Tensor::gemv(
+//     const Tensor& B,
+//     const char trans,
+//     const std::complex<double> alpha,
+//     const std::complex<double> beta,
+//     const bool mult_B_on_right)
+// {
+//     if ((shape_.size() != 2) || (B.shape().size() != 1) || (shape_[1] != B.shape()[0])){
+//         throw std::runtime_error("Incompatible shape(s)/dimension(s).");
+//     }
+
+
+//     const int M = (trans == 'N') ? shape_[0] : shape_[1];
+//     const int N = (trans == 'N') ? shape_[1] : shape_[0];
+
+//     std::complex<double>* A_data = data_.data();
+//     const std::complex<double>* B_data = B.read_data().data();
+
+//     // Since Tensor C is 'this' Tensor
+//     std::complex<double>* C_data = data_.data();
+
+//     if(mult_B_on_right) {
+//         math_zgemv(trans, M, N, alpha, A_data, M, B_data, 1, beta, C_data, 1);
+//     } 
+//     else {
+//         math_zgemv(trans, N, M, alpha, B_data, N, A_data, 1, beta, C_data, 1);
+//     }
+// }
+
+void Tensor::gemv(const Tensor& mat, const char trans, const std::complex<double> alpha, const std::complex<double> beta)
+{
+    if(mat.shape().size() != 2 || shape_.size() != 1) {
+        throw std::runtime_error("Incompatible dimensions for zgemv operation.");
+    }
+
+    const int M = mat.shape()[0];
+    const int N = mat.shape()[1];
+
+    if (N != shape_[0]) {
+        throw std::runtime_error("Dimensions mismatch for zgemv operation.");
+    }
+
+    const int incx = 1;
+    const int incy = 1;
+
+    const std::complex<double>* A_data = mat.read_data().data();
+    std::complex<double>* x_data = data_.data(); 
+    std::complex<double>* y_data = data_.data(); // assuming you want to store the result in this tensor
+
+    math_zgemv(trans, M, N, alpha, A_data, M, x_data, incx, beta, y_data, incy);
+}
+
+
+
 
 // std::complex<double> Tensor::vector_dot(
 //     const std::shared_ptr<Tensor>& other
@@ -523,6 +577,9 @@ Tensor Tensor::slice(std::vector<std::pair<size_t, size_t>>& idxs)const{
 
     return new_tensor;
 }
+
+
+
 
 // TODO(Tyler?): Column printing is a little clunky for complex
 // need to fix

@@ -249,4 +249,42 @@ class TestBlas(unittest.TestCase):
 
         self.assertLess(final_norm, 1e-16)  
 
+    def test_gemv1(self):
+
+        shape1 = [5]
+        shape2 = [5, 5]
+
+        t1 = qf.Tensor(shape1, "Tensor 1")
+        t2 = qf.Tensor(shape2, "Tensor 2")
+
+        random_arr1 = np.random.rand(shape2[0], shape2[1])
+        random_arr2 = np.random.rand(shape1[0])
+
+        for i in range(shape2[0]):
+            for j in range(shape2[1]):
+                t2.set([i, j], random_arr1[i, j])
+
+        for i in range(shape1[0]):
+            t1.set([i], random_arr2[i])
+
+        final_arr = np.dot(random_arr1, random_arr2)
+
+        ref_arr = np.zeros((5, 1), dtype = complex)
+
+        t1.gemv(t2)
+
+        for i in range(shape1[0]):
+            ref_arr[i, 0] = t1.get([i])
+
+        
+        final_norm = np.linalg.norm(final_arr) - np.linalg.norm(ref_arr)
+
+        self.assertLess(final_norm, 1e-15)
+
+        # t1.gemv(t2) -> t1 must be the vector and t2 is the matrix
+        
+    
+
+unittest.main()
+
 

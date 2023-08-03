@@ -233,12 +233,24 @@ PYBIND11_MODULE(qforte, m) {
         .def("fill_from_nparray", &Tensor::fill_from_nparray)
         .def("zaxpy", &Tensor::zaxpy, "x"_a, "alpha"_a, "incx"_a = 1, "incy"_a = 1) // TODO(Tyler) Need Test (use numpy)
         .def("zaxpby", &Tensor::zaxpby, "x"_a, "a"_a, "b"_a, "incx"_a = 1, "incy"_a = 1)
-        .def("gemm", &Tensor::gemm, "B"_a, 
+        .def("gemm", &Tensor::gemm, 
+            "B"_a, 
             "transa"_a = 'N', 
             "transb"_a = 'N', 
             "alpha"_a = 1.0, 
             "beta"_a = 1.0, 
             "mult_B_on_right"_a = false)
+        .def("gemv", &Tensor::gemv,
+            "mat"_a,
+            "trans"_a = 'N',
+            "alpha"_a = 1.0,
+            "beta"_a = 1.0)        
+        // .def("gemv", &Tensor::gemv,
+        //     "B"_a,
+        //     "trans"_a = 'N',
+        //     "alpha"_a = 1.0,
+        //     "beta"_a = 1.0,
+        //     "mult_B_on_right"_a = false)
 
 
         .def_static("chain", &Tensor::chain, "As"_a, "trans"_a, "alpha"_a = 1.0, "beta"_a = 0.0) // TODO(Tyler) Need Test (use numpy)
