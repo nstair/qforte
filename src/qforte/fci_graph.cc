@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <unordered_map>
 #include <iostream>
+// #include <cstdint>
 
 /// Custom construcotr
 FCIGraph::FCIGraph(int nalfa, int nbeta, int norb) 
