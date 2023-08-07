@@ -33,7 +33,7 @@ void math_zscale(
   std::complex<double>* x,
   const int incx);
 
-// Function declaration for BLAS ZGEMM function (complex version of DGEMM)
+// Function declaration for BLAS ZGEMM function (complex version of DGEMM)  done
 // zgemm: C = alpha * op(A) * op(B) + beta * C
 void math_zgemm(
   const char transa, 
