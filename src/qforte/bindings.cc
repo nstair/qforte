@@ -210,7 +210,9 @@ PYBIND11_MODULE(qforte, m) {
         .def("__repr__", &FCIComputer::str, 
             py::arg("print_data") = true, 
             py::arg("print_complex") = false)
-        .def("apply_individual_nbody1_accumulate", &FCIComputer::apply_individual_nbody1_accumulate);
+        .def("apply_individual_nbody1_accumulate", &FCIComputer::apply_individual_nbody1_accumulate)
+        .def("apply_individual_nbody_accumulate", &FCIComputer::apply_individual_nbody_accumulate);
+
 
 
     py::class_<FCIGraph>(m, "FCIGraph")

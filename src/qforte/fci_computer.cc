@@ -161,25 +161,34 @@ void apply_sqop(const SQOperator& sqop){
 
 
 // dont know the dimensions of arguments? since theyre being indexed multiple times
+
+//coeff (c_ variable, the state, memebr variable), ocoeff, icoeff are all tensors
 void FCIComputer::apply_individual_nbody1_accumulate(
-    std::vector<std::vector<std::complex<double>>> coeff, 
-    std::vector<std::vector<std::complex<double>>> ocoeff,
-    std::vector<std::vector<std::complex<double>>> icoeff,
-    std::vector<std::vector<int>> amap, 
-    std::vector<std::complex<double>> btarget,
-    std::vector<std::complex<double>> bsource,
-    std::vector<std::vector<std::complex<double>>> bparity)
+    Tensor& coeff, 
+    Tensor& ocoeff,
+    Tensor& icoeff,
+    std::vector<std::tuple<size_t, size_t, double>>& amap, 
+    std::vector<size_t>& btarget,
+    std::vector<size_t>& bsource,
+    std::vector<double>& bparity)
 {
+    // Check size validity (in a real application, more robust checks might be necessary)
+    if (btarget.size() != bsource.size() || bsource.size() != bparity.size()) {
+        throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
+    }
 
-    for (size_t i = 0; i < amap.size(); ++i){
-        int sourcea = static_cast<int>(amap[i][0]);
-        int targeta = static_cast<int>(amap[i][1]);
-        double paritya = amap[i][2];
+    for (const auto& entry : amap) {
+        size_t sourcea = std::get<0>(entry);
+        size_t targeta = std::get<1>(entry);
+        double paritya = std::get<2>(entry);
+        
+        for (size_t i = 0; i < btarget.size(); i++) {
+            // Indices for the tensors
+            std::vector<size_t> idx_target = {targeta, btarget[i]};
+            std::vector<size_t> idx_source = {sourcea, bsource[i]};
 
-        for (size_t j = 0; j < btarget.size(); ++j){
-
-            ocoeff[targeta][j] += coeff[0][j] * paritya * icoeff[sourcea][j] * bparity[j][0];
-
+            // Update ocoeff based on the formula
+            ocoeff.set(idx_target, ocoeff.get(idx_target) + coeff.get({}) * paritya * icoeff.get(idx_source) * bparity[i]);
         }
     }
 
@@ -196,9 +205,12 @@ void FCIComputer::apply_individual_nbody_accumulate(
 
     assert(daga.size() == undaga.size() && dagb.size() == undagb.size());
 
+
+    // lena and lenb have stuff to do with FCI Graph. Not sure how to implement that into this function.
     std::vector<std::vector<uint64_t>> ualphamap(lena(), std::vector<uint64_t>(3));
     std::vector<std::vector<uint64_t>> ubetamap(lenb(), std::vector<uint64_t>(3));
 
+    // make_mapping_each is a huge function in fci graph as well. 
     int acount = _core.make_mapping_each(ualphamap, true, daga, undaga);
     if (acount == 0) {
         return;
@@ -235,7 +247,6 @@ void FCIComputer::apply_individual_nbody_accumulate(
     }
 }
 
-}
 
 /// apply a constant to the FCI quantum computer.
 void scale(const std::complex<double> a);

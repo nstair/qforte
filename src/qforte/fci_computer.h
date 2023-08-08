@@ -3,10 +3,12 @@
 
 #include <string>
 #include <vector>
+#include <cassert>
 
 #include "qforte-def.h" 
 #include "tensor.h" 
 #include "fci_graph.h" 
+
 
 
 class Gate;
@@ -76,13 +78,20 @@ class FCIComputer {
     void apply_sqop(const SQOperator& sqop);
 
     void apply_individual_nbody1_accumulate(
-      std::vector<std::vector<std::complex<double>>> coeff, 
-      std::vector<std::vector<std::complex<double>>> ocoeff,
-      std::vector<std::vector<std::complex<double>>> icoeff,
-      std::vector<std::vector<int>> amap, 
-      std::vector<std::complex<double>> btarget,
-      std::vector<std::complex<double>> bsource,
-      std::vector<std::vector<std::complex<double>>> bparity);
+      Tensor& coeff, 
+      Tensor& ocoeff,
+      Tensor& icoeff,
+      std::vector<std::tuple<size_t, size_t, double>>& amap, 
+      std::vector<size_t>& btarget,
+      std::vector<size_t>& bsource,
+      std::vector<double>& bparity);
+
+    void apply_individual_nbody_accumulate(
+      const std::complex<double>& coeff,
+      const std::vector<int>& daga,
+      const std::vector<int>& undaga, 
+      const std::vector<int>& dagb,
+      const std::vector<int>& undagb);
   
 
     /// apply a constant to the FCI quantum computer.
