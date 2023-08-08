@@ -159,6 +159,84 @@ void apply_sqop(const SQOperator& sqop){
     // Stuff
 }
 
+
+// dont know the dimensions of arguments? since theyre being indexed multiple times
+void FCIComputer::apply_individual_nbody1_accumulate(
+    std::vector<std::vector<std::complex<double>>> coeff, 
+    std::vector<std::vector<std::complex<double>>> ocoeff,
+    std::vector<std::vector<std::complex<double>>> icoeff,
+    std::vector<std::vector<int>> amap, 
+    std::vector<std::complex<double>> btarget,
+    std::vector<std::complex<double>> bsource,
+    std::vector<std::vector<std::complex<double>>> bparity)
+{
+
+    for (size_t i = 0; i < amap.size(); ++i){
+        int sourcea = static_cast<int>(amap[i][0]);
+        int targeta = static_cast<int>(amap[i][1]);
+        double paritya = amap[i][2];
+
+        for (size_t j = 0; j < btarget.size(); ++j){
+
+            ocoeff[targeta][j] += coeff[0][j] * paritya * icoeff[sourcea][j] * bparity[j][0];
+
+        }
+    }
+
+}
+
+// do i even need idata as an argument?
+void FCIComputer::apply_individual_nbody_accumulate(
+    const std::complex<double>& coeff,
+    const std::vector<int>& daga,
+    const std::vector<int>& undaga, 
+    const std::vector<int>& dagb,
+    const std::vector<int>& undagb)
+{
+
+    assert(daga.size() == undaga.size() && dagb.size() == undagb.size());
+
+    std::vector<std::vector<uint64_t>> ualphamap(lena(), std::vector<uint64_t>(3));
+    std::vector<std::vector<uint64_t>> ubetamap(lenb(), std::vector<uint64_t>(3));
+
+    int acount = _core.make_mapping_each(ualphamap, true, daga, undaga);
+    if (acount == 0) {
+        return;
+    }
+    int bcount = _core.make_mapping_each(ubetamap, false, dagb, undagb);
+    if (bcount == 0) {
+        return;
+    }
+
+    ualphamap.resize(acount);
+    ubetamap.resize(bcount);
+
+    std::vector<std::vector<int64_t>> alphamap(acount, std::vector<int64_t>(3));
+    std::vector<int64_t> sourceb_vec(bcount);
+    std::vector<int64_t> targetb_vec(bcount);
+    std::vector<int64_t> parityb_vec(bcount);
+
+    for (int i = 0; i < acount; ++i) {
+        alphamap[i][0] = ualphamap[i][0];
+        alphamap[i][1] = _core.index_alpha(ualphamap[i][1]);
+        alphamap[i][2] = 1 - 2 * ualphamap[i][2];
+    }
+
+    for (int i = 0; i < bcount; ++i) {
+        sourceb_vec[i] = ubetamap[i][0];
+        targetb_vec[i] = _core.index_beta(ubetamap[i][1]);
+        parityb_vec[i] = 1 - 2 * ubetamap[i][2];
+    }
+
+    if (/*fqe.settings.use_accelerated_code*/) { // Adjust this condition
+        // _apply_individual_nbody1_accumulate(...); // Implement this C++ function
+    } else {
+        //_apply_individual_nbody1_accumulate_python(...); // Implement this C++ function
+    }
+}
+
+}
+
 /// apply a constant to the FCI quantum computer.
 void scale(const std::complex<double> a);
 

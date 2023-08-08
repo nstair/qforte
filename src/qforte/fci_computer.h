@@ -75,6 +75,16 @@ class FCIComputer {
     /// apply a second quantized operator, must be number and spin conserving.
     void apply_sqop(const SQOperator& sqop);
 
+    void apply_individual_nbody1_accumulate(
+      std::vector<std::vector<std::complex<double>>> coeff, 
+      std::vector<std::vector<std::complex<double>>> ocoeff,
+      std::vector<std::vector<std::complex<double>>> icoeff,
+      std::vector<std::vector<int>> amap, 
+      std::vector<std::complex<double>> btarget,
+      std::vector<std::complex<double>> bsource,
+      std::vector<std::vector<std::complex<double>>> bparity);
+  
+
     /// apply a constant to the FCI quantum computer.
     void scale(const std::complex<double> a);
 
