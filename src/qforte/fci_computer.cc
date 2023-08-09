@@ -203,14 +203,11 @@ void FCIComputer::apply_individual_nbody_accumulate(
     const std::vector<int>& undagb)
 {
 
-    assert(daga.size() == undaga.size() && dagb.size() == undagb.size());
+    assert(daga.shape()[0] == undaga.shape()[0] && dagb.shape()[0] == undagb.shape()[0]);
 
+    Tensor ualphamap({lena(), 3}, "ualphamap");
+    Tensor ubetamap({lenb(), 3}, "ubetamap");
 
-    // lena and lenb have stuff to do with FCI Graph. Not sure how to implement that into this function.
-    std::vector<std::vector<uint64_t>> ualphamap(lena(), std::vector<uint64_t>(3));
-    std::vector<std::vector<uint64_t>> ubetamap(lenb(), std::vector<uint64_t>(3));
-
-    // make_mapping_each is a huge function in fci graph as well. 
     int acount = _core.make_mapping_each(ualphamap, true, daga, undaga);
     if (acount == 0) {
         return;
@@ -220,30 +217,30 @@ void FCIComputer::apply_individual_nbody_accumulate(
         return;
     }
 
-    ualphamap.resize(acount);
-    ubetamap.resize(bcount);
+    ualphamap = ualphamap.slice({{0, acount}, {0, 3}});
+    ubetamap = ubetamap.slice({{0, bcount}, {0, 3}});
 
-    std::vector<std::vector<int64_t>> alphamap(acount, std::vector<int64_t>(3));
-    std::vector<int64_t> sourceb_vec(bcount);
-    std::vector<int64_t> targetb_vec(bcount);
-    std::vector<int64_t> parityb_vec(bcount);
+    Tensor alphamap({acount, 3}, "alphamap");
+    Tensor sourceb_vec({bcount}, "sourceb_vec");
+    Tensor targetb_vec({bcount}, "targetb_vec");
+    Tensor parityb_vec({bcount}, "parityb_vec");
 
     for (int i = 0; i < acount; ++i) {
-        alphamap[i][0] = ualphamap[i][0];
-        alphamap[i][1] = _core.index_alpha(ualphamap[i][1]);
-        alphamap[i][2] = 1 - 2 * ualphamap[i][2];
+        alphamap.set({i, 0}, ualphamap.get({i, 0}));
+        alphamap.set({i, 1}, _core.index_alpha(ualphamap.get({i, 1})));
+        alphamap.set({i, 2}, 1.0 - 2.0 * ualphamap.get({i, 2}));
     }
 
     for (int i = 0; i < bcount; ++i) {
-        sourceb_vec[i] = ubetamap[i][0];
-        targetb_vec[i] = _core.index_beta(ubetamap[i][1]);
-        parityb_vec[i] = 1 - 2 * ubetamap[i][2];
+        sourceb_vec.set({i}, ubetamap.get({i, 0}));
+        targetb_vec.set({i}, _core.index_beta(ubetamap.get({i, 1})));
+        parityb_vec.set({i}, 1.0 - 2.0 * ubetamap.get({i, 2}));
     }
 
-    if (/*fqe.settings.use_accelerated_code*/) { // Adjust this condition
-        // _apply_individual_nbody1_accumulate(...); // Implement this C++ function
+    if (/*fqe.settings.use_accelerated_code*/) { 
+        // _apply_individual_nbody1_accumulate(...); 
     } else {
-        //_apply_individual_nbody1_accumulate_python(...); // Implement this C++ function
+        //_apply_individual_nbody1_accumulate_python(...); 
     }
 }
 
