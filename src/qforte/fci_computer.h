@@ -18,6 +18,9 @@ class TensorOperator;
 class Tensor;
 class FCIGraph;
 
+using Spinmap = std::unordered_map<std::pair<int, int>, std::vector<std::tuple<int, int, int>>, PairHash>;
+
+
 class FCIComputer {
   public:
     /// default constructor: create a 'FCI' quantum computer 

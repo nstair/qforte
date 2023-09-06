@@ -79,6 +79,8 @@ std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> FCIGraph:
     return std::make_pair(string_list, index_list);
 }
 
+// Attempting to make the make_mapping_each function
+
 Spinmap FCIGraph::build_mapping(
     const std::vector<uint64_t>& strings, 
     int nele, 
