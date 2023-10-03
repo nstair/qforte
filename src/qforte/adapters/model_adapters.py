@@ -28,3 +28,48 @@ def create_TFIM(n: int, h: float, J: float):
     TFIM.hf_reference = [0] * n
 
     return TFIM
+
+def create_fermi_hubbard(
+        nel,
+        nsites,
+        tunneling_term, # J
+        coulomb_term,   # U
+        basis='sto-3g', 
+        run_scf=0,
+        run_fci=0
+        ):
+    
+    # describe what the funtion does...
+
+    """Creates ...
+
+    nel: 
+        The numebr of electorns:
+
+        .... (write descriptions for other arguments) 
+    """
+
+    fh = System()
+    
+
+    # call pyscf (see the page I sent in the link https://pyscf.org/develop/scf_developer.html) 
+    # to run the hubbard model and get the integrals
+    # See qforte/adapters/molecule_adapters.py if helful
+
+    # the "integrals" come out as numpy arrays
+
+
+    # Construct a sq Hamiltonain, and fill it based on the pyscf integrals (see code in )
+    sq_hubbard_ham = qf.SQOperator()
+
+    # See line 171 in qforte/adapters/molecule_adapters.py
+
+    # Assign the SQ Hamiltonain as the system hamiltonain
+    fh.sq_hamiltonian = sq_hubbard_ham
+
+    # Assign all other atributes of the System class (ask nick if questions)
+
+    print("Hello Emmett!")
+
+    # return the model
+    return fh
