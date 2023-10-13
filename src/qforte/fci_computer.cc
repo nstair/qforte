@@ -220,7 +220,7 @@ void FCIComputer::apply_individual_nbody_accumulate(
     ualphamap = ualphamap.slice({{0, acount}, {0, 3}});
     ubetamap = ubetamap.slice({{0, bcount}, {0, 3}});
 
-    Tensor alphamap({acount, 3}, "alphamap");
+    Spinmap alphamap({acount, 3}, "alphamap"); // Not going to be a tensor, it is a spin map 
     Tensor sourceb_vec({bcount}, "sourceb_vec");
     Tensor targetb_vec({bcount}, "targetb_vec");
     Tensor parityb_vec({bcount}, "parityb_vec");
