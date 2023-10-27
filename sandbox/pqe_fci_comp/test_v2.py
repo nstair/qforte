@@ -11,7 +11,9 @@ geom = [
     ('H', (0., 0., 6.0*r)),
     ('H', (0., 0., 7.0*r)),
     ('H', (0., 0., 8.0*r)),
-    ('H', (0., 0., 9.0*r))
+    ('H', (0., 0., 9.0*r)),
+    ('H', (0., 0., 10.0*r)),
+    ('H', (0., 0., 11.0*r))
     ]
 
 timer = qf.local_timer()
@@ -45,7 +47,7 @@ timer.record("alg setup fci")
 
 
 timer.reset()
-alg_fci.run(opt_thresh=1.0e-2, pool_type='SDTQ')
+alg_fci.run(opt_thresh=1.0e-2, pool_type='SD')
 timer.record("run alg fci")
 
 

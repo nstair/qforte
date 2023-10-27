@@ -6,6 +6,8 @@
 // #include <lightspeed/math.hpp>
 
 #include <iostream>
+#include <iterator>
+#include <numeric>
 #include <string>
 #include <cmath>
 #include <sstream>

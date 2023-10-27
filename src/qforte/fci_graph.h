@@ -4,6 +4,8 @@
 #include <vector>
 #include <unordered_map>
 #include <tuple>
+#include <cstdint>
+#include <cstddef>
 
 struct PairHash {
     template <class T1, class T2>
