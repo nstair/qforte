@@ -31,7 +31,7 @@ A = A + sparsity*np.random.randn(n,n)
 A = (A.T + A)/2 # the stand in for the hamiltonain matrix
 
 
-k = 2 # was 8					# number of initial guess vectors 
+k = 1 # was 8					# number of initial guess vectors 
 eig = 1					# number of eignvalues to solve 
 t = np.eye(n,k)			# set of k unit vectors as guess
 V = np.zeros((n,n))		# array of zeros to hold guess vec
@@ -70,6 +70,34 @@ for m in range(k,mmax,k):
 
     # T is the subspace matrix we will diagonalize
     T = np.dot(V[:,:m].T, np.dot(A,V[:,:m]))
+
+    # The above line (72) can be be reproduced using qforte and without explicitly forming the H matrix
+    # The matrix elements of T can be constructed as
+    # Tmn = <phi_m | H | phi_n> = < phi_m | sigma_n > 
+    # where |sigma_n> = H |phi_n>
+    # and |phi_n> is just the current iteratio's trial vector.
+
+
+    
+    # # In practice this will require someting like the following...
+    # Cm = fci_comp.get_state_deep()
+    # # define Cvectors = [] before this loop
+    # Cvectors.append(Cm)
+
+    # # now we want to build the sigma vector
+    # fci_comp.apply_sqop(sq_hamiltonain)
+    # Simga_m = fci_comp.get_state_deep()
+    # Sigma_vectors.append[Sigma_m]
+
+    # # a Single matrix element can then be calculated as
+    # Tmn = Cm.vector_dot(Simga_m)
+
+
+
+    # This can be done forming the entire T matrix in a single operation, 
+    # but the code woudl look more complicated and for now calculating T
+    # element by elemet is fine since the subspace dimension should be
+    # relatively small.
     
     print(f'  T.shape {T.shape}')
     # print(f'approximate eigenvalues T: {T}')
@@ -93,9 +121,13 @@ for m in range(k,mmax,k):
 
     # loop j over the k trial vectors
     for j in range(0,k):
+
+        # NEW: This is a state vector W 
+
         w = np.dot(
             (A - theta[j]*I), np.dot(V[:,:m], s[:,j])
             ) 
+        
         print(f'    w.shape {w.shape}')
 
         # the new j'th trial 
@@ -104,6 +136,7 @@ for m in range(k,mmax,k):
 
         V[:,(m+j)] = q
         print(f'    V[:,(m+j)].shape {V[:,(m+j)].shape}')
+
     norm = np.linalg.norm(theta[:eig] - theta_old)
     if norm < tol:
         break
