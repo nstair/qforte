@@ -294,6 +294,11 @@ class FCIComputer {
     /// clear the timings
     void clear_timings() { timings_.clear(); }
 
+    size_t get_nalfa_str() { return nalfa_strs_; }
+
+    size_t get_nbeta_str() { return nbeta_strs_; }
+  
+    // s
   private:
     /// the number of electrons
     size_t nel_;

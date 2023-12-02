@@ -50,6 +50,63 @@ void Computer::set_state(std::vector<std::pair<QubitBasis, double_c>> state) {
 
 void Computer::zero_state() { std::fill(coeff_.begin(), coeff_.end(), 0.0); }
 
+
+Computer set_state_from_fci(const fci_computer& fci_comp){
+    // write getters for 
+    // bounds are nbeta and nalpha
+    // 2 * number of orbitals needs to = number of qbits
+    // loop for alpha strings
+
+
+    for (size_t i = 0; i < fci_comp.get_lena(); i++){
+            // loop for beta strings
+        for (size_t j = 0; j < fci_comp.get_lenb(); j++){
+
+            // Build interleaved bitstrint (will be an unstigned 64 bit int)
+            uint64_t interleaved_idx = 0;
+
+            uint64_t interleaved_val = 0;
+
+            // value
+            uint64_t alfa_val = fci_comp.get_astr_at_idx(i);
+            uint64_t beta_val = fci_comp.get_bstr_at_idx(j);
+
+            uint64_t alfa_idx = fci_comp.get_aind_for_str(i);
+            uint64_t beta_idx = fci_comp.get_bind_for_str(j);
+
+
+            for (size_t k = 0; k < 64; k++){
+
+                uint64_t alfa_idx_bit = (alfa_idx >> k) & 1;
+                uint64_t beta_idx_bit = (beta_idx >> k) & 1;
+
+                interleaved_idx |= (alfa_idx_bit << (2 * k));
+                interleaved_idx |= (beta_idx_bit << ((2 * k) + 1));
+
+                uint64_t alfa_val_bit = (alfa_val >> k) & 1;
+                uint64_t beta_val_bit = (beta_val >> k) & 1;
+
+                interleaved_val |= (alfa_val_bit << (2 * k));
+                interleaved_val |= (beta_val_bit << ((2 * k) + 1));
+
+            }
+
+            coeff_[interleaved_idx]
+
+            // idk if i use this or i use the getters in graph - use second option
+            // coeff_[interleaved_bit_str] = fci_computer.get_state().get([i,j]);
+        
+        }
+
+    }
+
+
+
+}
+
+
+
+
 void Computer::apply_matrix(const std::vector<std::vector< std::complex<double> >>& Opmat){
     // std::vector<std::complex<double>> old_coeff = coeff_;
     std::vector<std::complex<double>> result(nbasis_, 0.0);

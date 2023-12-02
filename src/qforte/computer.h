@@ -1,5 +1,6 @@
 #ifndef _computer_h_
 #define _computer_h_
+#include "fci_computer.h"
 
 #include <string>
 #include <vector>
@@ -21,6 +22,7 @@ class QubitOperator;
 class SQOperator;
 class QubitOpPool;
 class SparseMatrix;
+// class FCIComputer
 
 class Computer {
   public:
@@ -30,6 +32,8 @@ class Computer {
     /// applies a matrix representation of a Gate, Gircuit, or QubitOoperator
     /// to the quantum state.
     void apply_matrix(const std::vector<std::vector< std::complex<double> >>& Opmat);
+
+    Computer set_state_from_fci(const FCIComputer fci_comp);
 
     /// applies a sparse matrix representation of a Gate, Gircuit, or QubitOoperator
     /// to the quantum state.
