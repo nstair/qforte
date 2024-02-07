@@ -349,6 +349,7 @@ class SRQK(QSD):
 
         return s_mat, h_mat
     
+    # TODO(Emmett) update with ability to take in a list of time steps
     def build_qk_mats_fast_fci(self):
         """Returns matrices S and H needed for the QK algorithm using the Trotterized
         form of the unitary operators U_n = exp(-i n dt H)
@@ -403,12 +404,16 @@ class SRQK(QSD):
         and looses the exact correspondance to the sq hamiltonain"""
         for m in range(self._nstates):
 
+            if isinstance(self._dt,list):
+                hermitian_pairs = qforte.SQOpPool()
+                hermitian_pairs.add_hermitian_pairs(self._dt[m]/self._trotter_number, self._sq_ham)
+
             if(m>0):
                 # Compute U_m |φ>
                 if(self._use_exact_evolution):
                     QC.evolve_op_taylor(
                         self._sq_ham,
-                        self._dt,
+                        self._dt[m],
                         1.0e-15,
                         30)
 
