@@ -128,7 +128,8 @@ class SRCK(QSD):
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
     
-    # TODO:Emmett Implement the standard krylov algorithm below 
+    # TODO: (Emmett) Implement the standard krylov algorithm below 
+    # TODO: (Emmett) Make sure to print the power method iteration energy in addition to the Krylov energy
     def build_ck_mats_fast_fci(self):
         """Returns matrices S and H needed for the CK algorithm
 
