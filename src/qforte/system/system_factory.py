@@ -29,7 +29,9 @@ def system_factory(system_type = 'molecule', build_type = 'psi4', **kwargs):
     }
 
     model_adapters = {
-        "TFIM": mod.create_TFIM
+        "TFIM": mod.create_TFIM,
+        "fermi_hubbard": mod.create_fermi_hubbard
+
     }
 
     if (system_type=='molecule'):

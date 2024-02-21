@@ -183,23 +183,26 @@ class SRCK(QSD):
         and looses the exact correspondance to the sq hamiltonain"""
         for m in range(self._nstates):
 
-            if(m>0):
-                # Compute U_m |φ>
-                if(self._use_exact_evolution):
-                    QC.evolve_op_taylor(
-                        self._sq_ham,
-                        self._dt,
-                        1.0e-15,
-                        30)
+            # if(m>0):
+            #     # Compute U_m |φ>
+            #     if(self._use_exact_evolution):
+            #         QC.evolve_op_taylor(
+            #             self._sq_ham,
+            #             self._dt,
+            #             1.0e-15,
+            #             30)
 
-                else:
-                    QC.evolve_pool_trotter(
-                        hermitian_pairs,
-                        self._dt,
-                        self._trotter_number,
-                        self._trotter_order,
-                        antiherm=False,
-                        adjoint=False)
+            #     else:
+            #         QC.evolve_pool_trotter(
+            #             hermitian_pairs,
+            #             self._dt,
+            #             self._trotter_number,
+            #             self._trotter_order,
+            #             antiherm=False,
+            #             adjoint=False)
+                    
+            QC.apply_sqop(self._sq_ham)
+
 
             C = QC.get_state_deep()
          

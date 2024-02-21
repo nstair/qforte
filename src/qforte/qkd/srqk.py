@@ -374,10 +374,14 @@ class SRQK(QSD):
         # Store these vectors for the aid of MRSQK
         self._omega_lst = []
         Homega_lst = []
-
-        hermitian_pairs = qforte.SQOpPool()
-
+        if isinstance(self._dt,float) or isinstance(self._dt,int):
+            # hermitian_pairs.add_hermitian_pairs(self._dt/self._trotter_number, self._sq_ham)
+            pass
+        elif len(self._dt)!=self._nstates:
+            raise ValueError("unequal time step list and nstates")
+        
         # this is updated, evolution time is now just 1.0 here
+        hermitian_pairs = qforte.SQOpPool()
         hermitian_pairs.add_hermitian_pairs(1.0, self._sq_ham)
 
         QC = qforte.FCIComputer(
@@ -405,22 +409,26 @@ class SRQK(QSD):
         for m in range(self._nstates):
 
             if isinstance(self._dt,list):
-                hermitian_pairs = qforte.SQOpPool()
-                hermitian_pairs.add_hermitian_pairs(self._dt[m]/self._trotter_number, self._sq_ham)
+                timestep = self._dt[m]
+            else:
+                timestep = self._dt
+                # hermitian_pairs = qforte.SQOpPool()
+                # hermitian_pairs.add_hermitian_pairs(self._dt[m]/self._trotter_number, self._sq_ham)
 
             if(m>0):
+
                 # Compute U_m |φ>
                 if(self._use_exact_evolution):
                     QC.evolve_op_taylor(
                         self._sq_ham,
-                        self._dt[m],
+                        timestep,
                         1.0e-15,
                         30)
 
                 else:
                     QC.evolve_pool_trotter(
                         hermitian_pairs,
-                        self._dt,
+                        timestep,
                         self._trotter_number,
                         self._trotter_order,
                         antiherm=False,
