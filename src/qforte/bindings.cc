@@ -17,6 +17,7 @@
 #include "sparse_tensor.h"
 #include "timer.h"
 #include "tensor.h"
+#include "tensor_gpu.h"
 #include "tensor_operator.h"
 #include "blas_math.h"
 
@@ -350,6 +351,19 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("maxcols") = 5,
             py::arg("data_format") = "%12.7f",
             py::arg("header_format") = "%12zu");
+
+
+    py::class_<TensorGPU>(m, "TensorGPU")
+        .def(py::init<std::vector<size_t>, std::string>(), "shape"_a, "name"_a, "Make a TensorGPU with a particular shape")
+        .def(py::init<>())
+        .def("to_gpu", &TensorGPU::to_gpu)
+        .def("from_gpu", &TensorGPU::from_gpu)
+        .def("add", &TensorGPU::add)
+        .def("add2", &TensorGPU::add2)
+        .def("zero", &TensorGPU::zero)
+        .def("read_data", &TensorGPU::read_data)
+        .def("ndim_error", &TensorGPU::ndim_error)
+        .def("set", &TensorGPU::set);
 
     py::class_<Gate>(m, "Gate")
         .def("target", &Gate::target)
