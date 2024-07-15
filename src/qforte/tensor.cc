@@ -327,13 +327,6 @@ void Tensor::add(const Tensor& other)
         data_[i] += other.read_data()[i];
     }
 
-    // std::transform(
-    //     data_.begin(), 
-    //     data_.end(), 
-    //     other.read_data().begin(),
-    //     data_.begin(), 
-    //     add_c<double>
-    //     );
 }
 
 

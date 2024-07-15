@@ -1,32 +1,14 @@
 cmake_minimum_required(VERSION 3.4)
+
+project(qforte LANGUAGES CXX C CUDA)
+
 set (CMAKE_CXX_STANDARD 17)
 # set(CMAKE_CXX_STANDARD_REQUIRED OFF)
 
 # optionally use OpenMP, if so use OpenMP compatible compiler
 OPTION (USE_OpenMP "Use OpenMP to enamble <omp.h>" OFF)
 
-if(USE_OpenMP)
-    set(CMAKE_C_COMPILER "/usr/local/Cellar/llvm/10.0.1/bin/clang")
-    set(CMAKE_CXX_COMPILER "/usr/local/Cellar/llvm/10.0.1/bin/clang++")
-    set(OPENMP_LIBRARIES "/usr/local/Cellar/llvm/10.0.1/lib")
-    set(OPENMP_INCLUDES "/usr/local/Cellar/llvm/10.0.1/include")
-    # if(CMAKE_C_COMPILER_ID MATCHES "Clang")
-    #     set(OpenMP_C "${CMAKE_C_COMPILER}")
-    #     set(OpenMP_C_FLAGS "-fopenmp=libomp -Wno-unused-command-line-argument")
-    #     set(OpenMP_C_LIB_NAMES "libomp" "libgomp" "libiomp5")
-    #     set(OpenMP_libomp_LIBRARY ${OpenMP_C_LIB_NAMES})
-    #     set(OpenMP_libgomp_LIBRARY ${OpenMP_C_LIB_NAMES})
-    #     set(OpenMP_libiomp5_LIBRARY ${OpenMP_C_LIB_NAMES})
-    # endif()
-    # if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    #   set(OpenMP_CXX "${CMAKE_CXX_COMPILER}")
-    #   set(OpenMP_CXX_FLAGS "-fopenmp=libomp -Wno-unused-command-line-argument")
-    #   set(OpenMP_CXX_LIB_NAMES "libomp" "libgomp" "libiomp5")
-    #   set(OpenMP_libomp_LIBRARY ${OpenMP_CXX_LIB_NAMES})
-    #   set(OpenMP_libgomp_LIBRARY ${OpenMP_CXX_LIB_NAMES})
-    #   set(OpenMP_libiomp5_LIBRARY ${OpenMP_CXX_LIB_NAMES})
-    # endif()
-endif()
+
 
 # Need to check how much of this is actually needed!
 
@@ -37,20 +19,25 @@ cmake_policy(SET CMP0074 NEW)
 set(BLA_VENDOR "Generic")
 
 # (Nick) I need the following, may be elsewhere or unneeded on other os. 
-set(CMAKE_C_COMPILER "/usr/bin/gcc")
-set(CMAKE_CXX_COMPILER "/usr/bin/g++")
+# set(CMAKE_C_COMPILER "/usr/bin/gcc")
+# set(CMAKE_CXX_COMPILER "/usr/bin/g++")
 
 # Use these if installing to anaconda
-set(CMAKE_PREFIX_PATH "/home/nstair/anaconda3/envs/qfcuda")
+set(CMAKE_PREFIX_PATH "/home/tylerpbrady/anaconda3/envs/tyler_gpu")
 set(BLAS_LIBRARIES "${CMAKE_PREFIX_PATH}/lib") 
 set(CBLAS_INCLUDE_DIR "${CMAKE_PREFIX_PATH}/include") #need
 set(OPENBLAS_EXE "${CMAKE_PREFIX_PATH}/lib/libopenblas.so") #need, may be libopenblas.so for linux
+set(CUDA_EXE "${CMAKE_PREFIX_PATH}/lib/libcudart.so")
 # find_package(BLAS REQUIRED)
 
-project(qforte)
+find_package(CUDAToolkit REQUIRED)
 
 # Set source directory
 set(SOURCE_DIR "src/qforte")
+set(CUDA_SOURCES "${SOURCE_DIR}/tensor_gpu.cu")
+
+
+
 
 # Tell CMake that headers are also in SOURCE_DIR
 include_directories(${SOURCE_DIR})
@@ -67,6 +54,7 @@ pybind11_add_module(qforte ${SOURCES} "${SOURCE_DIR}/bindings.cc"
     "${SOURCE_DIR}/computer.cc"
     "${SOURCE_DIR}/fci_computer.cc"
     "${SOURCE_DIR}/fci_graph.cc"
+    "${SOURCE_DIR}/tensor_gpu.cc"
     "${SOURCE_DIR}/tensor.cc"
     "${SOURCE_DIR}/tensor_einsum.cc"
     "${SOURCE_DIR}/tensor_operator.cc"
@@ -78,11 +66,17 @@ pybind11_add_module(qforte ${SOURCES} "${SOURCE_DIR}/bindings.cc"
     "${SOURCE_DIR}/df_hamiltonian.cc"
     "${SOURCE_DIR}/sq_op_pool.cc"
     "${SOURCE_DIR}/sparse_tensor.cc"
-    "${SOURCE_DIR}/timer.cc")
+    "${SOURCE_DIR}/timer.cc"
+    ${CUDA_SOURCES})
+
+set_target_properties(qforte PROPERTIES CUDA_ARCHITECTURES "52;60;61;70;75")
 
 link_directories(${BLAS_LIBRARIES})
-target_include_directories(qforte PRIVATE ${CBLAS_INCLUDE_DIR})
-target_link_libraries(qforte PRIVATE fmt-header-only ${OPENBLAS_EXE})
+target_include_directories(qforte PRIVATE ${CBLAS_INCLUDE_DIR} ${CUDAToolkit_INCLUDE_DIRS})
+target_link_libraries(qforte PRIVATE fmt-header-only CUDA::cudart ${OPENBLAS_EXE} ${CUDA_EXE})
+
+
+
 
 # specify open MP flags
 if(USE_OpenMP)
@@ -113,6 +107,7 @@ add_executable("${PROJECT_NAME}_benchmarks"
     "${SOURCE_DIR}/computer.cc"
     "${SOURCE_DIR}/fci_computer.cc"
     "${SOURCE_DIR}/fci_graph.cc"
+    "${SOURCE_DIR}/tensor_gpu.cc"
     "${SOURCE_DIR}/tensor.cc"
     "${SOURCE_DIR}/tensor_einsum.cc"
     "${SOURCE_DIR}/tensor_operator.cc"
