@@ -41,7 +41,6 @@ alg_fock.run(
     opt_thresh=1.0e-4, 
     pool_type='SD',
     optimizer='BFGS',
-    adapt_maxiter=2
     )
 
 timer.record("ADAPT Fock")
@@ -58,7 +57,6 @@ timer.reset()
 alg_fci.run(opt_thresh=1.0e-4, 
             pool_type='SD',
             optimizer='BFGS',
-            adapt_maxiter=200
             )
 
 timer.record("ADAPT FCI")
