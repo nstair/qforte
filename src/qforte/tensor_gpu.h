@@ -35,7 +35,7 @@ TensorGPU();
 ~TensorGPU();
 
 void to_gpu();
-void from_gpu();
+void to_cpu();
 void add(const TensorGPU&);
 void zero();
 std::vector<std::complex<double>>& read_data() { return h_data_; }
@@ -46,6 +46,8 @@ void add2(const TensorGPU& other);
 
 void gpu_error() const;
 
+void cpu_error() const;
+
 std::string name() const { return name_; }
 
 /// The number of dimensions of this Tensor, inferred from shape
@@ -53,6 +55,8 @@ size_t ndim() const { return shape_.size(); }
 
 /// The total number of elements of this Tensor (the product of shape)
 size_t size() const { return size_; }
+
+double norm();
 
 /// The size in each dimension of this Tensor
 const std::vector<size_t>& shape() const { return shape_; }
@@ -62,6 +66,8 @@ void set(const std::vector<size_t>& idxs,
          );
 
 void ndim_error(size_t) const;
+
+void fill_from_nparray(std::vector<std::complex<double>>, std::vector<size_t>);
 
 private:
 
