@@ -796,7 +796,12 @@ void FCIComputer::evolve_individual_nbody_easy(
     const std::vector<int>& creb,
     const std::vector<int>& annb) 
 {
-    std::complex<double> factor = std::exp(-time * std::real(coeff) * std::complex<double>(0.0, 1.0));
+    int n_a = anna.size();
+    int n_b = annb.size();
+
+    int power = n_a * (n_a - 1) / 2 + n_b * (n_b - 1) / 2;
+    std::complex<double> prefactor = coeff * std::pow(-1, power);
+    std::complex<double> factor = std::exp(-time * std::real(prefactor) * std::complex<double>(0.0, 1.0));
     std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number(anna, annb);
 
     if (maps.first.size() != 0 and maps.second.size() != 0){
@@ -859,8 +864,6 @@ void FCIComputer::evolve_individual_nbody_hard(
         undagworkb,
         Cout);
 
-    // std::cout << "\n Cout After 1st Cos Application \n" << Cout.str(true, true) << std::endl;
-
     std::vector<int> numbera_undagworka(numbera.begin(), numbera.end());
     numbera_undagworka.insert(numbera_undagworka.end(), undagworka.begin(), undagworka.end());
 
@@ -876,8 +879,6 @@ void FCIComputer::evolve_individual_nbody_hard(
         dagworkb,
         Cout);
 
-    // std::cout << "\n Cout After 2nd Cos Application \n" << Cout.str(true, true) << std::endl;
-
     int phase = std::pow(-1, (crea.size() + anna.size()) * (creb.size() + annb.size()));
     std::complex<double> work_cof = std::conj(coeff) * static_cast<double>(phase) * std::complex<double>(0.0, -1.0);
 
@@ -890,8 +891,6 @@ void FCIComputer::evolve_individual_nbody_hard(
         annb,
         creb);
 
-    // std::cout << "\n Cout After First Accumulate Application \n" << Cout.str(true, true) << std::endl;
-
     apply_individual_nbody_accumulate(
         coeff * std::complex<double>(0.0, -1.0) * sinfactor,
         Cin,
@@ -900,8 +899,6 @@ void FCIComputer::evolve_individual_nbody_hard(
         anna,
         creb,
         annb);
-
-    // std::cout << "\n Cout After Second Accumulate Application \n" << Cout.str(true, true) << std::endl;
 }
 
 void FCIComputer::evolve_individual_nbody(
@@ -936,6 +933,12 @@ void FCIComputer::evolve_individual_nbody(
         std::get<0>(term) *= onei;
     }
 
+    if(std::get<1>(term).size()==0 && std::get<2>(term).size()==0){
+        std::complex<double> twoi(0.0, -2.0);
+        Cout.scale(std::exp(twoi * time * std::get<0>(term)));
+        return;
+    }
+
     std::vector<int> crea;
     std::vector<int> anna;
     std::vector<int> creb;
@@ -966,9 +969,11 @@ void FCIComputer::evolve_individual_nbody(
     std::complex<double> parity = std::pow(-1, nswaps);
 
     if (crea == anna && creb == annb) {
+        
+        std::complex<double> factor;
         evolve_individual_nbody_easy(
             time,
-            parity * std::get<0>(term), 
+            parity * 2.0 * std::get<0>(term), 
             Cin,
             Cout,
             crea,
@@ -995,7 +1000,8 @@ void FCIComputer::evolve_op_taylor(
       const SQOperator& op,
       const double evolution_time,
       const double convergence_thresh,
-      const int max_taylor_iter)
+      const int max_taylor_iter,
+      const bool real_evolution)
 
 {
     Tensor Cevol = C_;
@@ -1006,9 +1012,64 @@ void FCIComputer::evolve_op_taylor(
 
         // std::cout << "C_: " << C_.str() << std::endl;
         // std::cout << "Cevol: " << Cevol.str() << std::endl;
+        std::complex<double> coeff;
 
-        std::complex<double> coeff(0.0, -evolution_time);
+        if (real_evolution) {
+            coeff = std::complex<double>(-evolution_time, 0.0);
+        } else {
+            coeff = std::complex<double>(0.0, -evolution_time);
+        }
+
         apply_sqop(op);
+        scale(coeff);
+
+        Cevol.zaxpy(
+            C_,
+            1.0 / std::tgamma(order+1),
+            1,
+            1);
+        
+        if (C_.norm() * std::abs(coeff) < convergence_thresh) {
+            break;
+        }
+    }
+    C_ = Cevol;
+}
+
+void FCIComputer::evolve_tensor_taylor(
+      const std::complex<double> h0e,
+      const Tensor& h1e, 
+      const Tensor& h2e, 
+      const Tensor& h2e_einsum, 
+      size_t norb,
+      const double evolution_time,
+      const double convergence_thresh,
+      const int max_taylor_iter,
+      const bool real_evolution)
+
+{
+    Tensor Cevol = C_;
+
+    for (int order = 1; order < max_taylor_iter; ++order) {
+
+        // std::cout << "I get here, order: " << order << std::endl;
+
+        // std::cout << "C_: " << C_.str() << std::endl;
+        // std::cout << "Cevol: " << Cevol.str() << std::endl;
+        std::complex<double> coeff;
+
+        if (real_evolution) {
+            coeff = std::complex<double>(-evolution_time, 0.0);
+        } else {
+            coeff = std::complex<double>(0.0, -evolution_time);
+        }
+
+        apply_tensor_spat_012bdy(
+            h0e,
+            h1e,
+            h2e,
+            h2e_einsum,
+            norb);
         scale(coeff);
 
         Cevol.zaxpy(
@@ -1403,6 +1464,269 @@ std::complex<double> FCIComputer::get_exp_val_tensor(
     C_ = Cin;
     return val;
 }
+
+// ====> Double Factorization functions and such <=== //
+
+void FCIComputer::evolve_df_ham_trotter(
+      const DFHamiltonian& df_ham,
+      const double evolution_time)
+{
+    size_t nleaves = df_ham.get_trotter_basis_change_matrices().size();
+
+    if (nleaves - 1 != df_ham.get_scaled_density_density_matrices().size()){
+        throw std::invalid_argument("Incompatiable array lengths.");
+    }
+
+
+    evolve_givens(
+        df_ham.get_trotter_basis_change_matrices()[0],
+        true);
+
+    evolve_givens(
+        df_ham.get_trotter_basis_change_matrices()[0],
+        false);
+
+    
+
+    for (size_t l = 1; l < nleaves; ++l) {
+
+        evolve_diagonal_from_mat(
+            df_ham.get_scaled_density_density_matrices()[l - 1],
+            evolution_time
+        );
+        
+        evolve_givens(
+            df_ham.get_trotter_basis_change_matrices()[l],
+            true
+        );
+
+        evolve_givens(
+            df_ham.get_trotter_basis_change_matrices()[l],
+            false
+        );
+    }
+
+}
+
+// NOTE(Nick): If this proves exceedingly slow,
+// it is possible to apply blocks of these givens
+// rotations in parallel, will look into this if
+// it is a probelm.
+void FCIComputer::evolve_givens(
+    const Tensor& U,
+    const bool is_alfa)
+{
+
+    size_t sigma = 0;
+    if (is_alfa){ 
+        sigma = 0; 
+    } else {
+        sigma = 1;
+    }
+
+    U.square_error();
+
+    if (U.shape()[0] != norb_) {
+        throw std::invalid_argument("U must be a square norb x norb matrix.");
+    }
+
+    Tensor U2 = U;
+
+    //NOTE(Nick): May be SLOW, or don't need to compute, could just store rots_and_diag
+    // in DFHamiltonain class pass directly.
+    auto rots_and_diag = DFHamiltonian::givens_decomposition_square(U2);
+
+    auto ivec = std::get<0>(rots_and_diag);
+    auto jvec = std::get<1>(rots_and_diag);
+    auto thts = std::get<2>(rots_and_diag);
+    auto phis = std::get<3>(rots_and_diag);
+
+    auto diags = std::get<4>(rots_and_diag);
+
+    // Iterate through each layer and time evolve by the appropriate
+    // SQOperators
+    for (size_t k = 0; k < ivec.size(); k++){
+        size_t i = ivec[k];
+        size_t j = jvec[k];
+        double tht = thts[k];
+        double phi = phis[k];
+
+        if (std::abs(phi) > compute_threshold_){
+            SQOperator num_op1; 
+            num_op1.add_term(-phi/2.0, {2 * j + sigma}, {2 * j + sigma});
+            num_op1.add_term(-phi/2.0, {2 * j + sigma}, {2 * j + sigma});            
+            apply_sqop_evolution(1.0, num_op1);
+        }
+
+        if (std::abs(tht) > compute_threshold_) {
+            std::complex<double> itheta(0.0, tht);
+            SQOperator single;
+            single.add_term(-itheta, {2 * i + sigma}, {2 * j + sigma});
+            single.add_term(+itheta, {2 * j + sigma}, {2 * i + sigma});
+            apply_sqop_evolution(1.0, single);
+        }
+    }
+        
+    // Evolve the last diagonal phases
+    for (size_t l = 0; l < diags.size(); l++){
+        if (std::abs(diags[l]) > 1.0e-13) {
+            double diag_angle = std::atan2(diags[l].imag(), diags[l].real());
+            SQOperator num_op2;
+            num_op2.add_term(-diag_angle/2.0, {2 * l + sigma}, {2 * l + sigma});
+            num_op2.add_term(-diag_angle/2.0, {2 * l + sigma}, {2 * l + sigma});
+            apply_sqop_evolution(1.0, num_op2);
+        }
+    }
+}
+
+void FCIComputer::evolve_diagonal_from_mat(
+    const Tensor& V,
+    const double evolution_time)
+{
+
+    // NOTE(Nick): time sclae the arrays, maybe make V non const and just scale by 1/t after?
+    Tensor V2 = V;
+    Tensor D({V.shape()[0]}, "D2");
+
+    std::complex<double> idt(0.0, -evolution_time); 
+    V2.scale(idt);
+
+    apply_diagonal_array(
+        C_, 
+        graph_.get_astr(),
+        graph_.get_bstr(),
+        D,
+        V2,
+        nalfa_strs_,
+        nbeta_strs_,
+        nalfa_el_,
+        nbeta_el_,
+        norb_);
+
+}
+
+void FCIComputer::apply_diagonal_array(
+        Tensor& C, // Just try in-place for now...
+        const std::vector<uint64_t>& astrs,
+        const std::vector<uint64_t>& bstrs,
+        const Tensor& D,
+        const Tensor& V,
+        const size_t nalfa_strs,
+        const size_t nbeta_strs,
+        const size_t nalfa_el,
+        const size_t nbeta_el,
+        const size_t norb)
+{
+    D.shape_error({norb});
+    V.shape_error({norb, norb});
+
+    std::vector<std::complex<double>> adiag(nalfa_strs);
+    std::vector<std::complex<double>> bdiag(nbeta_strs);
+    std::vector<int> aocc(nalfa_strs * nalfa_el);
+    std::vector<int> bocc(nbeta_strs * nbeta_el);
+
+    for (int as = 0; as < nalfa_strs; ++as) {
+        std::vector<int> astr_occ = graph_.get_positions(astrs[as], nalfa_el);
+        if (astr_occ.size() != nalfa_el) {
+            std::cerr << "Error: astr_occ size mismatch at as=" << as << std::endl;
+            return;
+        }
+        std::copy(astr_occ.begin(), astr_occ.end(), aocc.begin() + nalfa_el * as);
+    }
+
+    for (int bs = 0; bs < nbeta_strs; ++bs) {
+        std::vector<int> bstr_occ = graph_.get_positions(bstrs[bs], nbeta_el);
+        if (bstr_occ.size() != nbeta_el) {
+            std::cerr << "Error: bstr_occ size mismatch at bs=" << bs << std::endl;
+            return;
+        }
+        std::copy(bstr_occ.begin(), bstr_occ.end(), bocc.begin() + nbeta_el * bs);
+    }
+
+    std::vector<std::complex<double>> diagexp(norb);
+    std::vector<std::complex<double>> arrayexp(norb * norb);
+
+
+    // NOTE(Nick), we don't need to do this every time...,
+    // can pre-compute the exponentias and store them
+    // in DFHamiltonian
+    for (int i = 0; i < norb; ++i) {
+        diagexp[i] = std::exp(D.read_data()[i]);
+    }
+
+    for (int i = 0; i < norb * norb; ++i) {
+        arrayexp[i] = std::exp(V.read_data()[i]);
+    }
+
+    apply_diagonal_array_part(
+        adiag, 
+        aocc, 
+        diagexp, 
+        arrayexp, 
+        nalfa_strs, 
+        nalfa_el, 
+        norb);
+
+    apply_diagonal_array_part(
+        bdiag,
+        bocc, 
+        diagexp, 
+        arrayexp, 
+        nbeta_strs, 
+        nbeta_el, 
+        norb);
+
+    std::vector<std::complex<double>> aarrays(norb);
+
+    for (int as = 0; as < nalfa_strs; ++as) {
+        const int* caocc = aocc.data() + (as * nalfa_el);
+        std::fill(aarrays.begin(), aarrays.end(), std::complex<double>(1.0));
+
+        for (int ela = 0; ela < nalfa_el; ++ela) {
+            const std::complex<double>* carray = arrayexp.data() + (caocc[ela] * norb);
+            for (int i = 0; i < norb; ++i) {
+                aarrays[i] *= carray[i];
+            }
+        }
+
+        for (int bs = 0; bs < nbeta_strs; ++bs) {
+            std::complex<double> diag_ele = 1.0;
+            const int* cbocc = bocc.data() + (bs * nbeta_el);
+            for (int elb = 0; elb < nbeta_el; ++elb) {
+                diag_ele *= aarrays[cbocc[elb]];
+            }
+            C.data()[as * nbeta_strs + bs] *= diag_ele * diag_ele * bdiag[bs] * adiag[as];
+        }
+    // }
+    }
+}
+
+void FCIComputer::apply_diagonal_array_part(
+        std::vector<std::complex<double>>& out, // is the output?
+        const std::vector<int>& occ, 
+        const std::vector<std::complex<double>>& diag, 
+        const std::vector<std::complex<double>>& array, 
+        const size_t nstrs, 
+        const size_t nel, 
+        const size_t norb)
+{
+    for (int i = 0; i < nstrs; ++i) {
+        std::complex<double> p_adiag = 1.0;
+        const int *c_occ = occ.data() + (i * nel);
+
+        for (int el = 0; el < nel; ++el) {
+            p_adiag *= diag[c_occ[el]];
+
+            const std::complex<double>* c_array = array.data() + norb * c_occ[el];
+            for (int el2 = 0; el2 < nel; ++el2) {
+                p_adiag *= c_array[c_occ[el2]];
+            }
+        }
+        out[i] = p_adiag;
+    }
+}
+
+// ====> Helper and other basic functions below <=== //
 
 /// apply a constant to the FCI quantum computer.
 void FCIComputer::scale(const std::complex<double> a){
