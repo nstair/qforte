@@ -742,10 +742,6 @@ class SPQE(UCCPQE):
                 res_sq.append((squared, m))
             
             res_sq.sort()
-            print(f"\n\n ===> res_sq <== \n\n")
-            for res in res_sq:
-                print(f"  {res}")
-            print("\n\n")
             self._curr_res_sq_norm = sum(rmu_sq[0] for rmu_sq in res_sq) / (self._dt * self._dt)
 
 
