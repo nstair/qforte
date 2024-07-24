@@ -84,7 +84,7 @@ void TensorGPU::to_gpu()
 }
 
 // change to 'to_cpu'
-void TensorGPU::from_gpu()
+void TensorGPU::to_cpu()
 {
     
     if (initialized_ == 0) {
@@ -144,6 +144,14 @@ void TensorGPU::gpu_error() const {
 
 }
 
+void TensorGPU::cpu_error() const {
+
+    if (on_gpu_) {
+        throw std::runtime_error("Data not on CPU for " + name_);
+    }
+
+}
+
 void TensorGPU::zero()
 {
     memset(h_data_.data(), '\0', sizeof(std::complex<double>) * size_);
@@ -184,6 +192,35 @@ void TensorGPU::ndim_error(size_t ndims) const
         ss << "Tensor should be " << ndims << " ndim, but is " << ndim() << " ndim.";
         throw std::runtime_error(ss.str());
     }
+}
+
+void TensorGPU::fill_from_nparray(std::vector<std::complex<double>> arr, std::vector<size_t> shape)
+{
+
+    cpu_error();
+
+    if (shape_ != shape){
+        throw std::runtime_error("The shapes are not the same.");
+    }
+
+    std::memcpy(h_data_.data(), arr.data(), sizeof(std::complex<double>) * size_);
+
+}
+
+double TensorGPU::norm(){
+
+    double result = 0;
+
+    for (int i = 0; i < size_; i++){
+
+        result += std::real(h_data_[i]) * std::real(h_data_[i]) + std::imag(h_data_[i]) * std::imag(h_data_[i]);
+
+    }
+
+    result = std::sqrt(result);
+
+    return result;
+
 }
 
 

@@ -357,12 +357,15 @@ PYBIND11_MODULE(qforte, m) {
         .def(py::init<std::vector<size_t>, std::string>(), "shape"_a, "name"_a, "Make a TensorGPU with a particular shape")
         .def(py::init<>())
         .def("to_gpu", &TensorGPU::to_gpu)
-        .def("from_gpu", &TensorGPU::from_gpu)
+        .def("to_cpu", &TensorGPU::to_cpu)
         .def("add", &TensorGPU::add)
         .def("add2", &TensorGPU::add2)
         .def("zero", &TensorGPU::zero)
+        .def("shape", &TensorGPU::shape)
+        .def("norm", &TensorGPU::norm)
         .def("read_data", &TensorGPU::read_data)
         .def("ndim_error", &TensorGPU::ndim_error)
+        .def("fill_from_nparray", &TensorGPU::fill_from_nparray)
         .def("set", &TensorGPU::set);
 
     py::class_<Gate>(m, "Gate")

@@ -20,6 +20,7 @@
 #include "timer.h"
 #include "sq_operator.h"
 #include "blas_math.h"
+#include "cuda_runtime.h"
 
 #include "fci_computer.h"
 #include "fci_graph.h"
@@ -1149,8 +1150,7 @@ void FCIComputer::apply_sqop_evolution(
         adjoint); 
 }
 
-
-void FCIComputer::apply_individual_nbody1_accumulate(
+void FCIComputer::apply_individual_nbody1_accumulate_gpu(
     const std::complex<double> coeff, 
     const Tensor& Cin,
     Tensor& Cout,
@@ -1168,7 +1168,91 @@ void FCIComputer::apply_individual_nbody1_accumulate(
     if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
         throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
     }
+    // only part that has kernel
 
+    // make device pointers out of all the things coming in - use cuda mem copy to a device pointer
+
+    int* d_sourcea;
+    int* d_sourceb;
+    int* d_targetb;
+    int* d_parityb;
+
+    std::complex<double>* d_Cin;
+    std::complex<double>* d_Cout;
+
+    // cumalloc for these
+
+    int sourcea_size = sourcea.size() * sizeof(int);
+    int sourceb_size = sourceb.size() * sizeof(int);
+    int targetb_size = targetb.size() * sizeof(int);
+    int parityb_size = parityb.size() * sizeof(int);
+
+    int tensor_size = Cin.size() * sizeof(std::complex<double>);
+
+    cudaMalloc(&d_sourcea, sourcea_size);
+    cudaMalloc(&d_sourceb, sourceb_size);
+    cudaMalloc(&d_targetb, targetb_size);
+    cudaMalloc(&d_parityb, parityb_size);
+
+    cudaMalloc(&d_Cin, tensor_size);
+    cudaMalloc(&d_Cout, tensor_size);
+
+    cudaMemcpy(d_sourcea, sourcea.data(), sourcea_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_sourceb, sourceb.data(), sourceb_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_targetb, targetb.data(), targetb_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_parityb, parityb.data(), parityb_size, cudaMemcpyHostToDevice);
+
+    cudaMemcpy(d_Cin, Cin.read_data().data(), tensor_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_Cout, Cout.data().data(), tensor_size, cudaMemcpyHostToDevice);
+
+    // apply_individual_nbody1_accumulate_wrapper();
+
+    cudaFree(d_sourcea);
+    cudaFree(d_sourceb);
+    cudaFree(d_targetb);
+    cudaFree(d_parityb);
+    cudaFree(d_Cin);
+    cudaFree(d_Cout);
+
+
+    // do same thing for cin cout
+
+    // call the add wrapper
+    // do this in cu file with grid stride loop
+    // for (int i = 0; i < targeta.size(); i++) {
+    //     int ta_idx = targeta[i] * nbeta_strs_;
+    //     int sa_idx = sourcea[i] * nbeta_strs_;
+    //     std::complex<double> pref = coeff * static_cast<std::complex<double>>(paritya[i]);
+    //     for (int j = 0; j < targetb.size(); j++) {
+    //         Cout.data()[ta_idx + targetb[j]] += pref * static_cast<std::complex<double>>(parityb[j]) * Cin.read_data()[sa_idx + sourceb[j]];
+    //     }
+    // }
+
+
+
+    // free it
+}
+
+
+void FCIComputer::apply_individual_nbody1_accumulate_cpu(
+    const std::complex<double> coeff, 
+    const Tensor& Cin,
+    Tensor& Cout,
+    std::vector<int>& sourcea,
+    std::vector<int>& targeta,
+    std::vector<int>& paritya,
+    std::vector<int>& sourceb,
+    std::vector<int>& targetb,
+    std::vector<int>& parityb)
+{
+    if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
+        throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
+    }
+
+    if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
+        throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
+    }
+    // only part that has kernel
     for (int i = 0; i < targeta.size(); i++) {
         int ta_idx = targeta[i] * nbeta_strs_;
         int sa_idx = sourcea[i] * nbeta_strs_;
@@ -1177,6 +1261,44 @@ void FCIComputer::apply_individual_nbody1_accumulate(
             Cout.data()[ta_idx + targetb[j]] += pref * static_cast<std::complex<double>>(parityb[j]) * Cin.read_data()[sa_idx + sourceb[j]];
         }
     }
+}
+
+
+void FCIComputer::apply_individual_nbody1_accumulate(
+    const std::complex<double> coeff, 
+    const Tensor& Cin,
+    Tensor& Cout,
+    std::vector<int>& sourcea,
+    std::vector<int>& targeta,
+    std::vector<int>& paritya,
+    std::vector<int>& sourceb,
+    std::vector<int>& targetb,
+    std::vector<int>& parityb)
+{
+   if (use_gpu_operations_ = false) {
+       apply_individual_nbody1_accumulate_cpu(
+        coeff, 
+        Cin,
+        Cout,
+        sourcea,
+        targeta,
+        paritya,
+        sourceb,
+        targetb,
+        parityb);
+   }
+   else if (use_gpu_operations_ = true) {
+       apply_individual_nbody1_accumulate_gpu(
+        coeff, 
+        Cin,
+        Cout,
+        sourcea,
+        targeta,
+        paritya,
+        sourceb,
+        targetb,
+        parityb);
+   }
 }
 
 void FCIComputer::apply_individual_nbody_accumulate(
@@ -1233,7 +1355,7 @@ void FCIComputer::apply_individual_nbody_accumulate(
         targetb[i] = graph_.get_bind_for_str(std::get<2>(ubetamap)[i]);
         parityb[i] = 1.0 - 2.0 * std::get<3>(ubetamap)[i];
     }
-
+    // this is where the if statement goes
     apply_individual_nbody1_accumulate(
         coeff, 
         Cin,

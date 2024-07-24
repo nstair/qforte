@@ -6,7 +6,10 @@
 
 #include "qforte-def.h" 
 #include "tensor.h" 
-#include "fci_graph.h" 
+#include "fci_graph.h"
+
+#include <cuda_runtime.h>
+#include <cuComplex.h>
 
 
 class Gate;
@@ -257,6 +260,28 @@ class FCIComputer {
       std::vector<int>& sourceb,
       std::vector<int>& parityb);
 
+    void apply_individual_nbody1_accumulate_gpu(
+      const std::complex<double> coeff, 
+      const Tensor& Cin,
+      Tensor& Cout,
+      std::vector<int>& targeta,
+      std::vector<int>& sourcea,
+      std::vector<int>& paritya,
+      std::vector<int>& targetb,
+      std::vector<int>& sourceb,
+      std::vector<int>& parityb);
+
+    void apply_individual_nbody1_accumulate_cpu(
+      const std::complex<double> coeff, 
+      const Tensor& Cin,
+      Tensor& Cout,
+      std::vector<int>& targeta,
+      std::vector<int>& sourcea,
+      std::vector<int>& paritya,
+      std::vector<int>& targetb,
+      std::vector<int>& sourceb,
+      std::vector<int>& parityb);
+
     /// Apply a single term of a SQOperator to the FCIComputer after
     /// re-indexing the creators and anihilators. 
     /// NICK: Still need a top level function which takes a sqop term...
@@ -382,6 +407,9 @@ class FCIComputer {
     void clear_timings() { timings_.clear(); }
 
   private:
+
+    bool use_gpu_operations_ = false;
+
     /// the number of electrons
     size_t nel_;
 
