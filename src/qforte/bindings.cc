@@ -241,6 +241,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_state", &FCIComputer::get_state)
         .def("get_state_deep", &FCIComputer::get_state_deep)
         .def("get_hf_dot", &FCIComputer::get_hf_dot)
+        .def("get_nonzero_idxs", &FCIComputer::get_nonzero_idxs)
         .def("str", &FCIComputer::str, 
             py::arg("print_data") = true, 
             py::arg("print_complex") = false)

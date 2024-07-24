@@ -351,6 +351,9 @@ class FCIComputer {
     /// return the number of spatial orbitals
     size_t none_ops() const { return norb_; }
 
+    /// return the indexes of non-zero elements
+    std::vector<std::vector<size_t>> get_nonzero_idxs() const;
+
     /// return the number of two-qubit operations
     /// NOTE(Nick) Maybe try to keep (or some proxy at least)?
     // size_t ntwo_ops() const { return ntwo_ops_; }

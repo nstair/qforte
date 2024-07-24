@@ -131,6 +131,13 @@ class SPQE(UCCPQE):
         #     Used to estimate the residuals outside the zero'd set when selecting new residuals to zero.
         self._eiH, _ = trotterize(self._qb_ham, factor= self._dt*(0.0 + 1.0j), trotter_number=self._trotter_number)
 
+        if(self._computer_type=='fci'):
+            # build hermitain pairs for time evolution (with fci computer)
+            self._hermitian_pairs = qforte.SQOpPool()
+
+            # this is updated, evolution time is now just 1.0 here
+            self._hermitian_pairs.add_hermitian_pairs(self._dt, self._sq_ham)        
+
         for occupation in self._ref:
             if occupation:
                 self._nbody_counts.append(0)
@@ -157,7 +164,9 @@ class SPQE(UCCPQE):
         idx = 0
         # Given a coefficient index, what is the index of the "corresponding" pool element? Used to compute the operator to add to the ansatz in macroiterations.
         self._coeff_idx_to_pool_idx = {}
+        self._coeff_idx_to_pool_idx_fci = {}
         self._indices_of_zeroable_residuals_for_pool = set()
+        self._indices_of_zeroable_residuals_for_pool_fci = set()
         self._pool_obj = qf.SQOpPool()
         for I in range(1 << self._nqb):
             alphas = [int(j) for j in bin(I & mask_alpha)[2:]]
@@ -182,16 +191,38 @@ class SPQE(UCCPQE):
                             sq_op.simplify()
                             self._pool_obj.add_term(0.0, sq_op)
                             self._coeff_idx_to_pool_idx[I] = idx
+                            
+                            my_fci_comp = qforte.FCIComputer(
+                                self._nel, 
+                                self._2_spin, 
+                                self._norb) 
+                            my_fci_comp.hartree_fock()
+                            my_fci_comp.apply_sqop(sq_op)
+                            
+                            a = my_fci_comp.get_nonzero_idxs()
+                            if len(a) != 1:
+                                raise ValueError("Should only have one nonzero index")
+                            
+                            i = a[0][0]
+                            j = a[0][1]
+                            
+                            self._coeff_idx_to_pool_idx_fci[(i,j)] = idx
                             self._indices_of_zeroable_residuals_for_pool.add(I)
+                            self._indices_of_zeroable_residuals_for_pool_fci.add((i,j))   
                             idx += 1
 
         # Given a pool index, what is the coefficient of the "corresponding" coefficient vector element? Used to extract significant residuals in microiterations.
         # WARNING! To support repeated operators, either replace this variable or have repeated operators in the pool (which seems an awful hack).
         self._pool_idx_to_coeff_idx = {value: key for key, value in self._coeff_idx_to_pool_idx.items()}
+        self._pool_idx_to_coeff_idx_fci = {value: key for key, value in self._coeff_idx_to_pool_idx_fci.items()}
 
         self.print_options_banner()
 
+        self._timer = qforte.local_timer()
+
+        self._timer.reset()
         self.build_orb_energies()
+        self._timer.record("build_orb_energies")
 
         if self._max_moment_rank:
             print('\nConstructing Moller-Plesset and Epstein-Nesbet denominators')
@@ -204,6 +235,7 @@ class SPQE(UCCPQE):
             f.write(f"#{'Iter(k)':>8}{'E(k)':>14}{'N(params)':>17}{'N(CNOT)':>18}{'N(measure)':>20}\n")
             f.write('#-------------------------------------------------------------------------------\n')
 
+        self._timer.reset()
         while not self._stop_macro:
 
             self.update_ansatz()
@@ -226,6 +258,7 @@ class SPQE(UCCPQE):
             if self._print_summary_file:
                 f.write(f'  {self._spqe_iter:7}    {self._energies[-1]:+15.9f}    {len(self._tamps):8}        {self._n_cnot_lst[-1]:10}        {sum(self._n_pauli_trm_measures_lst):12}\n')
             self._spqe_iter += 1
+        self._timer.record("solve")
 
         if(self._print_summary_file):
             f.close()
@@ -304,6 +337,11 @@ class SPQE(UCCPQE):
         print('Number of operators in pool:             ',  len(self._pool_obj))
         print('Macro-iteration residual-norm threshold: ',  spqe_thrsh_str)
         print('Maximum number of macro-iterations:      ',  self._spqe_maxiter)
+        print(f"Computer type:                            {self._computer_type}")
+        b = False
+        if (self._apply_ham_as_tensor):
+            b = True
+        print('Apply ham as tensor                      ', str(b))
 
 
     def print_summary_banner(self):
@@ -321,7 +359,18 @@ class SPQE(UCCPQE):
         print('Number of residual vector evaluations:       ', self._res_vec_evals)
         print('Number of individual residual evaluations:   ', self._res_m_evals)
 
+        print("\n\n")
+        print(self._timer)
+
     def get_residual_vector(self, trial_amps):
+        if(self._computer_type == 'fock'):
+            return self.get_residual_vector_fock(trial_amps)
+        elif(self._computer_type == 'fci'):
+            return self.get_residual_vector_fci(trial_amps)
+        else:
+            raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
+
+    def get_residual_vector_fock(self, trial_amps):
         """
         Input
         -----
@@ -375,7 +424,77 @@ class SPQE(UCCPQE):
 
         return residuals
 
+    def get_residual_vector_fci(self, trial_amps):
+        qc_res = qf.FCIComputer(
+            self._nel, 
+            self._2_spin, 
+            self._norb) 
+
+        qc_res.hartree_fock()
+
+        temp_pool = qforte.SQOpPool()
+        for tamp, top in zip(trial_amps, self._tops):
+            temp_pool.add(tamp, self._pool_obj[top][1])
+
+        qc_res.evolve_pool_trotter_basic(
+            temp_pool,
+            antiherm=True,
+            adjoint=False)
+
+        if(self._apply_ham_as_tensor):
+            qc_res.apply_tensor_spat_012bdy(
+            self._nuclear_repulsion_energy, 
+            self._mo_oeis, 
+            self._mo_teis, 
+            self._mo_teis_einsum, 
+            self._norb)
+        else:   
+            qc_res.apply_sqop(self._sq_ham)
+
+        qc_res.evolve_pool_trotter_basic(
+            temp_pool,
+            antiherm=True,
+            adjoint=True)
+
+        coeffs = qc_res.get_state_deep()
+        residuals = []
+
+        for m in self._tops:
+            if self._optimizer.lower() == 'jacobi':
+                sq_op = self._pool_obj[m][1]
+                qc_temp = qf.FCIComputer(
+                    self._nel, 
+                    self._2_spin, 
+                    self._norb) 
+
+                qc_temp.hartree_fock()
+                qc_temp.apply_sqop(sq_op)
+
+                sign_adjust = qc_temp.get_state().get(self._pool_idx_to_coeff_idx_fci[m])
+                res_m = coeffs.get(self._pool_idx_to_coeff_idx_fci[m]) * sign_adjust
+            
+            else:
+                res_m = coeffs.get(self._pool_idx_to_coeff_idx_fci[m])
+            
+            if abs(np.imag(res_m)) > 0.0:
+                raise ValueError("Residual has imaginary component, something went wrong!!")
+            residuals.append(res_m)
+
+        self._res_vec_norm = np.linalg.norm(residuals)
+        self._res_vec_evals += 1
+        self._res_m_evals += len(trial_amps)
+
+        return residuals
+
     def update_ansatz(self):
+        if(self._computer_type == 'fock'):
+            return self.update_ansatz_fock()
+        elif(self._computer_type == 'fci'):
+            return self.update_ansatz_fci()
+        else:
+            raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
+
+    def update_ansatz_fock(self):
         self._n_pauli_measures_k = 0
         # TODO: Check if this deepcopy is needed. The one argument of energy_feval should be const.
         x0 = copy.deepcopy(self._tamps)
@@ -514,6 +633,173 @@ class SPQE(UCCPQE):
 
                 self._n_classical_params_lst.append(len(self._tops))
 
+    def update_ansatz_fci(self):
+        self._n_pauli_measures_k = 0
+        # TODO: Check if this deepcopy is needed. The one argument of energy_feval should be const.
+        x0 = copy.deepcopy(self._tamps)
+        init_gues_energy = self.energy_feval(x0)
+
+        # do U^dag e^iH U |Phi_o> = |Phi_res>
+        qc_res = qf.FCIComputer(
+            self._nel, 
+            self._2_spin, 
+            self._norb) 
+
+        qc_res.hartree_fock()
+        
+        temp_pool = qforte.SQOpPool()
+        for tamp, top in zip(self._tamps, self._tops):
+            temp_pool.add(tamp, self._pool_obj[top][1])
+
+        qc_res.evolve_pool_trotter_basic(
+            temp_pool,
+            antiherm=True,
+            adjoint=False)
+
+        # time evolve the hamiltonain
+        qc_res.evolve_pool_trotter_basic(
+            self._hermitian_pairs,
+            antiherm=False,
+            adjoint=False)
+
+        qc_res.evolve_pool_trotter_basic(
+            temp_pool,
+            antiherm=True,
+            adjoint=True)
+
+        res_coeffs = qc_res.get_state_deep()
+
+        # build different res_sq list using M_omega
+        if(self._M_omega != 'inf'):
+            res_sq_tmp = [ np.real(np.conj(qc_res.get_state().get(m) * qc_res.get_state().get(m))) for m in self._indices_of_zeroable_residuals_for_pool_fci]
+
+            # Nmu_lst => [ det1, det2, det3, ... det_M_omega]
+            det_lst = np.random.choice(len(res_coeffs), self._M_omega, p=res_sq_tmp)
+
+            print(f'|Co|dt^2 :       {np.amax(res_sq_tmp):12.14f}')
+            print(f'mu_o :           {np.where(res_sq_tmp == np.amax(res_sq_tmp))[0][0]}')
+
+            No_idx = np.where(res_sq_tmp == np.amax(res_sq_tmp))[0][0]
+            print(f'\nNo_idx   {No_idx:4}')
+
+            No = np.count_nonzero(det_lst == No_idx)
+            print(f'\nNo       {No:10}')
+
+            res_sq = []
+            Nmu_lst = []
+            for mu in range(len(res_coeffs)):
+                Nmu = np.count_nonzero(det_lst == mu)
+                if(Nmu > 0):
+                    print(f'mu:    {mu:8}      Nmu      {Nmu:10}  r_mu: { Nmu / (self._M_omega):12.14f} ')
+                    Nmu_lst.append((Nmu, mu))
+                res_sq.append( ( Nmu / (self._M_omega), mu) )
+
+            ## 1. sort
+            Nmu_lst.sort()
+            res_sq.sort()
+
+            ## 2. set norm
+            self._curr_res_sq_norm = sum(rmu_sq[0] for rmu_sq in res_sq[:-1]) / (self._dt * self._dt)
+
+            ## 3. print stuff
+            print('  \n--> Begin selection opt with residual magnitudes:')
+            print('  Initial guess energy:          ', round(init_gues_energy,10))
+            print(f'  Norm of approximate res vec:  {np.sqrt(self._curr_res_sq_norm):14.12f}')
+
+            ## 4. check conv status (need up update function with if(M_omega != 'inf'))
+            if(len(Nmu_lst)==1):
+                print('  SPQE converged with M_omega thresh!')
+                self._converged = True
+                self._final_energy = self._energies[-1]
+                self._final_result = self._results[-1]
+            else:
+                self._converged = False
+
+            ## 5. add new toperator
+            if not self._converged:
+                if self._verbose:
+                    print('\n')
+                    print('     op index (Imu)     Number of times measured')
+                    print('  -----------------------------------------------')
+
+                for rmu_sq, global_op_idx in Nmu_lst[:-1]:
+                    if self._verbose:
+                        print(f"  {global_op_idx:10}                  {np.real(rmu_sq):14}")
+                    if global_op_idx not in self._tops:
+                        pool_idx = self._coeff_idx_to_pool_idx_fci[global_op_idx]
+                        self._tops.insert(0, pool_idx)
+                        self._tamps.insert(0, 0.0)
+                        operator_rank = len(self._pool_obj[pool_idx][1].terms()[0][1])
+                        self._nbody_counts[operator_rank - 1] += 1
+
+                self._n_classical_params_lst.append(len(self._tops))
+
+        else: # when M_omega == 'inf', proceed with standard SPQE
+            res_sq = []
+            for m in (self._indices_of_zeroable_residuals_for_pool_fci - {self._pool_idx_to_coeff_idx_fci[i] for i in self._tops}):
+                resid_m = qc_res.get_state().get(m)
+                squared = np.real(np.conj(resid_m) * resid_m)
+                res_sq.append((squared, m))
+            
+            res_sq.sort()
+            print(f"\n\n ===> res_sq <== \n\n")
+            for res in res_sq:
+                print(f"  {res}")
+            print("\n\n")
+            self._curr_res_sq_norm = sum(rmu_sq[0] for rmu_sq in res_sq) / (self._dt * self._dt)
+
+
+            self.conv_status()
+
+            if not self._converged:
+
+                print('\n\n -----> SPQE iteration ',self._spqe_iter, ' <-----\n')
+                print('  \n--> Begin selection opt with residual magnitudes |r_mu|:')
+                print('  Initial guess energy: ', round(init_gues_energy,10))
+                print(f'  Norm of res vec:      {np.sqrt(self._curr_res_sq_norm):14.12f}')
+
+                if self._verbose:
+                    print('\n')
+                    print('     op index (Imu)           Residual Factor')
+                    print('  -----------------------------------------------')
+                res_sq_sum = 0.0
+
+                if(self._use_cumulative_thresh):
+                    # Make a running list of operators. When the sum of res_sq exceeds the target, every operator
+                    # from here out is getting added to the ansatz..
+                    temp_ops = []
+                    for rmu_sq, global_op_idx in res_sq:
+                        res_sq_sum += rmu_sq / (self._dt * self._dt)
+                        if res_sq_sum > (self._spqe_thresh * self._spqe_thresh):
+                            pool_idx = self._coeff_idx_to_pool_idx_fci[global_op_idx]
+                            if(self._verbose):
+                                print(f"  {pool_idx:10}                  {np.real(rmu_sq):14.12f}"
+                                      f"   {self._pool_obj[pool_idx][1].str()}" )
+                            if pool_idx not in self._tops:
+                                temp_ops.append(pool_idx)
+                                operator_rank = len(self._pool_obj[pool_idx][1].terms()[0][1])
+                                self._nbody_counts[operator_rank - 1] += 1
+
+                    for temp_op in temp_ops[::-1]:
+                        self._tops.insert(0, temp_op)
+                        self._tamps.insert(0, 0.0)
+
+                else:
+                    # Add the single operator with greatest rmu_sq not yet in the ansatz
+                    res_sq.reverse()
+                    for rmu_sq, global_op_idx in res_sq:
+                        pool_idx = self._coeff_idx_to_pool_idx[global_op_idx]
+                        print(f"  {pool_idx:10}                  {np.real(rmu_sq)/(self._dt * self._dt):14.12f}")
+                        if pool_idx not in self._tops:
+                            print('Adding this operator to ansatz')
+                            self._tops.insert(0, pool_idx)
+                            self._tamps.insert(0, 0.0)
+                            operator_rank = len(self._pool_obj[pool_idx][1].terms()[0][1])
+                            self._nbody_counts[operator_rank - 1] += 1
+                            break
+
+                self._n_classical_params_lst.append(len(self._tops))
+    
     def conv_status(self):
         if abs(self._curr_res_sq_norm) < abs(self._spqe_thresh * self._spqe_thresh):
             self._converged = True

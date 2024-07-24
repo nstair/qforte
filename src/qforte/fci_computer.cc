@@ -1424,6 +1424,25 @@ void FCIComputer::hartree_fock() {
     C_.set({0, 0}, 1.0);
 }
 
+/// return the indexes of non-zero elements
+std::vector<std::vector<size_t>> FCIComputer::get_nonzero_idxs() const 
+{
+    std::vector<std::vector<size_t>> temp;
+
+    // Think about how to add the non-zero indicies to temp by looping over the matrix..
+    // for i, j matrix indicies
+
+    for(size_t i = 0; i < nalfa_strs_; i++) {
+        for (size_t j = 0; j < nbeta_strs_; j++) {
+            if(std::abs(C_.read_data()[i*nbeta_strs_ + j]) > compute_threshold_){
+                std::vector<size_t> idxs = {i, j};
+                temp.push_back(idxs);
+            }
+        }
+    }
+    return temp;
+}
+
 void FCIComputer::print_vector(const std::vector<int>& vec, const std::string& name) {
     std::cout << "\n" << name << ": ";
     for (size_t i = 0; i < vec.size(); ++i) {
