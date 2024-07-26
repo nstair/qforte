@@ -12,6 +12,7 @@
 
 
 #include "qforte-def.h"
+#include "tensor.h"
 
 class TensorGPU {
 
@@ -68,6 +69,17 @@ void set(const std::vector<size_t>& idxs,
 void ndim_error(size_t) const;
 
 void fill_from_nparray(std::vector<std::complex<double>>, std::vector<size_t>);
+
+const std::vector<std::complex<double>>& read_h_data() const { return h_data_; }
+
+
+std::string str(
+    bool print_data = true,
+    bool print_complex = false,
+    int maxcols = 6,
+    const std::string& data_format = "%12.7f",
+    const std::string& header_format = "%12zu"
+    ) const; 
 
 private:
 

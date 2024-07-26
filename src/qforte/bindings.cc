@@ -204,6 +204,8 @@ PYBIND11_MODULE(qforte, m) {
         .def(py::init<int, int, int>(), "nel"_a, "sz"_a, "norb"_a, "Make a FCIComputer with nel, sz, and norb")
         .def("hartree_fock", &FCIComputer::hartree_fock)
         .def("set_element", &FCIComputer::set_element)
+        .def("do_on_gpu", &FCIComputer::do_on_gpu)
+        .def("do_on_cpu", &FCIComputer::do_on_cpu)
         .def("apply_tensor_spin_1bdy", &FCIComputer::apply_tensor_spin_1bdy)
         .def("apply_tensor_spin_12bdy", &FCIComputer::apply_tensor_spin_12bdy)
         .def("apply_tensor_spin_012bdy", &FCIComputer::apply_tensor_spin_012bdy)
@@ -298,6 +300,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("transpose", &Tensor::transpose) // TODO(Tyler) Need Test (use numpy)
         .def("general_transpose", &Tensor::general_transpose) // TODO(Tyler) Need Test (use numpy)
         .def("fill_from_nparray", &Tensor::fill_from_nparray)
+        .def("copy_in_tensorgpu", &Tensor::copy_in_tensorgpu)
         .def("zaxpy", &Tensor::zaxpy, "x"_a, "alpha"_a, "incx"_a = 1, "incy"_a = 1) // TODO(Tyler) Need Test (use numpy)
         .def("zaxpby", &Tensor::zaxpby, "x"_a, "a"_a, "b"_a, "incx"_a = 1, "incy"_a = 1)
         .def("gemm", &Tensor::gemm, "B"_a, 

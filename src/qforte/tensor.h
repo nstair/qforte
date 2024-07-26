@@ -10,6 +10,9 @@
 
 
 #include "qforte-def.h"
+#include "tensor_gpu.h"
+
+class TensorGPU;
 
 // namespace lightspeed { 
 
@@ -158,6 +161,8 @@ void scale(std::complex<double> a);
  * TODO: This is covered by a static Python method, deprecate and remove this function.
  **/
 void copy_in(const Tensor& other); 
+
+void copy_in_tensorgpu(const TensorGPU& other);
 
 /**
  * Update this Tensor (y) to be y = a * x + b * y

@@ -34,7 +34,9 @@ find_package(CUDAToolkit REQUIRED)
 
 # Set source directory
 set(SOURCE_DIR "src/qforte")
-set(CUDA_SOURCES "${SOURCE_DIR}/tensor_gpu.cu")
+set(CUDA_SOURCES 
+    "${SOURCE_DIR}/tensor_gpu.cu"
+    "${SOURCE_DIR}/fci_computer.cu")
 
 
 
