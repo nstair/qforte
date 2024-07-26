@@ -1,4 +1,5 @@
 #include "tensor.h"
+#include "tensor_gpu.h"
 #include "blas_math.h"
 
 // May need an analog these eventually
@@ -318,6 +319,15 @@ void Tensor::copy_in(
 {
     shape_error(other.shape());
     std::memcpy(data_.data(), other.read_data().data(), sizeof(std::complex<double>)*size_);
+}
+
+void Tensor::copy_in_tensorgpu(
+    const TensorGPU& other
+    )
+{
+    shape_error(other.shape());
+    other.cpu_error();
+    std::memcpy(data_.data(), other.read_h_data().data(), sizeof(std::complex<double>)*size_);
 }
 
 void Tensor::add(const Tensor& other) 

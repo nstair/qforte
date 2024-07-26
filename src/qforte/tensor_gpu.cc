@@ -1,6 +1,7 @@
 #include "tensor_gpu.h"
 #include "blas_math.h"
 #include "cuda_runtime.h"
+#include "tensor.h"
 #include "tensor_gpu_kernels.cuh"
 
 
@@ -64,6 +65,7 @@ TensorGPU::~TensorGPU()
     // free the device memory
     cudaFree(d_data_);
 }
+
 
 void TensorGPU::to_gpu()
 {

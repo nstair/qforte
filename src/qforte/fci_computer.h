@@ -667,6 +667,9 @@ class FCIComputer {
     /// clear the timings
     void clear_timings() { timings_.clear(); }
 
+    void do_on_gpu();
+    void do_on_cpu();
+
   private:
 
     bool use_gpu_operations_ = false;

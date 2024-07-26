@@ -1,6 +1,6 @@
 import qforte as qf
 import numpy as np
-shape = [1000, 1000]
+shape = [2000, 2000]
 
 my_tensorGPU = qf.TensorGPU(shape, "TensorGPU 1")
 my_tensorGPU2 = qf.TensorGPU(shape, "TensorGPU 2")
@@ -29,6 +29,7 @@ timer1.reset()
 my_tensorGPU.add2(my_tensorGPU2)
 
 timer1.record("gpu")
+timer1.reset()
 other.add(other2)
 timer1.record("normal")
 my_tensorGPU.to_cpu()
