@@ -258,11 +258,11 @@ class SRQD(Algorithm):
                     x = lstsq(S, btot)[0]
                     x = np.real(x)
                     x_list = x.tolist()
-                    # x_list_fci = [x*self._dt for x in x_list]
-                    # self._sig.set_coeffs(x_list_fci)
+                    x_list_fci = [x*self._dt for x in x_list]
+                    self._sig.set_coeffs(x_list_fci)
 
 
-                    self._sig.set_coeffs(x_list)
+                    # self._sig.set_coeffs(x_list)
 
                     self._qc.evolve_pool_trotter_basic(self._sig,
                                                     antiherm=True,
@@ -384,7 +384,7 @@ class SRQD(Algorithm):
     def print_summary_banner(self):
         print('\n\n                        ==> SRQD summary <==')
         print('-----------------------------------------------------------')
-        print('Final QITE Energy:                        ', round(self._Egs, 10))
+        print(f'Final Root {self._target_root} Energy:                     ', round(self._Egs, 10))
         print('Number of operators in pool:              ', self._NI)
         print('Number of classical parameters used:      ', self._n_classical_params)
         print('Estimated classical memory usage (GB):    ', f'{self._total_memory * 10**-9:e}')
@@ -419,10 +419,6 @@ class SRQD(Algorithm):
         S = np.zeros((Idim, Idim), dtype=complex)
         b = np.zeros(Idim, dtype=complex)
 
-        # if(self._second_order):
-        prefactor = -2.0
-        S_factor = 2.0
-
         Ipsi_qc = qf.FCIComputer(self._nel, self._sz, self._norb)
         Hpsi_qc = qf.FCIComputer(self._nel, self._sz, self._norb)
         Hpsi_qc.set_state(self._qc.get_state_deep())
@@ -441,7 +437,7 @@ class SRQD(Algorithm):
                 # build b (second order variation)
                 # if(self._second_order):
                 exp_val = Hpsi_qc.get_state_deep().vector_dot(Ipsi_mu)
-                b[i] = prefactor * exp_val
+                b[i] = -2.0 * exp_val
 
                 # populate lower triangle of S and copy conjugate to upper triangle
                 for j in range(i):
@@ -451,7 +447,7 @@ class SRQD(Algorithm):
                     S[i][j] = Ipsi_mu.vector_dot(Ipsi_qc.get_state_deep())
                     S[j][i] = S[i][j].conj()
 
-            return S_factor * np.real(S), np.real(b)
+            return 2.0 * np.real(S), np.real(b)
 
         else:
             rho_psi = []
@@ -466,14 +462,14 @@ class SRQD(Algorithm):
                 # build b (second order variation)
                 # if(self._second_order):
                 exp_val = Hpsi_qc.get_state_deep().vector_dot(rho_psi[i])
-                b[i] = prefactor * exp_val
+                b[i] = -2.0 * exp_val
 
                 # populate lower triangle of S and copy conjugate to upper triangle
                 for j in range(i):
                     S[i][j] = rho_psi[i].vector_dot(rho_psi[j])
                     S[j][i] = S[i][j].conj()
 
-            return S_factor * np.real(S), np.real(b)
+            return 2.0 * np.real(S), np.real(b)
 
 
     def print_expansion_ops(self):

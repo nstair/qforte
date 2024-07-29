@@ -29,10 +29,10 @@ print(f'The HF energy from Psi4:                                     {mol.hf_ene
 print('\nBegin QDavidson test for H4')
 print('-------------------------')
 
-alg = SRQD(mol, computer_type='fci', verbose=0)
+alg = SRQD(mol, computer_type='fci', verbose=1)
 alg.run(thresh=1.0e-9,
         dt=1.0e-4,
-        max_itr=10)
+        max_itr=3)
 # Egs_FCI_low_mem = alg.get_gs_energy()
 
 print(f'The HF energy from Psi4:                                     {mol.hf_energy:12.10f}')
