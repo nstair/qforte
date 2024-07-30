@@ -136,6 +136,9 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_qubit_operator", &SQOpPool::get_qubit_operator, py::arg("order_type"),
              py::arg("combine_like_terms") = true, py::arg("qubit_excitations") = false)
         .def("fill_pool", &SQOpPool::fill_pool)
+        .def("fill_pool_df_trotter", &SQOpPool::fill_pool_df_trotter)
+        .def("append_givens_ops_sector", &SQOpPool::append_givens_ops_sector)
+        .def("append_diagonal_ops_all", &SQOpPool::append_diagonal_ops_all)
         .def("str", &SQOpPool::str)
         .def("__getitem__", [](const SQOpPool &pool, size_t i) { return pool.terms()[i]; })
         .def("__iter__", [](const SQOpPool &pool) { return py::make_iterator(pool.terms()); },

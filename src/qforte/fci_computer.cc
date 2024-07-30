@@ -992,7 +992,13 @@ void FCIComputer::evolve_individual_nbody(
             annb);
 
     } else {
-        throw std::invalid_argument("Evolved state must remain in spin and particle-number symmetry sector");
+        print_vector(crea, "crea");
+        print_vector(anna, "anna");
+        print_vector(creb, "creb");
+        print_vector(annb, "annb");
+        throw std::invalid_argument(
+            "Evolved state must remain in spin and particle-number symmetry sector, bad op above"
+        );
     }
 }
 
