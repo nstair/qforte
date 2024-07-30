@@ -5,6 +5,8 @@
 #include "sq_operator.h"
 #include "qubit_op_pool.h"
 #include "sq_op_pool.h"
+#include "df_hamiltonian.h"
+#include "tensor.h"
 
 #include "qubit_basis.h"
 
@@ -541,6 +543,144 @@ void SQOpPool::fill_pool(std::string pool_type){
         }
     } else {
         throw std::invalid_argument( "Invalid pool_type specified." );
+    }
+}
+
+void SQOpPool::fill_pool_df_trotter(
+    const DFHamiltonian& df_ham,
+    const std::complex<double> coeff)
+{
+    // structure should resembel the apply DFHam funciton in fci_computer.cc
+    size_t nleaves = df_ham.get_trotter_basis_change_matrices().size();
+
+    if (nleaves - 1 != df_ham.get_scaled_density_density_matrices().size()){
+        throw std::invalid_argument("Incompatiable array lengths.");
+    }
+
+    // NOTE(Nick): the first DF givens rotation should ALREADY be time scalled 
+    // by the user, otherwise this routine won't match the trotter evolution.
+    // As such we anticipate the resulting pool will be evolved by coeff=dt,
+    // and so this will correctly scale the coefficents. 
+    append_givens_ops_sector(
+        df_ham.get_trotter_basis_change_matrices()[0],
+        1.0/coeff,
+        true
+    );
+
+    append_givens_ops_sector(
+        df_ham.get_trotter_basis_change_matrices()[0],
+        1.0/coeff,
+        false
+    );
+
+    for (size_t l = 1; l < nleaves; ++l) {
+        append_diagonal_ops_all(
+            df_ham.get_scaled_density_density_matrices()[l - 1],
+            1.0
+        );
+
+        // NOTE(Nick): subsequent givens rotations DON'T need time scaling
+        append_givens_ops_sector(
+            df_ham.get_trotter_basis_change_matrices()[l],
+            1.0/coeff,
+            true
+        );
+
+        append_givens_ops_sector(
+            df_ham.get_trotter_basis_change_matrices()[l],
+            1.0/coeff,
+            false
+        );
+    }
+}
+
+void SQOpPool::append_givens_ops_sector(
+    const Tensor& U,
+    const std::complex<double> coeff,
+    const bool is_alfa)
+{
+    size_t sigma = 0;
+    if (is_alfa){ 
+        sigma = 0; 
+    } else {
+        sigma = 1;
+    }
+
+    U.square_error();
+    Tensor U2 = U;
+
+    //NOTE(Nick): May be SLOW, or don't need to compute, could just store rots_and_diag
+    // in DFHamiltonain class pass directly.
+    auto rots_and_diag = DFHamiltonian::givens_decomposition_square(U2);
+
+    auto ivec = std::get<0>(rots_and_diag);
+    auto jvec = std::get<1>(rots_and_diag);
+    auto thts = std::get<2>(rots_and_diag);
+    auto phis = std::get<3>(rots_and_diag);
+
+    auto diags = std::get<4>(rots_and_diag);
+
+    for (size_t k = 0; k < ivec.size(); k++){
+        size_t i = ivec[k];
+        size_t j = jvec[k];
+        double tht = thts[k];
+        double phi = phis[k];
+
+        if (std::abs(phi) > 1.0e-12){
+            SQOperator num_op1; 
+            num_op1.add_term(-phi/2.0, {2 * j + sigma}, {2 * j + sigma});
+            num_op1.add_term(-phi/2.0, {2 * j + sigma}, {2 * j + sigma});   
+            terms_.push_back(std::make_pair(coeff, num_op1));      
+        }
+
+        if (std::abs(tht) > 1.0e-12) {
+            std::complex<double> itheta(0.0, tht);
+            SQOperator single;
+            single.add_term(-itheta, {2 * i + sigma}, {2 * j + sigma});
+            single.add_term(+itheta, {2 * j + sigma}, {2 * i + sigma});
+            terms_.push_back(std::make_pair(coeff, single));  
+        }
+    }
+        
+    for (size_t l = 0; l < diags.size(); l++){
+        if (std::abs(diags[l]) > 1.0e-12) {
+            double diag_angle = std::atan2(diags[l].imag(), diags[l].real());
+            SQOperator num_op2;
+            num_op2.add_term(-diag_angle/2.0, {2 * l + sigma}, {2 * l + sigma});
+            num_op2.add_term(-diag_angle/2.0, {2 * l + sigma}, {2 * l + sigma});
+            terms_.push_back(std::make_pair(coeff, num_op2));  
+        }
+    }
+}
+
+void SQOpPool::append_diagonal_ops_all(
+    const Tensor& V, 
+    const std::complex<double> coeff)
+{
+    V.square_error();
+
+    int norbs = V.shape()[0];
+
+    for (size_t p = 0; p < norbs; p++) {
+        for (size_t q = 0; q < norbs; q++) {
+            for (size_t sig = 0; sig < 2; sig++){
+                for (size_t tau = 0; tau < 2; tau++){
+                    size_t pq = p*norbs + q;
+                    std::complex<double> vpq = V.read_data()[pq];
+                    if (std::abs(vpq) > 1.0e-12){
+                        SQOperator num_op;
+                        if(2 * p + sig == 2 * q + tau && 2 * q + tau == 2 * p + sig && 2 * p + sig == 2 * q + tau){
+                            num_op.add_term(0.5 * vpq, {2 * p + sig}, {2 * p + sig});
+                            num_op.add_term(0.5 * vpq, {2 * p + sig}, {2 * p + sig});
+                        } else {
+                            num_op.add_term(-0.5 * vpq, {2 * p + sig, 2 * q + tau}, {2 * p + sig, 2 * q + tau});
+                            num_op.add_term(-0.5 * vpq, {2 * p + sig, 2 * q + tau}, {2 * p + sig, 2 * q + tau});
+                        }
+                        terms_.push_back(std::make_pair(coeff, num_op));    
+                    }
+                }
+            }
+        }
     }
 }
 

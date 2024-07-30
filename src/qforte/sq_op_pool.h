@@ -8,6 +8,8 @@
 class SQOperator;
 class QubitOperator;
 class QubitOpPool;
+class DFHamiltonian;
+class Tensor;
 
 // Represents an arbitrary linear combination of second quantized operators.
 // May also represent an array of second quantized operators by ignoring
@@ -46,6 +48,25 @@ class SQOpPool {
 
     /// builds the sq operator pool
     void fill_pool(std::string pool_type);
+
+    /// builds the sq operator pool that, when trotterized, 
+    /// reporduces the (trotterized) evolution uder a
+    /// DFHamiltonian. 
+    void fill_pool_df_trotter(const DFHamiltonian& df_ham, const std::complex<double> coeff);
+
+    /// Append SQ operatrs to the pool corresponding to a Givens rotation defined 
+    /// by the matrix U. Used primarily in fill_pool_df_trotter.
+    void append_givens_ops_sector(
+      const Tensor& U, 
+      const std::complex<double> coeff, 
+      const bool is_alfa);
+
+    /// Append alpha / beta mixed SQ operatrs to the pool corresponding 
+    /// to an exponentiated diagonal operator defined by V.
+    /// Used primarily in fill_pool_df_trotter.
+    void append_diagonal_ops_all(
+      const Tensor& V, 
+      const std::complex<double> coeff);
 
     /// return a vector of string representing this sq operator pool
     std::string str() const;
