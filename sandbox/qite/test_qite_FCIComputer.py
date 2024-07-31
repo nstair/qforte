@@ -8,13 +8,13 @@ print('\nBuild Psi4 Geometry')
 print('-------------------------')
 
 geom = [('H', (0., 0., 0.)), 
-        ('H', (0., 0., .50)),
-        ('H', (0., 0., 1.00)), 
-        ('H', (0., 0., 1.50)),
+        ('H', (0., 0., 1.00)),
         ('H', (0., 0., 2.00)), 
-        ('H', (0., 0., 2.50)),
-        ('H', (0., 0., 3.00)), 
-        ('H', (0., 0., 3.50))]
+        ('H', (0., 0., 3.00))]
+        # ('H', (0., 0., 2.00))] 
+        # ('H', (0., 0., 2.50)),
+        # ('H', (0., 0., 3.00)), 
+        # ('H', (0., 0., 3.50))]
 # Get the molecule object that now contains both the fermionic and qubit Hamiltonians.
 mol = system_factory(build_type='psi4', mol_geometry=geom, basis='sto-6g', run_fci=True, run_ccsd=False)
 # mol.ccsd_energy = 0.0
@@ -45,7 +45,7 @@ print('\nBegin QITE test for H8 2nd order')
 print('-------------------------')
 
 alg = QITE(mol, reference=mol.hf_reference, computer_type='fci', verbose=0)
-alg.run(beta=4, db = 0.1, sparseSb=False, expansion_type='SD', low_memorySb=False, second_order=True)
+alg.run(beta=4, db = 0.1, sparseSb=False, expansion_type='SD', low_memorySb=False, second_order=True, print_pool=True)
 Egs_FCI = alg.get_gs_energy()
 
 # print(f'The FCI energy for H2 at 1.5 Angstrom in a sto-3g basis:     {E_fci:12.10f}')

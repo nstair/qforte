@@ -133,7 +133,8 @@ class QITE(Algorithm):
             do_lanczos=False,
             lanczos_gap=2,
             realistic_lanczos=True,
-            fname=None):
+            fname=None,
+            print_pool=False):
 
         self._beta = beta
         self._db = db
@@ -156,6 +157,7 @@ class QITE(Algorithm):
         self._lanczos_gap = lanczos_gap
         self._realistic_lanczos = realistic_lanczos
         self._fname = fname
+        self._print_pool = print_pool
 
         if(self._fname is None):
             if(self._use_exact_evolution):
@@ -624,6 +626,10 @@ class QITE(Algorithm):
             f.write('#-------------------------------------------------------------------------------\n')
             f.write(f'  {0.0:7.3f}    {self._Ekb[0]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}\n')
 
+            if(self._print_pool):
+                f_pool = open(f"pool_qite_{self._fname}_summary.dat", "w+", buffering=1)
+                f_pool.write(f'Initial SQOP Pool:\n{self._sig}\n')
+
         for kb in range(1, self._nbeta):
             if(self._use_exact_evolution):
                 if(self._apply_ham_as_tensor):
@@ -697,10 +703,18 @@ class QITE(Algorithm):
             print(f' {kb*self._db:7.3f}    {self._Ekb[kb]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}')
             if (self._print_summary_file):
                 f.write(f'  {kb*self._db:7.3f}    {self._Ekb[kb]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}\n')
+                
+                if(self._print_pool):
+                    # sorted_pool = self._sig.terms()
+                    sorted_pool = sorted(self._sig.terms(), key=lambda t: (len(t[1].terms()[0][2]), t[1].terms()[0][2]))
+                    f_pool.write(f'iteration {kb} pool coeffs: {[term[0] for term in sorted_pool]}\n')
+
         self._Egs = self._Ekb[-1]
 
         if (self._print_summary_file):
             f.close()
+            if(self._print_pool):
+                f_pool.close()
 
     def print_expansion_ops(self):
         print('\nQITE expansion operators:')
