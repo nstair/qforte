@@ -68,7 +68,7 @@ my_timer.reset()
 
 fci_comp.do_on_cpu()
 fci_comp.apply_sqop(sqop)
-
+print("-----------------------------------------------------------------------")
 my_timer.record("normal")
 
 # fci_comp3.apply_sqop(sqop)
