@@ -8,6 +8,7 @@
 #include "circuit.h"
 #include "gate.h"
 #include "computer.h"
+#include "fci_computer_gpu.h"
 #include "fci_computer.h"
 #include "fci_graph.h"
 #include "qubit_operator.h"
@@ -252,6 +253,59 @@ PYBIND11_MODULE(qforte, m) {
         .def("__str__", &Computer::str)
         .def("__repr__", &Computer::str);
 
+    py::class_<FCIComputerGPU>(m, "FCIComputerGPU")
+        .def(py::init<int, int, int>(), "nel"_a, "sz"_a, "norb"_a, "Make a FCIComputerGPU with nel, sz, and norb")
+        .def("hartree_fock", &FCIComputerGPU::hartree_fock)
+        .def("set_element", &FCIComputerGPU::set_element)
+        .def("do_on_gpu", &FCIComputerGPU::do_on_gpu)
+        .def("do_on_cpu", &FCIComputerGPU::do_on_cpu)
+        .def("apply_tensor_spin_1bdy", &FCIComputerGPU::apply_tensor_spin_1bdy)
+        .def("apply_tensor_spin_12bdy", &FCIComputerGPU::apply_tensor_spin_12bdy)
+        .def("apply_tensor_spin_012bdy", &FCIComputerGPU::apply_tensor_spin_012bdy)
+        .def("apply_tensor_spat_12bdy", &FCIComputerGPU::apply_tensor_spat_12bdy)
+        .def("apply_tensor_spat_012bdy", &FCIComputerGPU::apply_tensor_spat_012bdy)
+        .def("apply_individual_sqop_term", &FCIComputerGPU::apply_individual_sqop_term)
+        .def("apply_sqop", &FCIComputerGPU::apply_sqop)
+        .def("apply_diagonal_of_sqop", &FCIComputerGPU::apply_diagonal_of_sqop, 
+            py::arg("sqop"),
+            py::arg("invert_coeff") = true
+            )
+        .def("apply_sqop_pool", &FCIComputerGPU::apply_sqop_pool)
+        .def("get_exp_val", &FCIComputerGPU::get_exp_val)
+        .def("get_exp_val_tensor", &FCIComputerGPU::get_exp_val_tensor)
+        .def("evolve_op_taylor", &FCIComputerGPU::evolve_op_taylor)
+        .def("apply_sqop_evolution", &FCIComputerGPU::apply_sqop_evolution, 
+            py::arg("time"),
+            py::arg("sqop"),
+            py::arg("antiherm") = false,
+            py::arg("adjoint") = false
+            )
+        .def("evolve_pool_trotter_basic", &FCIComputerGPU::evolve_pool_trotter_basic, 
+            py::arg("sqop"),
+            py::arg("antiherm") = false,
+            py::arg("adjoint") = false
+            )
+        .def("evolve_pool_trotter", &FCIComputerGPU::evolve_pool_trotter, 
+            py::arg("sqop"),
+            py::arg("evolution_time"),
+            py::arg("trotter_steps"),
+            py::arg("trotter_order"),
+            py::arg("antiherm") = false,
+            py::arg("adjoint") = false
+            )
+        .def("set_state", &FCIComputerGPU::set_state)
+        .def("get_state", &FCIComputerGPU::get_state)
+        .def("get_state_deep", &FCIComputerGPU::get_state_deep)
+        .def("str", &FCIComputerGPU::str, 
+            py::arg("print_data") = true, 
+            py::arg("print_complex") = false)
+        .def("__str__", &FCIComputerGPU::str, 
+            py::arg("print_data") = true, 
+            py::arg("print_complex") = false)
+        .def("__repr__", &FCIComputerGPU::str, 
+            py::arg("print_data") = true, 
+            py::arg("print_complex") = false);
+
     py::class_<FCIComputer>(m, "FCIComputer")
         .def(py::init<int, int, int>(), "nel"_a, "sz"_a, "norb"_a, "Make a FCIComputer with nel, sz, and norb")
         .def("hartree_fock", &FCIComputer::hartree_fock)
@@ -447,7 +501,6 @@ PYBIND11_MODULE(qforte, m) {
         .def("zero", &TensorGPU::zero)
         .def("shape", &TensorGPU::shape)
         .def("norm", &TensorGPU::norm)
-        .def("read_data", &TensorGPU::read_data)
         .def("ndim_error", &TensorGPU::ndim_error)
         .def("fill_from_nparray", &TensorGPU::fill_from_nparray)
         .def("set", &TensorGPU::set);

@@ -2026,6 +2026,7 @@ void FCIComputer::apply_individual_nbody1_accumulate(
         targetb.size(),
         tensor_mem);
     my_timer.record("gpu function");
+    my_timer.reset();
 
 
     cudaMemcpy(Cout.data().data(), d_Cout, tensor_mem, cudaMemcpyDeviceToHost);
