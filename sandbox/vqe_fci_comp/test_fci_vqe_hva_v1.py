@@ -2,7 +2,6 @@ import qforte as qf
 
 
 geom = [
-    # ('Be', (0., 0., 1.00)), 
     ('H', (0., 0., 1.00)),
     ('H', (0., 0., 2.00)),
     ('H', (0., 0., 3.00)),
@@ -15,6 +14,12 @@ geom = [
     # ('H', (0., 0., 10.00))
     ]
 
+# geom = [
+#     ('Be', (0., 0., 2.00)), 
+#     ('H', (0., 0., 1.00)),
+#     ('H', (0., 0., 3.00)),
+#     ]
+
 timer = qf.local_timer()
 
 timer.reset()
@@ -22,45 +27,33 @@ timer.reset()
 mol = qf.system_factory(
     build_type='psi4', 
     mol_geometry=geom, 
-    basis='sto-3g' ,
+    basis='sto-3g',
     run_fci=1)
 
 timer.record("Psi4 Setup")
 
-
-
-alg_fock = qf.ADAPTVQE(
-    mol,
-    computer_type = 'fock'
-    )
-
-
-timer.reset()
-
-alg_fock.run(
-    opt_thresh=1.0e-4, 
-    pool_type='SD',
-    optimizer='BFGS',
-    )
-
-timer.record("ADAPT Fock")
-
 print(f'\n\n Efci:   {mol.fci_energy:+12.10f}')
 
-
-alg_fci = qf.ADAPTVQE(
+alg = qf.HVAVQE(
     mol,
     computer_type = 'fci',
+    apply_ham_as_tensor = True,
     )
 
 timer.reset()
-alg_fci.run(opt_thresh=1.0e-4, 
-            pool_type='SD',
-            optimizer='BFGS',
-            )
+alg.run(
+    opt_thresh=1.0e-6,
+    opt_ftol=1.0e-6,
+    opt_maxiter=100,
+    pool_type='SQHVA',
+    optimizer='BFGS',
+    use_analytic_grad=True,
+    start_from_ham_params=True,
+    noise_factor=1.0e-12)
 
-timer.record("ADAPT FCI")
+timer.record("HVA FCI")
 
 print(timer)
             
 print(f'\n\n Efci:   {mol.fci_energy:+12.10f}')
+

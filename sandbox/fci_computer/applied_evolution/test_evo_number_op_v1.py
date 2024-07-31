@@ -31,10 +31,10 @@ print(fci_comp)
 
 sq_terms = [
     (+0.704645 * 1.0j, [7, 6], [3, 2]), # 2body ab 
-    (+0.4 * 1.0j, [6], [0]), # 1bdy-a
-    (+0.4 * 1.0j, [7], [3]), # 1bdy-a
-    (+0.704645 * 1.0, [6, 3], [3, 2]), # 2body-nbr ab 
-    (+0.704645 * 1.0, [6, 5], [5, 2]), # 2body-nbr ab (coeff must be REAL)
+    # (+0.4 * 1.0j, [6], [0]), # 1bdy-a
+    # (+0.4 * 1.0j, [7], [3]), # 1bdy-a
+    # (+0.704645 * 1.0, [6, 3], [3, 2]), # 2body-nbr ab 
+    # (+0.704645 * 1.0, [6, 5], [5, 2]), # 2body-nbr ab (coeff must be REAL)
     (+0.704645 * 1.0, [2], [2]), # 1body-nbr ab (coeff must be REAL)
     ]
 
