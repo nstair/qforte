@@ -50,9 +50,13 @@ class FCIComputer {
     /// apply a TensorOperator to the current state 
     void apply_tensor_operator(const TensorOperator& top);
 
+    void apply_tensor_spat_1bdy(
+      const Tensor& h1e, 
+      size_t norb);
+
     /// apply a 1-body TensorOperator to the current state 
     // void apply_tensor_spin_1bdy(const TensorOperator& top);
-
+    
     void apply_tensor_spin_1bdy(
       const Tensor& h1e, 
       size_t norb);
@@ -314,6 +318,11 @@ class FCIComputer {
       const Tensor& h2e_einsum, 
       size_t norb);  
 
+    /// Applies the double factorized hamiltonian to the current state
+    void apply_df_ham(
+      const DFHamiltonian& df_ham,
+      const double nuc_rep_en);
+
     /// Applies the trotterized form of a
     /// double factorized hamiltonain time evolution,
     /// NOTE: thresholds for the double factorization eigenvalue cutoffs
@@ -333,6 +342,9 @@ class FCIComputer {
       const Tensor& V,
       const double evolution_time);
 
+    /// Apply a diagonal operator defined by V to the wave funciton.
+    void apply_diagonal_from_mat(const Tensor& V);
+
     void apply_diagonal_array(
       Tensor& C, // Just try in-place for now...
       const std::vector<uint64_t>& astrs,
@@ -343,7 +355,8 @@ class FCIComputer {
       const size_t nbeta_strs,
       const size_t nalfa_el,
       const size_t nbeta_el,
-      const size_t norb);
+      const size_t norb,
+      const bool exponentiate = true);
 
     void apply_diagonal_array_part(
       std::vector<std::complex<double>>& out, 
@@ -432,6 +445,8 @@ class FCIComputer {
     void hartree_fock();
 
     void print_vector(const std::vector<int>& vec, const std::string& name);
+
+    void print_vector_z(const std::vector<std::complex<double>>& vec, const std::string& name);
 
     void print_vector_uint(const std::vector<uint64_t>& vec, const std::string& name);
 

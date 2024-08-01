@@ -239,6 +239,7 @@ PYBIND11_MODULE(qforte, m) {
         .def(py::init<int, int, int>(), "nel"_a, "sz"_a, "norb"_a, "Make a FCIComputer with nel, sz, and norb")
         .def("hartree_fock", &FCIComputer::hartree_fock)
         .def("set_element", &FCIComputer::set_element)
+        .def("apply_tensor_spat_1bdy", &FCIComputer::apply_tensor_spat_1bdy)
         .def("apply_tensor_spin_1bdy", &FCIComputer::apply_tensor_spin_1bdy)
         .def("apply_tensor_spin_12bdy", &FCIComputer::apply_tensor_spin_12bdy)
         .def("apply_tensor_spin_012bdy", &FCIComputer::apply_tensor_spin_012bdy)
@@ -275,6 +276,7 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("antiherm") = false,
             py::arg("adjoint") = false
             )
+        .def("apply_df_ham", &FCIComputer::apply_df_ham)
         .def("evolve_df_ham_trotter", &FCIComputer::evolve_df_ham_trotter)
         .def("evolve_givens", &FCIComputer::evolve_givens)
         .def("evolve_diagonal_from_mat", &FCIComputer::evolve_diagonal_from_mat)
