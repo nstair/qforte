@@ -177,21 +177,12 @@ std::tuple<
         for (size_t idx = 0; idx < row_indices.size(); ++idx) {
             size_t i = row_indices[idx];
             size_t j = column_indices[idx];
-
-            // size_t ij_right = current_matrix.tidx_to_vidx({i, j});
             size_t ij_right = n*i + j;
 
             std::complex<double> right_element = std::conj(current_matrix.data()[ij_right]);
-            // std::complex<double> right_element = std::conj(current_matrix[i][j]);
-
             if (always_insert || std::abs(right_element) > 1.0e-11) {
-
-                // size_t ij_left = current_matrix.tidx_to_vidx({i, j-1});
                 size_t ij_left = n * i + j - 1;
                 std::complex<double> left_element = std::conj(current_matrix.data()[ij_left]);
-
-                // std::complex<double> left_element = std::conj(current_matrix[i][j - 1]);
-
                 auto givens_rotation = givens_matrix_elements(left_element, right_element, "right");
 
                 double theta = std::asin(std::real(givens_rotation[1][0]));

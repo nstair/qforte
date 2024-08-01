@@ -127,6 +127,40 @@ void FCIComputer::apply_tensor_spin_1bdy(const Tensor& h1e, size_t norb) {
     C_ = Cnew;
 }
 
+/// apply a Tensor represending a 1-body spatial-orbital indexed operator to the current state 
+void FCIComputer::apply_tensor_spat_1bdy(const Tensor& h1e, size_t norb) {
+
+    if(h1e.size() != (norb) * (norb)){
+        throw std::invalid_argument("Expecting h1e to be nso x nso for apply_tensor_spin_1bdy");
+    }
+
+    Tensor Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
+
+    apply_array_1bdy(
+        Cnew,
+        graph_.read_dexca_vec(),
+        nalfa_strs_,
+        nbeta_strs_,
+        graph_.get_ndexca(),
+        h1e,
+        norb_,
+        true);
+
+    C_.transpose();
+
+    apply_array_1bdy(
+        Cnew,
+        graph_.read_dexcb_vec(),
+        nbeta_strs_,
+        nalfa_strs_,
+        graph_.get_ndexcb(),
+        h1e,
+        norb_,
+        false);
+
+    C_ = Cnew;
+}
+
 /// apply Tensors represending 1-body and 2-body spin-orbital indexed operator to the current state 
 /// A LOT of wasted memory here, will want to improve...
 void FCIComputer::apply_tensor_spin_12bdy(
@@ -1473,6 +1507,115 @@ std::complex<double> FCIComputer::get_exp_val_tensor(
 
 // ====> Double Factorization functions and such <=== //
 
+// NOTE(Nick): This funciton may be SLOW, will want to reduce the amount of 
+// tensory copying to accelerate.
+void FCIComputer::apply_df_ham(
+      const DFHamiltonian& df_ham,
+      const double nuc_rep_en)
+{
+    size_t nleaves = df_ham.get_basis_change_matrices().size();
+
+    if (nleaves != df_ham.get_scaled_density_density_matrices().size()){
+        throw std::invalid_argument("Incompatiable array lengths.");
+    }
+
+    Tensor Cin = C_;
+    Tensor Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
+    Tensor H1 = df_ham.get_one_body_ints();
+    H1.add(df_ham.get_one_body_correction());
+
+    // first apply the modified one body term
+    apply_array_1bdy(
+        Cnew,
+        graph_.read_dexca_vec(),
+        nalfa_strs_,
+        nbeta_strs_,
+        graph_.get_ndexca(),
+        H1,
+        norb_,
+        true);
+
+    C_.transpose();
+
+    apply_array_1bdy(
+        Cnew,
+        graph_.read_dexcb_vec(),
+        nbeta_strs_,
+        nalfa_strs_,
+        graph_.get_ndexcb(),
+        H1,
+        norb_,
+        false);
+
+    for (size_t l = 0; l < nleaves; ++l) {
+
+        // reset to the initial state
+        C_ = Cin;
+
+        SQOpPool glpool;
+        SQOpPool dlpool;
+        
+        // get pool for Gl_alfa
+        glpool.append_givens_ops_sector(
+            df_ham.get_basis_change_matrices()[l],
+            1.0,
+            true
+        );
+
+        // get pool for Gl_beta
+        glpool.append_givens_ops_sector(
+            df_ham.get_basis_change_matrices()[l],
+            1.0,
+            false
+        );
+
+        // get pool for dl_beta
+        dlpool.append_diagonal_ops_all(
+            df_ham.get_scaled_density_density_matrices()[l],
+            1.0
+        );
+
+        // apply Gl
+        evolve_pool_trotter_basic(
+            glpool,
+            false,
+            false
+        );
+
+        // NOTE(Nick): SLOW, we want the below funciton for fast diagonal applicaion
+        // apply_diagonal_from_mat(
+        //     df_ham.get_scaled_density_density_matrices()[l]
+        // );
+
+        apply_sqop_pool(dlpool);
+
+        // apply Gl^dag
+        evolve_pool_trotter_basic(
+            glpool,
+            false,
+            true
+        );
+
+        // accumulate
+        Cnew.zaxpy(
+            C_,
+            1.0,
+            1,
+            1
+        );
+    }
+
+    // account for zero body energy
+    Cnew.zaxpy(
+            Cin,
+            nuc_rep_en,
+            1,
+            1
+        );
+
+    C_ = Cnew;
+}
+
 void FCIComputer::evolve_df_ham_trotter(
       const DFHamiltonian& df_ham,
       const double evolution_time)
@@ -1611,6 +1754,28 @@ void FCIComputer::evolve_diagonal_from_mat(
 
 }
 
+
+void FCIComputer::apply_diagonal_from_mat(const Tensor& V)
+{
+
+    throw std::invalid_argument("apply_diagonal_from_mat is not yet funcitonal");
+
+    Tensor D({V.shape()[0]}, "D2");
+
+    apply_diagonal_array(
+        C_, 
+        graph_.get_astr(),
+        graph_.get_bstr(),
+        D,
+        V,
+        nalfa_strs_,
+        nbeta_strs_,
+        nalfa_el_,
+        nbeta_el_,
+        norb_,
+        false);
+}
+
 void FCIComputer::apply_diagonal_array(
         Tensor& C, // Just try in-place for now...
         const std::vector<uint64_t>& astrs,
@@ -1621,7 +1786,8 @@ void FCIComputer::apply_diagonal_array(
         const size_t nbeta_strs,
         const size_t nalfa_el,
         const size_t nbeta_el,
-        const size_t norb)
+        const size_t norb,
+        const bool exponentiate)
 {
     D.shape_error({norb});
     V.shape_error({norb, norb});
@@ -1656,13 +1822,27 @@ void FCIComputer::apply_diagonal_array(
     // NOTE(Nick), we don't need to do this every time...,
     // can pre-compute the exponentias and store them
     // in DFHamiltonian
-    for (int i = 0; i < norb; ++i) {
-        diagexp[i] = std::exp(D.read_data()[i]);
-    }
 
-    for (int i = 0; i < norb * norb; ++i) {
-        arrayexp[i] = std::exp(V.read_data()[i]);
+    // NOTE(Nick): Also, the non exponeintal version of this funciton is not yet working...
+
+    if(exponentiate){
+        for (int i = 0; i < norb; ++i) {
+            diagexp[i] = std::exp(D.read_data()[i]);
+        }
+
+        for (int i = 0; i < norb * norb; ++i) {
+            arrayexp[i] = std::exp(V.read_data()[i]);
+        }
+    } else {
+        for (int i = 0; i < norb; ++i) {
+            diagexp[i] = D.read_data()[i];
+        }
+
+        for (int i = 0; i < norb * norb; ++i) {
+            arrayexp[i] = V.read_data()[i];
+        }
     }
+    
 
     apply_diagonal_array_part(
         adiag, 
@@ -1777,6 +1957,17 @@ void FCIComputer::print_vector(const std::vector<int>& vec, const std::string& n
     std::cout << "\n" << name << ": ";
     for (size_t i = 0; i < vec.size(); ++i) {
         std::cout << static_cast<int>(vec[i]);
+        if (i < vec.size() - 1) {
+           std::cout << ", "; 
+        }
+    }
+    std::cout << std::endl;
+}
+
+void FCIComputer::print_vector_z(const std::vector<std::complex<double>>& vec, const std::string& name) {
+    std::cout << "\n" << name << ": ";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        std::cout << static_cast<std::complex<double>>(vec[i]);
         if (i < vec.size() - 1) {
            std::cout << ", "; 
         }
