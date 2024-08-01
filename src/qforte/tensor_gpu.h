@@ -14,6 +14,8 @@
 #include "qforte-def.h"
 #include "tensor.h"
 
+class Tensor;
+
 class TensorGPU {
 
 public:
@@ -28,7 +30,8 @@ public:
  **/
 TensorGPU(
     const std::vector<size_t>& shape,
-    const std::string& name = "T"
+    const std::string& name = "T",
+    bool on_gpu = false
     );
 
 TensorGPU();
@@ -38,10 +41,18 @@ TensorGPU();
 void to_gpu();
 void to_cpu();
 void add(const TensorGPU&);
+
 void zero();
-std::vector<std::complex<double>>& read_data() { return h_data_; }
-// std::complex<double>* get_d_data() const { return d_data_; }
-cuDoubleComplex* get_d_data() const { return d_data_; }
+
+void zero_gpu();
+
+std::vector<std::complex<double>>& h_data() { return h_data_; }
+
+const std::vector<std::complex<double>>& read_h_data() const { return h_data_; }
+
+cuDoubleComplex* d_data() { return d_data_; }
+
+const cuDoubleComplex* read_d_data() const { return d_data_; }
 
 void add2(const TensorGPU& other);
 
@@ -70,8 +81,6 @@ void ndim_error(size_t) const;
 
 void fill_from_nparray(std::vector<std::complex<double>>, std::vector<size_t>);
 
-const std::vector<std::complex<double>>& read_h_data() const { return h_data_; }
-
 
 std::string str(
     bool print_data = true,
@@ -99,13 +108,6 @@ const bool initialized() const { return initialized_; }
  **/
 std::vector<std::complex<double>>& data() { return h_data_; }
 
-/**
- * The data of this Tensor, using C-style compound indexing.
- *
- * @return a reference to the vector data of this tensor, can't be modified, only read
- **/
-const std::vector<std::complex<double>>& read_data() const { return h_data_; }
-
 // => Setters <= //
 
 /// Set this Tensor's name to @param name
@@ -115,7 +117,7 @@ void set_name(const std::string& name) { name_ = name; }
 void set_strides(const std::vector<size_t> strides) { strides_ = strides; } 
 
 /// Set this Tensor to all seros with @param shape 
-void zero_with_shape(const std::vector<size_t>& shape);
+void zero_with_shape(const std::vector<size_t>& shape, bool on_gpu);
 
 // => Clone Actions <= //
 
@@ -175,7 +177,9 @@ void scale(std::complex<double> a);
  **/
 void copy_in(const TensorGPU& other); 
 
-void copy_in_tensorgpu(const TensorGPU& other);
+void copy_in_gpu(const TensorGPU& other);
+
+void copy_in_from_tensor(const Tensor& other);
 
 /**
  * Update this Tensor (y) to be y = a * x + b * y
@@ -347,7 +351,7 @@ std::vector<std::complex<double>> h_data_;
 
 cuDoubleComplex* d_data_;
 
-int on_gpu_ = 0;
+bool on_gpu_;
 
 
 // => Ed's special total memory thing <= //

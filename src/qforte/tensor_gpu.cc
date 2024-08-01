@@ -25,10 +25,11 @@ size_t TensorGPU::total_memory__ = 0;
 /// Constructor
 TensorGPU::TensorGPU(
     const std::vector<size_t>& shape,
-    const std::string& name
-    ) :
+    const std::string& name,
+    bool on_gpu) :
     shape_(shape),
-    name_(name)
+    name_(name),
+    on_gpu_(on_gpu)
 {
     strides_.resize(shape_.size());
     size_ = 1L;
@@ -54,6 +55,11 @@ TensorGPU::TensorGPU()
     size_ = 1L;
     h_data_.resize(size_, 0.0);
     total_memory__ += h_data_.size() * sizeof(std::complex<double>);
+    on_gpu_ = false;
+
+    // allocate device memory
+    cudaMalloc((void**) & d_data_, size_ * sizeof(std::complex<double>));
+
 }
 
 /// Destructor
@@ -69,7 +75,7 @@ TensorGPU::~TensorGPU()
 
 void TensorGPU::to_gpu()
 {
-
+    cpu_error();
     if (initialized_ == 0) {
         std::cerr << "Tensor not initialized" << std::endl;
         return;
@@ -88,7 +94,7 @@ void TensorGPU::to_gpu()
 // change to 'to_cpu'
 void TensorGPU::to_cpu()
 {
-    
+    gpu_error();
     if (initialized_ == 0) {
         std::cerr << "Tensor not initialized" << std::endl;
         return;
@@ -127,7 +133,7 @@ void TensorGPU::add2(const TensorGPU& other) {
 
     gpu_error();
     other.gpu_error();
-    add_wrapper2(d_data_, other.get_d_data(), size_, 256);
+    add_wrapper2(d_data_, other.read_d_data(), size_, 256);
 
     
 
@@ -141,7 +147,7 @@ void TensorGPU::add2(const TensorGPU& other) {
 void TensorGPU::gpu_error() const {
 
     if (not on_gpu_) {
-        throw std::runtime_error("Data not on GPU for " + name_);
+        throw std::runtime_error("Data not on GPU for Tensor" + name_);
     }
 
 }
@@ -149,14 +155,25 @@ void TensorGPU::gpu_error() const {
 void TensorGPU::cpu_error() const {
 
     if (on_gpu_) {
-        throw std::runtime_error("Data not on CPU for " + name_);
+        throw std::runtime_error("Data not on CPU for Tensor" + name_);
     }
 
 }
 
 void TensorGPU::zero()
 {
+    cpu_error();
     memset(h_data_.data(), '\0', sizeof(std::complex<double>) * size_);
+}
+
+void TensorGPU::zero_gpu()
+{
+    gpu_error();
+    cudaError_t err = cudaMemset(d_data_, '\0', sizeof(cuDoubleComplex) * size_);
+
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMemset failed: %s\n", cudaGetErrorString(err));
+    }
 }
 
 void TensorGPU::set(
@@ -274,7 +291,7 @@ void TensorGPU::fill_from_np(std::vector<std::complex<double>> arr, std::vector<
     std::memcpy(h_data_.data(), arr.data(), sizeof(std::complex<double>)*size_);
 }
 
-void TensorGPU::zero_with_shape(const std::vector<size_t>& shape)
+void TensorGPU::zero_with_shape(const std::vector<size_t>& shape, bool on_gpu)
 {
     std::vector<size_t> strides;
     strides.resize(shape.size());
@@ -295,7 +312,30 @@ void TensorGPU::zero_with_shape(const std::vector<size_t>& shape)
 
     // Ed's special memory thing
     total_memory__ = h_data_.size() * sizeof(std::complex<double>);
+
+    cudaError_t err1 = cudaFree(d_data_);
+    if (err1 != cudaSuccess) {
+        fprintf(stderr, "cudaFree failed: %s\n", cudaGetErrorString(err1));
+        return;
+    }
+
+    // Allocate new memory
+    cudaError_t err2 = cudaMalloc((void**) & d_data_, size_ * sizeof(cuDoubleComplex));
+    if (err2 != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed: %s\n", cudaGetErrorString(err2));
+        return;
+    }
+
+    cudaError_t err3 = cudaMemset(d_data_, '\0', sizeof(cuDoubleComplex) * size_);
+
+    if (err3 != cudaSuccess) {
+        fprintf(stderr, "cudaMemset failed: %s\n", cudaGetErrorString(err3));
+    }
+
+    on_gpu_ = on_gpu;
 }
+
+
 
 /// Get the vector index for this tensor based on the tensor index
 size_t TensorGPU::tidx_to_vidx(const std::vector<size_t>& tidx) const
@@ -456,25 +496,32 @@ void TensorGPU::copy_in(
     const TensorGPU& other
     )
 {
-    shape_error(other.shape());
-    std::memcpy(h_data_.data(), other.read_data().data(), sizeof(std::complex<double>)*size_);
-}
-
-void TensorGPU::copy_in_tensorgpu(
-    const TensorGPU& other
-    )
-{
-    shape_error(other.shape());
+    cpu_error();
     other.cpu_error();
+    shape_error(other.shape());
     std::memcpy(h_data_.data(), other.read_h_data().data(), sizeof(std::complex<double>)*size_);
 }
 
+void TensorGPU::copy_in_gpu(const TensorGPU& other)
+{
+    gpu_error();
+    other.gpu_error();
+    shape_error(other.shape());
+    cudaMemcpy(d_data_, other.read_d_data(), size_ * sizeof(cuDoubleComplex), cudaMemcpyDeviceToDevice);
+}
+
+void TensorGPU::copy_in_from_tensor(const Tensor& other)
+{
+    cpu_error();
+    shape_error(other.shape());
+    std::memcpy(h_data_.data(), other.read_data().data(), sizeof(std::complex<double>)*size_);    
+}
 
 void TensorGPU::subtract(const TensorGPU& other){
 
     shape_error(other.shape());
     for (size_t i = 0; i < size_; i++){
-        h_data_[i] -= other.read_data()[i];
+        h_data_[i] -= other.read_h_data()[i];
     }
 }
 
@@ -503,7 +550,7 @@ void TensorGPU::zaxpby(
 {
     shape_error(x.shape());
     math_zscale(size_, b, h_data_.data(),1);
-    math_zaxpy(size_, a, x.read_data().data(), incx, h_data_.data(), incy); 
+    math_zaxpy(size_, a, x.read_h_data().data(), incx, h_data_.data(), incy); 
 }
 
 void TensorGPU::zaxpy(
@@ -518,7 +565,7 @@ void TensorGPU::zaxpy(
     }
 
     // Get the raw data pointers for both tensors
-    const std::complex<double>* x_data = x.read_data().data();
+    const std::complex<double>* x_data = x.read_h_data().data();
     std::complex<double>* y_data = h_data_.data();
 
     // Call the zaxpy function from blas_math.h to perform the operation
@@ -544,7 +591,7 @@ void TensorGPU::gemm(
   const int K = (transa == 'N') ? shape_[1] : shape_[0];
   
   std::complex<double>* A_data = h_data_.data();
-  const std::complex<double>* B_data = B.read_data().data();
+  const std::complex<double>* B_data = B.read_h_data().data();
   
   // Since TensorGPU C is 'this' TensorGPU
   std::complex<double>* C_data = h_data_.data();
@@ -569,13 +616,13 @@ std::complex<double> TensorGPU::vector_dot(
     //     size_, 
     //     const_cast<std::complex<double>*>(h_data_.data()), 
     //     1, 
-    //     other.read_data().data(), 
+    //     other.read_h_data().data(), 
     //     1);
 
     std::complex<double> result = 0.0;
 
     for (int i = 0; i < size_; i++){
-        result += std::conj(h_data_[i]) * other.read_data()[i];
+        result += std::conj(h_data_[i]) * other.read_h_data()[i];
     }
 
     return result;
@@ -584,7 +631,7 @@ std::complex<double> TensorGPU::vector_dot(
     //     size_, 
     //     h_data_.data(), 
     //     1, 
-    //     other.read_data().data(), 
+    //     other.read_h_data().data(), 
     //     1);
     
 }

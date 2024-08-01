@@ -31,7 +31,7 @@ class FCIComputerGPU {
     /// Implementation will be reminicient of modenrn determinant CI codes
     /// Implementation also borrows HEAVILY from the fermionic quantum emulator wfn class
     /// see (https://quantumai.google/openfermion/fqe) and related article
-    FCIComputerGPU(int nel, int sz, int norb);
+    FCIComputerGPU(int nel, int sz, int norb, bool on_gpu = false);
 
     /// apply a SQOperator to the current state.
     /// (this operation is generally not a physical quantum computing operation).
@@ -43,6 +43,14 @@ class FCIComputerGPU {
     void set_element(const std::vector<size_t>& idxs,
             const std::complex<double> val
             );
+
+    void cpu_error() const;
+
+    void gpu_error() const;
+
+    void to_gpu();
+
+    void to_cpu();
 
     /// Set a particular element of tis TensorGPU, specified by idxs
     void add_to_element(const std::vector<size_t>& idxs,
@@ -64,11 +72,11 @@ class FCIComputerGPU {
       const TensorGPU& h2e, 
       size_t norb);
 
-    void apply_tensor_spin_012bdy(
-      const TensorGPU& h0e, 
-      const TensorGPU& h1e, 
-      const TensorGPU& h2e, 
-      size_t norb);
+    // void apply_tensor_spin_012bdy(
+    //   const TensorGPU& h0e, 
+    //   const TensorGPU& h1e, 
+    //   const TensorGPU& h2e, 
+    //   size_t norb);
 
     void apply_tensor_spat_12bdy(
       const TensorGPU& h1e, 
@@ -137,10 +145,7 @@ class FCIComputerGPU {
     TensorGPU calculate_coeff_spin_with_dvec(std::pair<TensorGPU, TensorGPU>& dvec);
 
     /// apply a 1-body and 2-body TensorOperator to the current state 
-    void apply_tensor_spin_12_body(const TensorOperator& top);
-
-    /// apply a 1-body and 2-body TensorOperator to the current state 
-    void apply_tensor_spat_12_body(const TensorOperator& top);
+    // void apply_tensor_spin_12_body(const TensorOperator& top);
 
     std::pair<std::vector<int>, std::vector<int>> evaluate_map_number(
       const std::vector<int>& numa,
@@ -252,8 +257,8 @@ class FCIComputerGPU {
     /// term to the FCIComputerGPU.
     void apply_individual_nbody1_accumulate(
       const std::complex<double> coeff, 
-      const cuDoubleComplex* Cin,
-      cuDoubleComplex* Cout,
+      const TensorGPU& Cin,
+      TensorGPU& Cout,
       std::vector<int>& targeta,
       std::vector<int>& sourcea,
       std::vector<int>& paritya,
@@ -268,8 +273,8 @@ class FCIComputerGPU {
     /// NICK: Still need a top level function which takes a sqop term...
     void apply_individual_nbody_accumulate(
       const std::complex<double> coeff,
-      const cuDoubleComplex* Cin,
-      cuDoubleComplex* Cout,
+      const TensorGPU& Cin,
+      TensorGPU& Cout,
       const std::vector<int>& daga,
       const std::vector<int>& undaga, 
       const std::vector<int>& dagb,
@@ -281,8 +286,9 @@ class FCIComputerGPU {
       const TensorGPU& Cin,
       TensorGPU& Cout);
 
+
     /// apply a second quantized operator, must be number and spin conserving.
-    cuDoubleComplex* apply_sqop(const SQOperator& sqop);
+    void apply_sqop(const SQOperator& sqop);
 
     /// apply the diagonal of a second quantized operator, must be number and spin conserving.
     void apply_diagonal_of_sqop(
@@ -343,7 +349,9 @@ class FCIComputerGPU {
     }
 
     /// return the dot product of the current FCIComputerGPU state (as the ket) and the HF state (i.e. <HF|C_>)
-    // std::complex<double> get_hf_dot() const { return C_.get({0,0}); }
+    std::complex<double> get_hf_dot() const {
+      cpu_error(); 
+      return C_.get({0,0}); }
 
     /// return the coefficient corresponding to a alpha-basis / beta-basis 
     std::complex<double> coeff(const QubitBasis& abasis, const QubitBasis& bbasis);
@@ -364,6 +372,10 @@ class FCIComputerGPU {
     /// set the coefficient tensor directly from another coefficient tensor
     /// checks the shape, throws if incompatable
     void set_state(const TensorGPU& other_state);
+
+    void set_state_gpu(const TensorGPU& other_state);
+
+    void set_state_from_tensor(const Tensor& other_state);
 
     /// set the quantum computer to the state
     /// basis_1 * c_1 + basis_2 * c_2 + ...
@@ -387,12 +399,10 @@ class FCIComputerGPU {
     /// clear the timings
     void clear_timings() { timings_.clear(); }
 
-    void do_on_gpu();
-    void do_on_cpu();
 
   private:
 
-    bool use_gpu_operations_ = false;
+    bool on_gpu_;
 
     /// the number of electrons
     size_t nel_;
