@@ -260,16 +260,16 @@ class FCIComputer {
       std::vector<int>& sourceb,
       std::vector<int>& parityb);
 
-    void apply_individual_nbody1_accumulate_gpu(
-      const std::complex<double> coeff, 
-      const Tensor& Cin,
-      Tensor& Cout,
-      std::vector<int>& targeta,
-      std::vector<int>& sourcea,
-      std::vector<int>& paritya,
-      std::vector<int>& targetb,
-      std::vector<int>& sourceb,
-      std::vector<int>& parityb);
+    // void apply_individual_nbody1_accumulate_gpu(
+    //   const std::complex<double> coeff, 
+    //   const Tensor& Cin,
+    //   Tensor& Cout,
+    //   std::vector<int>& targeta,
+    //   std::vector<int>& sourcea,
+    //   std::vector<int>& paritya,
+    //   std::vector<int>& targetb,
+    //   std::vector<int>& sourceb,
+    //   std::vector<int>& parityb);
 
     void apply_individual_nbody1_accumulate_cpu(
       const std::complex<double> coeff, 

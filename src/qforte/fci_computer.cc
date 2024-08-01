@@ -25,7 +25,7 @@
 #include "fci_computer.h"
 #include "fci_graph.h"
 
-#include "fci_computer.cuh"
+
 
 
 FCIComputer::FCIComputer(int nel, int sz, int norb) : 
@@ -1161,140 +1161,140 @@ void FCIComputer::apply_sqop_evolution(
         adjoint); 
 }
 
-void FCIComputer::apply_individual_nbody1_accumulate_gpu(
-    const std::complex<double> coeff, 
-    const Tensor& Cin,
-    Tensor& Cout,
-    std::vector<int>& sourcea,
-    std::vector<int>& targeta,
-    std::vector<int>& paritya,
-    std::vector<int>& sourceb,
-    std::vector<int>& targetb,
-    std::vector<int>& parityb)
-{
+// void FCIComputer::apply_individual_nbody1_accumulate_gpu(
+//     const std::complex<double> coeff, 
+//     const Tensor& Cin,
+//     Tensor& Cout,
+//     std::vector<int>& sourcea,
+//     std::vector<int>& targeta,
+//     std::vector<int>& paritya,
+//     std::vector<int>& sourceb,
+//     std::vector<int>& targetb,
+//     std::vector<int>& parityb)
+// {
     
-    local_timer my_timer = local_timer();
-    my_timer.reset();
-    if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
-        throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
-    }
+//     local_timer my_timer = local_timer();
+//     my_timer.reset();
+//     if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
+//         throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
+//     }
 
-    if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
-        throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
-    }
-    // only part that has kernel
+//     if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
+//         throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
+//     }
+//     // only part that has kernel
 
-    // make device pointers out of all the things coming in - use cuda mem copy to a device pointer
-    my_timer.record("error checks");
-    my_timer.reset();
-    int* d_sourcea;
-    int* d_sourceb;
-    int* d_targeta;
-    int* d_targetb;
-    int* d_paritya;
-    int* d_parityb;
+//     // make device pointers out of all the things coming in - use cuda mem copy to a device pointer
+//     my_timer.record("error checks");
+//     my_timer.reset();
+//     int* d_sourcea;
+//     int* d_sourceb;
+//     int* d_targeta;
+//     int* d_targetb;
+//     int* d_paritya;
+//     int* d_parityb;
 
-    cuDoubleComplex* d_Cin;
-    cuDoubleComplex* d_Cout;
+//     cuDoubleComplex* d_Cin;
+//     cuDoubleComplex* d_Cout;
 
-    // cumalloc for these
+//     // cumalloc for these
 
-    int sourcea_mem = sourcea.size() * sizeof(int);
-    int sourceb_mem = sourceb.size() * sizeof(int);
-    int targetb_mem = targetb.size() * sizeof(int);
-    int targeta_mem = targeta.size() * sizeof(int);
-    int paritya_mem = paritya.size() * sizeof(int);
-    int parityb_mem = parityb.size() * sizeof(int);
+//     int sourcea_mem = sourcea.size() * sizeof(int);
+//     int sourceb_mem = sourceb.size() * sizeof(int);
+//     int targetb_mem = targetb.size() * sizeof(int);
+//     int targeta_mem = targeta.size() * sizeof(int);
+//     int paritya_mem = paritya.size() * sizeof(int);
+//     int parityb_mem = parityb.size() * sizeof(int);
 
-    int tensor_mem = Cin.size() * sizeof(std::complex<double>);
+//     int tensor_mem = Cin.size() * sizeof(std::complex<double>);
 
-    my_timer.record("making pointers");
-    my_timer.reset();
-    cudaMalloc(&d_sourcea, sourcea_mem);
-    cudaMalloc(&d_sourceb, sourceb_mem);
-    cudaMalloc(&d_targeta, targeta_mem);
-    cudaMalloc(&d_targetb, targetb_mem);
-    cudaMalloc(&d_paritya, paritya_mem);
-    cudaMalloc(&d_parityb, parityb_mem);
+//     my_timer.record("making pointers");
+//     my_timer.reset();
+//     cudaMalloc(&d_sourcea, sourcea_mem);
+//     cudaMalloc(&d_sourceb, sourceb_mem);
+//     cudaMalloc(&d_targeta, targeta_mem);
+//     cudaMalloc(&d_targetb, targetb_mem);
+//     cudaMalloc(&d_paritya, paritya_mem);
+//     cudaMalloc(&d_parityb, parityb_mem);
 
-    cudaMalloc(&d_Cin,  tensor_mem);
-    cudaMalloc(&d_Cout, tensor_mem);
+//     cudaMalloc(&d_Cin,  tensor_mem);
+//     cudaMalloc(&d_Cout, tensor_mem);
 
-    my_timer.record("cudamallocs");
-    my_timer.reset();
+//     my_timer.record("cudamallocs");
+//     my_timer.reset();
 
-    cudaMemcpy(d_sourcea, sourcea.data(), sourcea_mem, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_sourceb, sourceb.data(), sourceb_mem, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_targeta, targeta.data(), targeta_mem, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_targetb, targetb.data(), targetb_mem, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_paritya, paritya.data(), paritya_mem, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_parityb, parityb.data(), parityb_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_sourcea, sourcea.data(), sourcea_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_sourceb, sourceb.data(), sourceb_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_targeta, targeta.data(), targeta_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_targetb, targetb.data(), targetb_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_paritya, paritya.data(), paritya_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_parityb, parityb.data(), parityb_mem, cudaMemcpyHostToDevice);
 
-    cudaMemcpy(d_Cin,  Cin.read_data().data(),  tensor_mem, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_Cout, Cout.read_data().data(), tensor_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_Cin,  Cin.read_data().data(),  tensor_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_Cout, Cout.read_data().data(), tensor_mem, cudaMemcpyHostToDevice);
 
-    my_timer.record("cudamemcpy");
-    my_timer.reset();
+//     my_timer.record("cudamemcpy");
+//     my_timer.reset();
 
-    cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
+//     cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
 
-    apply_individual_nbody1_accumulate_wrapper(
-        cu_coeff, 
-        d_Cin, 
-        d_Cout, 
-        d_sourcea,
-        d_targeta,
-        d_paritya,
-        d_sourceb,
-        d_targetb,
-        d_parityb,
-        nbeta_strs_,
-        targeta.size(),
-        targetb.size(),
-        tensor_mem);
-    my_timer.record("gpu function");
-    my_timer.reset();
-
-
-    cudaMemcpy(Cout.data().data(), d_Cout, tensor_mem, cudaMemcpyDeviceToHost);
+//     apply_individual_nbody1_accumulate_wrapper(
+//         cu_coeff, 
+//         d_Cin, 
+//         d_Cout, 
+//         d_sourcea,
+//         d_targeta,
+//         d_paritya,
+//         d_sourceb,
+//         d_targetb,
+//         d_parityb,
+//         nbeta_strs_,
+//         targeta.size(),
+//         targetb.size(),
+//         tensor_mem);
+//     my_timer.record("gpu function");
+//     my_timer.reset();
 
 
-    cudaFree(d_sourcea);
-    cudaFree(d_sourceb);
-    cudaFree(d_targeta);
-    cudaFree(d_targetb);
-    cudaFree(d_paritya);
-    cudaFree(d_parityb);
-    cudaFree(d_Cin);
-    cudaFree(d_Cout);
+//     cudaMemcpy(Cout.data().data(), d_Cout, tensor_mem, cudaMemcpyDeviceToHost);
 
 
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess) {
-        std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
-        throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
-    }
-
-    my_timer.record("cuda free and transfer");
-    std::cout << my_timer.str_table() << std::endl;
-
-    // do same thing for cin cout
-
-    // call the add wrapper
-    // do this in cu file with grid stride loop
-    // for (int i = 0; i < targeta.size(); i++) {
-    //     int ta_idx = targeta[i] * nbeta_strs_;
-    //     int sa_idx = sourcea[i] * nbeta_strs_;
-    //     std::complex<double> pref = coeff * static_cast<std::complex<double>>(paritya[i]);
-    //     for (int j = 0; j < targetb.size(); j++) {
-    //         Cout.data()[ta_idx + targetb[j]] += pref * static_cast<std::complex<double>>(parityb[j]) * Cin.read_data()[sa_idx + sourceb[j]];
-    //     }
-    // }
+//     cudaFree(d_sourcea);
+//     cudaFree(d_sourceb);
+//     cudaFree(d_targeta);
+//     cudaFree(d_targetb);
+//     cudaFree(d_paritya);
+//     cudaFree(d_parityb);
+//     cudaFree(d_Cin);
+//     cudaFree(d_Cout);
 
 
+//     cudaError_t error = cudaGetLastError();
+//     if (error != cudaSuccess) {
+//         std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
+//         throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
+//     }
 
-    // free it
-}
+//     my_timer.record("cuda free and transfer");
+//     // std::cout << my_timer.str_table() << std::endl;
+
+//     // do same thing for cin cout
+
+//     // call the add wrapper
+//     // do this in cu file with grid stride loop
+//     // for (int i = 0; i < targeta.size(); i++) {
+//     //     int ta_idx = targeta[i] * nbeta_strs_;
+//     //     int sa_idx = sourcea[i] * nbeta_strs_;
+//     //     std::complex<double> pref = coeff * static_cast<std::complex<double>>(paritya[i]);
+//     //     for (int j = 0; j < targetb.size(); j++) {
+//     //         Cout.data()[ta_idx + targetb[j]] += pref * static_cast<std::complex<double>>(parityb[j]) * Cin.read_data()[sa_idx + sourceb[j]];
+//     //     }
+//     // }
+
+
+
+//     // free it
+// }
 
 
 void FCIComputer::apply_individual_nbody1_accumulate_cpu(
@@ -1327,7 +1327,7 @@ void FCIComputer::apply_individual_nbody1_accumulate_cpu(
         }
     }
     my_timer.record("cpu function");
-    std::cout << my_timer.str_table() << std::endl;
+    // std::cout << my_timer.str_table() << std::endl;
 }
 
 
@@ -1342,7 +1342,6 @@ void FCIComputer::apply_individual_nbody1_accumulate(
     std::vector<int>& targetb,
     std::vector<int>& parityb)
 {
-   if (use_gpu_operations_ == false) {
        apply_individual_nbody1_accumulate_cpu(
         coeff, 
         Cin,
@@ -1353,19 +1352,6 @@ void FCIComputer::apply_individual_nbody1_accumulate(
         sourceb,
         targetb,
         parityb);
-   }
-   else if (use_gpu_operations_ == true) {
-       apply_individual_nbody1_accumulate_gpu(
-        coeff, 
-        Cin,
-        Cout,
-        sourcea,
-        targeta,
-        paritya,
-        sourceb,
-        targetb,
-        parityb);
-   }
 }
 
 void FCIComputer::apply_individual_nbody_accumulate(
@@ -1439,7 +1425,7 @@ void FCIComputer::apply_individual_nbody_accumulate(
     }
 
     my_timer.record("second for loop in apply_individual_nbody_accumulate");
-    std::cout << my_timer.str_table() << std::endl;
+    // std::cout << my_timer.str_table() << std::endl;
     // this is where the if statement goes
     apply_individual_nbody1_accumulate(
         coeff, 
@@ -1501,7 +1487,7 @@ void FCIComputer::apply_individual_sqop_term(
 
     int nswaps = parity_sort(ops1);
     my_timer.record("some parity things");
-    std::cout << my_timer.str_table() << std::endl;
+    // std::cout << my_timer.str_table() << std::endl;
 
     apply_individual_nbody_accumulate(
         pow(-1, nswaps) * std::get<0>(term),
@@ -1533,7 +1519,7 @@ void FCIComputer::apply_sqop(const SQOperator& sqop){
         }
     }
     my_timer.record("first for loop in apply_sqop");
-    std::cout << my_timer.str_table() << std::endl;
+    // std::cout << my_timer.str_table() << std::endl;
 }
 
 /// diagonal only 
