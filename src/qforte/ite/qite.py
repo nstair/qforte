@@ -12,6 +12,7 @@ from qforte.utils.transforms import (get_jw_organizer,
 from qforte.utils.state_prep import *
 from qforte.utils.trotterization import trotterize
 from qforte.helper.printing import *
+from qforte.helper.df_ham_helper import *
 import copy
 import numpy as np
 from scipy.linalg import lstsq
@@ -125,6 +126,8 @@ class QITE(Algorithm):
             db=0.2,
             use_exact_evolution=False,
             expansion_type='SD',
+            evolve_dfham=False,
+            random_state=False,
             sparseSb=True,
             low_memorySb=False,
             second_order=False,
@@ -141,6 +144,8 @@ class QITE(Algorithm):
         self._use_exact_evolution = use_exact_evolution
         self._nbeta = int(beta/db)+1
         self._expansion_type = expansion_type
+        self._evolve_dfham = evolve_dfham
+        self._random_state = random_state
         self._sparseSb = sparseSb
         self._low_memorySb = low_memorySb
         self._second_order = second_order
@@ -169,19 +174,51 @@ class QITE(Algorithm):
 
         if(self._computer_type=='fci'):
             qc_ref = qf.FCIComputer(self._nel, self._sz, self._norb)
-            qc_ref.hartree_fock()
 
-            if(self._apply_ham_as_tensor):
+            if(self._random_state):
+                comp_shape = qc_ref.get_state_deep().shape()
+                rand_arr = np.random.rand(*comp_shape)
+                norm = np.linalg.norm(rand_arr)
+                normalized_coeffs = rand_arr / norm
 
-                self._Ekb = [np.real(qc_ref.get_exp_val_tensor(
-                        self._nuclear_repulsion_energy, 
-                        self._mo_oeis, 
-                        self._mo_teis, 
-                        self._mo_teis_einsum, 
-                        self._norb))]
+                # nc = normalized_coeffs.tolist()
+                self._rand_tensor = qf.Tensor(shape=comp_shape, name='random')
+                for i in range(comp_shape[0]):
+                    for j in range(comp_shape[1]):
+                        self._rand_tensor.set([i,j], normalized_coeffs[i,j])
+
+                qc_ref.set_state(self._rand_tensor)
 
             else:
-                self._Ekb = [np.real(qc_ref.get_exp_val(self._sq_ham))]
+                qc_ref.hartree_fock()
+
+            if(self._evolve_dfham):
+                dfh = self._sys.df_ham
+                time_scale_first_leaf(dfh, self._db)
+                v_lst = dfh.get_scaled_density_density_matrices()
+
+                self._d0 = qf.SQOpPool()
+                self._d0.append_diagonal_ops_all(
+                    v_lst[0], 
+                    1.0)
+
+                exp1 = qc_ref.get_state_deep()
+                qc_ref.apply_sqop_pool(self._d0)
+
+                self._Ekb = [np.real(exp1.vector_dot(qc_ref.get_state_deep()))]
+            
+            else:
+                if(self._apply_ham_as_tensor):
+
+                    self._Ekb = [np.real(qc_ref.get_exp_val_tensor(
+                            self._nuclear_repulsion_energy, 
+                            self._mo_oeis, 
+                            self._mo_teis, 
+                            self._mo_teis_einsum, 
+                            self._norb))]
+
+                else:
+                    self._Ekb = [np.real(qc_ref.get_exp_val(self._sq_ham))]
             
         if(self._computer_type=='fock'):
             qc_ref = qf.Computer(self._nqb)
@@ -267,7 +304,7 @@ class QITE(Algorithm):
 
         if(self._computer_type=='fci'):
             self._sig = qf.SQOpPool() # changed this from QubitOpPool
-            self._sig.set_orb_spaces(self._ref)
+            self._sig.set_orb_spaces(self._ref) # is this ok for starting from a random state?
 
             if(self._expansion_type in {'SD', 'GSD', 'SDT', 'SDTQ', 'SDTQP', 'SDTQPH'}):
                 self._sig.fill_pool(self._expansion_type) # This automatically filters non-particle conserving terms
@@ -341,16 +378,20 @@ class QITE(Algorithm):
         Ipsi_qc = qf.FCIComputer(self._nel, self._sz, self._norb)
         Hpsi_qc = qf.FCIComputer(self._nel, self._sz, self._norb)
         Hpsi_qc.set_state(self._qc.get_state_deep())
- 
-        if(self._apply_ham_as_tensor):
-            Hpsi_qc.apply_tensor_spat_012bdy(
-                    self._nuclear_repulsion_energy, 
-                    self._mo_oeis, 
-                    self._mo_teis, 
-                    self._mo_teis_einsum, 
-                    self._norb)
+
+        if(self._evolve_dfham):
+            Hpsi_qc.apply_sqop_pool(self._d0)
+
         else:
-            Hpsi_qc.apply_sqop(self._sq_ham)
+            if(self._apply_ham_as_tensor):
+                Hpsi_qc.apply_tensor_spat_012bdy(
+                        self._nuclear_repulsion_energy, 
+                        self._mo_oeis, 
+                        self._mo_teis, 
+                        self._mo_teis_einsum, 
+                        self._norb)
+            else:
+                Hpsi_qc.apply_sqop(self._sq_ham)
 
         if(self._low_memorySb):
             for i in range(Idim):
@@ -547,15 +588,22 @@ class QITE(Algorithm):
             self._sig.set_coeffs(x_list_fci)
             self._qc.evolve_pool_trotter_basic(self._sig, True, False)
 
-            if(self._apply_ham_as_tensor):
-                self._Ekb.append(np.real(self._qc.get_exp_val_tensor(
-                        self._nuclear_repulsion_energy, 
-                        self._mo_oeis, 
-                        self._mo_teis, 
-                        self._mo_teis_einsum, 
-                        self._norb)))
+            if(self._evolve_dfham):
+                exp1 = self._qc.get_state_deep()
+                self._qc.apply_sqop_pool(self._d0)
+                self._Ekb.append(np.real(exp1.vector_dot(self._qc.get_state_deep())))
+                self._qc.set_state(exp1)
+
             else:
-                self._Ekb.append(np.real(self._qc.get_exp_val(self._sq_ham)))
+                if(self._apply_ham_as_tensor):
+                    self._Ekb.append(np.real(self._qc.get_exp_val_tensor(
+                            self._nuclear_repulsion_energy, 
+                            self._mo_oeis, 
+                            self._mo_teis, 
+                            self._mo_teis_einsum, 
+                            self._norb)))
+                else:
+                    self._Ekb.append(np.real(self._qc.get_exp_val(self._sq_ham)))
 
 
         if(self._verbose):
@@ -572,7 +620,11 @@ class QITE(Algorithm):
 
         if(self._computer_type=='fci'):
             self._qc = qf.FCIComputer(self._nel, self._sz, self._norb)
-            self._qc.hartree_fock()
+            
+            if(self._random_state):
+                self._qc.set_state(self._rand_tensor)
+            else:
+                self._qc.hartree_fock()
 
             if(not self._use_exact_evolution):
                 qc_size = self._qc.get_state().size()

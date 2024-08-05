@@ -308,7 +308,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                 }
             }
         }
-    } else if ( (pool_type=="S") || (pool_type=="SD") || (pool_type=="SDT") || (pool_type=="SDTQ") || (pool_type=="SDTQP") || (pool_type=="SDTQPH") ) {
+    } else if ( (pool_type=="S") || (pool_type=="SD") || (pool_type=="SDT") || (pool_type=="SDTQ") || (pool_type=="SDTQP") || (pool_type=="SDTQPH") || (pool_type=="All") ) {
 
         int max_nbody = 0;
 
@@ -324,6 +324,8 @@ void SQOpPool::fill_pool(std::string pool_type){
             max_nbody = 5;
         } else if(pool_type=="SDTQPH") {
             max_nbody = 6;
+        } else if(pool_type=="All") {
+            max_nbody = 2 * nocc_;
         } else {
             throw std::invalid_argument( "Qforte UCC only supports up to Hextuple excitations." );
         }
