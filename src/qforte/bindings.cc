@@ -136,6 +136,8 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_qubit_operator", &SQOpPool::get_qubit_operator, py::arg("order_type"),
              py::arg("combine_like_terms") = true, py::arg("qubit_excitations") = false)
         .def("fill_pool", &SQOpPool::fill_pool)
+        .def("fill_pool_kUpCCGSD", &SQOpPool::fill_pool_kUpCCGSD)
+        .def("fill_pool_sq_hva", &SQOpPool::fill_pool_sq_hva)
         .def("fill_pool_df_trotter", &SQOpPool::fill_pool_df_trotter)
         .def("append_givens_ops_sector", &SQOpPool::append_givens_ops_sector)
         .def("append_diagonal_ops_all", &SQOpPool::append_diagonal_ops_all)
@@ -239,6 +241,7 @@ PYBIND11_MODULE(qforte, m) {
         .def(py::init<int, int, int>(), "nel"_a, "sz"_a, "norb"_a, "Make a FCIComputer with nel, sz, and norb")
         .def("hartree_fock", &FCIComputer::hartree_fock)
         .def("set_element", &FCIComputer::set_element)
+        .def("apply_tensor_spat_1bdy", &FCIComputer::apply_tensor_spat_1bdy)
         .def("apply_tensor_spin_1bdy", &FCIComputer::apply_tensor_spin_1bdy)
         .def("apply_tensor_spin_12bdy", &FCIComputer::apply_tensor_spin_12bdy)
         .def("apply_tensor_spin_012bdy", &FCIComputer::apply_tensor_spin_012bdy)
@@ -275,6 +278,7 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("antiherm") = false,
             py::arg("adjoint") = false
             )
+        .def("apply_df_ham", &FCIComputer::apply_df_ham)
         .def("evolve_df_ham_trotter", &FCIComputer::evolve_df_ham_trotter)
         .def("evolve_givens", &FCIComputer::evolve_givens)
         .def("evolve_diagonal_from_mat", &FCIComputer::evolve_diagonal_from_mat)

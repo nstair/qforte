@@ -328,6 +328,17 @@ class AnsatzAlgorithm(Algorithm):
             self._pool_obj.fill_pool(self._pool_type)
             timer2.record("_pool_obj.fill_pool")
 
+        elif (self._pool_type[0].isdigit() and self._pool_type[1:] == '-UpCCGSD'):
+            self._pool_obj = qf.SQOpPool()
+
+            timer2.reset()
+            self._pool_obj.set_orb_spaces(self._ref)
+            timer2.record("_pool_obj.set_orb_spaces")
+
+            timer2.reset()
+            self._pool_obj.fill_pool_kUpCCGSD(int(self._pool_type[0]))
+            timer2.record("_pool_obj.fill_pool")
+
         elif isinstance(self._pool_type, qf.SQOpPool):
             self._pool_obj = self._pool_type
         else:
