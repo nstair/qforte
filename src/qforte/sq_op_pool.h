@@ -49,6 +49,16 @@ class SQOpPool {
     /// builds the sq operator pool
     void fill_pool(std::string pool_type);
 
+    /// builds the sq operator pool using kmax repeats of the 
+    /// disentangled unitary paired coupled cluster singleds and
+    /// doubles ansatz.
+    void fill_pool_kUpCCGSD(int kmax);
+
+    /// builds the sq operator pool based on the operators in the 
+    /// second quantized hamiltonain. Similar to add_hermitian pairs
+    /// but intitalizees to zero 
+    void fill_pool_sq_hva(std::complex<double> coeff, const SQOperator& sq_op);
+
     /// builds the sq operator pool that, when trotterized, 
     /// reporduces the (trotterized) evolution uder a
     /// DFHamiltonian. 
