@@ -15,6 +15,8 @@ from qforte.utils.state_prep import *
 from qforte.utils.trotterization import trotterize
 from qforte.utils import moment_energy_corrections
 
+from qforte.utils.point_groups import sq_op_find_symmetry
+
 import numpy as np
 from scipy.optimize import minimize
 
@@ -46,6 +48,8 @@ class HVAVQE(UCCVQE):
             use_analytic_grad = True,
             start_from_ham_params = True,
             noise_factor = 0.0):
+        
+        raise NotImplementedError("Warning, Second Quantized HVA-VQE needs debugging, would not use black box implementaiton.")
         
         if(self._computer_type != 'fci'):
             raise ValueError(f'{self._computer_type} is an unsupported computer type at this time, only fci supported.')
@@ -133,14 +137,24 @@ class HVAVQE(UCCVQE):
 
         if self._pool_type in {'SQHVA'}:
             self._pool_obj = qforte.SQOpPool()
-            self._pool_obj.add_hermitian_pairs(1.0, self._sq_ham)
-
-        elif isinstance(self._pool_type, qforte.SQOpPool):
-            self._pool_obj = self._pool_type
+            self._pool_obj.fill_pool_sq_hva(1.0, self._sq_ham)
+            # self._pool_obj.add_hermitian_pairs(1.0, self._sq_ham)
         else:
             raise ValueError('Invalid operator pool type specified.')
 
         # TODO: (Nick) consider point-group symmetry considerations in hamiltonain...
+
+        # If possible, impose symmetry restriction to operator pool
+        # Currently, symmetry is supported for system_type='molecule' and build_type='psi4'
+        if hasattr(self._sys, 'point_group'):
+            # raise ValueError("nope!")
+            temp_sq_pool = qforte.SQOpPool()
+            for sq_operator in self._pool_obj.terms():
+                create = sq_operator[1].terms()[0][1]
+                annihilate = sq_operator[1].terms()[0][2]
+                if sq_op_find_symmetry(self._sys.orb_irreps_to_int, create, annihilate) == self._irrep:
+                    temp_sq_pool.add(sq_operator[0], sq_operator[1])
+            self._pool_obj = temp_sq_pool
 
         if(self._computer_type == 'fock'):
             self._Nm = [len(operator.jw_transform().terms()) for _, operator in self._pool_obj]
@@ -335,19 +349,18 @@ class HVAVQE(UCCVQE):
             
             if(self._apply_ham_as_tensor):
                 
-                self._curr_energy = np.real(
-                    self._qc.get_exp_val_tensor(
+                val = self._qc.get_exp_val_tensor(
                         self._nuclear_repulsion_energy, 
                         self._mo_oeis, 
                         self._mo_teis, 
                         self._mo_teis_einsum, 
                         self._norb)
-                )
-            else:   
-                self._curr_energy = np.real(self._qc.get_exp_val(self._sq_ham))
 
-            
-            return self._curr_energy
+            else:   
+                val = self._qc.get_exp_val(self._sq_ham)
+
+            self._curr_energy = np.real(val)
+            return self._curr_energy 
     
     def hva_grad_fd_eval(self, params=None):
         delta = 1.0e-6
@@ -450,6 +463,7 @@ class HVAVQE(UCCVQE):
         Kmu_prev.mult_coeffs(self._pool_obj[self._tops[mu]][0])
 
         qc_psi.apply_sqop(Kmu_prev)
+        # qc_psi.scale(-1.0j)
         
         grads[mu] = 2.0 * np.imag(qc_sig.get_state().vector_dot(qc_psi.get_state()))
         qc_psi.set_state(psi_i)
@@ -490,6 +504,7 @@ class HVAVQE(UCCVQE):
             psi_i = qc_psi.get_state_deep()
 
             qc_psi.apply_sqop(Kmu)
+            # qc_psi.scale(-1.0j)
 
             grads[mu] = 2.0 * np.imag(
                 qc_sig.get_state().vector_dot(qc_psi.get_state())
