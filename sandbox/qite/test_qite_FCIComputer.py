@@ -51,8 +51,8 @@ print(f'The HF energy from Psi4:                                     {mol.hf_ene
 print('\nBegin QITE test for H8 2nd order')
 print('-------------------------')
 
-alg = QITE(mol, reference=mol.hf_reference, computer_type='fci', verbose=1, print_summary_file=0)
-alg.run(beta=0.2, db = 0.1, sparseSb=0, expansion_type='SD', low_memorySb=0, second_order=1, print_pool=0, evolve_dfham=1, random_state=0)
+alg = QITE(mol, reference=mol.hf_reference, computer_type='fci', verbose=0, print_summary_file=0)
+alg.run(beta=5, db = 0.1, sparseSb=0, expansion_type='1-UpCCGSD', low_memorySb=0, second_order=1, print_pool=0, evolve_dfham=1, random_state=1)
 Egs_FCI = alg.get_gs_energy()
 
 # print(f'The FCI energy for H2 at 1.5 Angstrom in a sto-3g basis:     {E_fci:12.10f}')

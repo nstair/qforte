@@ -196,6 +196,19 @@ class QITE(Algorithm):
                 dfh = self._sys.df_ham
                 time_scale_first_leaf(dfh, self._db)
                 v_lst = dfh.get_scaled_density_density_matrices()
+                g_lst = dfh.get_trotter_basis_change_matrices()
+
+                self._ga0 = qf.SQOpPool()
+                self._ga0.append_givens_ops_sector(
+                    g_lst[0], 
+                    1.0/self._db,
+                    True)
+
+                self._gb0 = qf.SQOpPool()
+                self._gb0.append_givens_ops_sector(
+                    g_lst[0], 
+                    1.0/self._db,
+                    False)
 
                 self._d0 = qf.SQOpPool()
                 self._d0.append_diagonal_ops_all(
@@ -306,8 +319,11 @@ class QITE(Algorithm):
             self._sig = qf.SQOpPool() # changed this from QubitOpPool
             self._sig.set_orb_spaces(self._ref) # is this ok for starting from a random state?
 
-            if(self._expansion_type in {'SD', 'GSD', 'SDT', 'SDTQ', 'SDTQP', 'SDTQPH'}):
+            if(self._expansion_type in {'SD', 'GSD', 'SDT', 'SDTQ', 'SDTQP', 'SDTQPH', 'All'}):
                 self._sig.fill_pool(self._expansion_type) # This automatically filters non-particle conserving terms
+
+            elif(self._expansion_type[0].isdigit() and self._expansion_type[1:] == '-UpCCGSD'):
+                self._sig.fill_pool_kUpCCGSD(int(self._expansion_type[0]))
 
             else:
                 raise ValueError('Invalid expansion type specified.')
@@ -585,16 +601,37 @@ class QITE(Algorithm):
             self._n_cnot += eiA_kb.get_num_cnots()
 
         if(self._computer_type=='fci'):
-            self._sig.set_coeffs(x_list_fci)
-            self._qc.evolve_pool_trotter_basic(self._sig, True, False)
-
             if(self._evolve_dfham):
+                self._qc.evolve_pool_trotter(
+                    self._ga0,
+                    self._db,
+                    1,
+                    1)
+
+                self._sig.set_coeffs(x_list_fci)
+                self._qc.evolve_pool_trotter_basic(
+                    self._sig, 
+                    1, 
+                    0)
+
+                self._qc.evolve_pool_trotter(
+                    self._gb0,
+                    self._db,
+                    1,
+                    1)
+                
                 exp1 = self._qc.get_state_deep()
                 self._qc.apply_sqop_pool(self._d0)
                 self._Ekb.append(np.real(exp1.vector_dot(self._qc.get_state_deep())))
                 self._qc.set_state(exp1)
 
             else:
+                self._sig.set_coeffs(x_list_fci)
+                self._qc.evolve_pool_trotter_basic(
+                    self._sig, 
+                    1, 
+                    0)
+
                 if(self._apply_ham_as_tensor):
                     self._Ekb.append(np.real(self._qc.get_exp_val_tensor(
                             self._nuclear_repulsion_energy, 
