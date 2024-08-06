@@ -13,10 +13,10 @@ geom = [
     ('H', (0., 0., 6.0)),
     ('H', (0., 0., 7.0)), 
     ('H', (0., 0., 8.0)),
-    ('H', (0., 0., 9.0)), 
-    ('H', (0., 0.,10.0)),
-    ('H', (0., 0.,11.0)), 
-    ('H', (0., 0.,12.0))
+    # ('H', (0., 0., 9.0)), 
+    # ('H', (0., 0.,10.0)),
+    # ('H', (0., 0.,11.0)), 
+    # ('H', (0., 0.,12.0))
     ]
 
 
@@ -50,7 +50,7 @@ fci_comp_gpu = qf.FCIComputerGPU(nel=nel, sz=sz, norb=norb)
 
 
 # reference = 'random'
-reference = 'hf'
+reference = 'random'
 
 if(reference == 'hf'):
     fci_comp.hartree_fock()

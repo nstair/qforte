@@ -11,6 +11,7 @@
 #include "fci_computer_gpu.h"
 #include "fci_computer.h"
 #include "fci_graph.h"
+#include "fci_graph_gpu.h"
 #include "qubit_operator.h"
 #include "sq_operator.h"
 #include "sq_op_pool.h"

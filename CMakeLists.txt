@@ -36,7 +36,8 @@ find_package(CUDAToolkit REQUIRED)
 set(SOURCE_DIR "src/qforte")
 set(CUDA_SOURCES 
     "${SOURCE_DIR}/tensor_gpu.cu"
-    "${SOURCE_DIR}/fci_computer_gpu.cu")
+    "${SOURCE_DIR}/fci_computer_gpu.cu"
+    "${SOURCE_DIR}/fci_graph_gpu.cu")
 
 
 
@@ -56,6 +57,7 @@ pybind11_add_module(qforte ${SOURCES} "${SOURCE_DIR}/bindings.cc"
     "${SOURCE_DIR}/computer.cc"
     "${SOURCE_DIR}/fci_computer_gpu.cc"
     "${SOURCE_DIR}/fci_computer.cc"
+    "${SOURCE_DIR}/fci_graph_gpu.cc"
     "${SOURCE_DIR}/fci_graph.cc"
     "${SOURCE_DIR}/tensor_gpu.cc"
     "${SOURCE_DIR}/tensor.cc"

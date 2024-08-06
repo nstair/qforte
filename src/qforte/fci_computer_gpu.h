@@ -7,18 +7,22 @@
 #include "qforte-def.h" 
 #include "tensor.h" 
 #include "tensor_gpu.h"
-#include "fci_graph.h"
+// #include "fci_graph.h"
+#include "fci_graph_gpu.h"
+#include "timer.h"
+
 
 #include <cuda_runtime.h>
 #include <cuComplex.h>
 
-
+class local_timer;
 class Gate;
 class QubitBasis;
 class SQOperator;
 class TensorOperator;
 class TensorGPU;
-class FCIGraph;
+// class FCIGraph;
+class FCIGraphGPU;
 class SQOpPool;
 
 class FCIComputerGPU {
@@ -280,6 +284,21 @@ class FCIComputerGPU {
       const std::vector<int>& dagb,
       const std::vector<int>& undagb);
 
+    void apply_individual_nbody_accumulate_gpu(
+      const std::complex<double> coeff,
+      const TensorGPU& Cin,
+      TensorGPU& Cout,
+      const std::vector<int>& daga,
+      const std::vector<int>& undaga, 
+      const std::vector<int>& dagb,
+      const std::vector<int>& undagb,
+      int* d_sourcea,
+      int* d_targeta,
+      int* d_paritya,
+      int* d_sourceb,
+      int* d_targetb,
+      int* d_parityb);
+
     /// Apply individual sqop term
     void apply_individual_sqop_term(
       const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
@@ -402,6 +421,8 @@ class FCIComputerGPU {
 
   private:
 
+
+
     bool on_gpu_;
 
     /// the number of electrons
@@ -442,7 +463,11 @@ class FCIComputerGPU {
     TensorGPU C_;
 
     /// The corresponding FCIGraph for this computer
-    FCIGraph graph_;
+    // FCIGraph graph_;
+
+    FCIGraphGPU graph_gpu_;
+
+    local_timer timer_;
 
     /// the coefficients of the ending state in the tensor product basis
     // std::vector<std::complex<double>> new_coeff_;

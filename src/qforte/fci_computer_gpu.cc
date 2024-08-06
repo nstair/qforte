@@ -24,7 +24,8 @@
 #include "cuda_runtime.h"
 
 #include "fci_computer_gpu.h"
-#include "fci_graph.h"
+// #include "fci_graph.h"
+#include "fci_graph_gpu.h"
 
 #include "fci_computer_gpu.cuh"
 
@@ -71,7 +72,10 @@ FCIComputerGPU::FCIComputerGPU(int nel, int sz, int norb, bool on_gpu) :
     C_.zero_with_shape({nalfa_strs_, nbeta_strs_}, on_gpu_);
     C_.set_name("FCI Computer");
 
-    graph_ = FCIGraph(nalfa_el_, nbeta_el_, norb_);
+    // graph_ = FCIGraph(nalfa_el_, nbeta_el_, norb_);
+    graph_gpu_ = FCIGraphGPU(nalfa_el_, nbeta_el_, norb_);
+
+    timer_ = local_timer();
 }
 
 /// Set a particular element of the tensor stored in FCIComputerGPU, specified by idxs
@@ -148,20 +152,20 @@ void FCIComputerGPU::apply_tensor_spin_1bdy(const TensorGPU& h1e, size_t norb) {
 
     apply_array_1bdy(
         Cnew,
-        graph_.read_dexca_vec(),
+        graph_gpu_.read_dexca_vec(),
         nalfa_strs_,
         nbeta_strs_,
-        graph_.get_ndexca(),
+        graph_gpu_.get_ndexca(),
         h1e_blk1,
         norb_,
         true);
 
     apply_array_1bdy(
         Cnew,
-        graph_.read_dexcb_vec(),
+        graph_gpu_.read_dexcb_vec(),
         nalfa_strs_,
         nbeta_strs_,
-        graph_.get_ndexcb(),
+        graph_gpu_.get_ndexcb(),
         h1e_blk2,
         norb_,
         false);
@@ -399,10 +403,10 @@ void FCIComputerGPU::apply_tensor_spat_12bdy(
 
     lm_apply_array12_same_spin_opt(
         Cnew, 
-        graph_.read_dexca_vec(), // dexca_tmp
+        graph_gpu_.read_dexca_vec(), // dexca_tmp
         nalfa_strs_,
         nbeta_strs_, 
-        graph_.get_ndexca(),
+        graph_gpu_.get_ndexca(),
         h1e, 
         h2e,
         norb_,
@@ -412,10 +416,10 @@ void FCIComputerGPU::apply_tensor_spat_12bdy(
         
     lm_apply_array12_same_spin_opt(
         Cnew, 
-        graph_.read_dexcb_vec(),
+        graph_gpu_.read_dexcb_vec(),
         nalfa_strs_,
         nbeta_strs_, 
-        graph_.get_ndexcb(),
+        graph_gpu_.get_ndexcb(),
         h1e, 
         h2e,
         norb_,
@@ -425,12 +429,12 @@ void FCIComputerGPU::apply_tensor_spat_12bdy(
 
     lm_apply_array12_diff_spin_opt(
         Cnew,
-        graph_.read_dexca_vec(),
-        graph_.read_dexcb_vec(),
+        graph_gpu_.read_dexca_vec(),
+        graph_gpu_.read_dexcb_vec(),
         nalfa_strs_,
         nbeta_strs_, 
-        graph_.get_ndexca(),
-        graph_.get_ndexca(),
+        graph_gpu_.get_ndexca(),
+        graph_gpu_.get_ndexca(),
         h2e_einsum, 
         norb_); 
 
@@ -472,8 +476,8 @@ std::pair<TensorGPU, TensorGPU> FCIComputerGPU::calculate_dvec_spin_with_coeff()
 
     for (size_t i = 0; i < norb_; ++i) {
         for (size_t j = 0; j < norb_; ++j) {
-            auto alfa_mappings = graph_.get_alfa_map()[std::make_pair(i,j)];
-            auto beta_mappings = graph_.get_beta_map()[std::make_pair(i,j)];
+            auto alfa_mappings = graph_gpu_.get_alfa_map()[std::make_pair(i,j)];
+            auto beta_mappings = graph_gpu_.get_beta_map()[std::make_pair(i,j)];
 
             for (const auto& mapping : alfa_mappings) {
                 size_t source = std::get<0>(mapping);
@@ -508,8 +512,8 @@ TensorGPU FCIComputerGPU::calculate_coeff_spin_with_dvec(std::pair<TensorGPU, Te
     for (size_t i = 0; i < norb_; ++i) {
         for (size_t j = 0; j < norb_; ++j) {
 
-            auto alfa_mappings = graph_.get_alfa_map()[std::make_pair(j,i)];
-            auto beta_mappings = graph_.get_beta_map()[std::make_pair(j,i)];
+            auto alfa_mappings = graph_gpu_.get_alfa_map()[std::make_pair(j,i)];
+            auto beta_mappings = graph_gpu_.get_beta_map()[std::make_pair(j,i)];
 
             for (const auto& mapping : alfa_mappings) {
                 size_t source = std::get<0>(mapping);
@@ -718,12 +722,12 @@ std::pair<std::vector<int>, std::vector<int>> FCIComputerGPU::evaluate_map_numbe
     std::vector<int> amap(nalfa_strs_);
     std::vector<int> bmap(nbeta_strs_);
 
-    uint64_t amask = graph_.reverse_integer_index(numa);
-    uint64_t bmask = graph_.reverse_integer_index(numb);
+    uint64_t amask = graph_gpu_.reverse_integer_index(numa);
+    uint64_t bmask = graph_gpu_.reverse_integer_index(numb);
 
     int acounter = 0;
     for (int index = 0; index < nalfa_strs_; ++index) {
-        int current = graph_.get_astr_at_idx(index);
+        int current = graph_gpu_.get_astr_at_idx(index);
         if (((~current) & amask) == 0) {
             amap[acounter] = index;
             acounter++;
@@ -732,7 +736,7 @@ std::pair<std::vector<int>, std::vector<int>> FCIComputerGPU::evaluate_map_numbe
 
     int bcounter = 0;
     for (int index = 0; index < nbeta_strs_; ++index) {
-        int current = graph_.get_bstr_at_idx(index);
+        int current = graph_gpu_.get_bstr_at_idx(index);
         if (((~current) & bmask) == 0) {
             bmap[bcounter] = index;
             bcounter++;
@@ -754,14 +758,14 @@ std::pair<std::vector<int>, std::vector<int>> FCIComputerGPU::evaluate_map(
     std::vector<int> amap(nalfa_strs_);
     std::vector<int> bmap(nbeta_strs_);
 
-    uint64_t apmask = graph_.reverse_integer_index(crea);
-    uint64_t ahmask = graph_.reverse_integer_index(anna);
-    uint64_t bpmask = graph_.reverse_integer_index(creb);
-    uint64_t bhmask = graph_.reverse_integer_index(annb);
+    uint64_t apmask = graph_gpu_.reverse_integer_index(crea);
+    uint64_t ahmask = graph_gpu_.reverse_integer_index(anna);
+    uint64_t bpmask = graph_gpu_.reverse_integer_index(creb);
+    uint64_t bhmask = graph_gpu_.reverse_integer_index(annb);
 
     int acounter = 0;
     for (int index = 0; index < nalfa_strs_; ++index) {
-        int current = graph_.get_astr_at_idx(index);
+        int current = graph_gpu_.get_astr_at_idx(index);
         if (((~current) & apmask) == 0 && (current & ahmask) == 0) {
             amap[acounter] = index;
             acounter++;
@@ -770,7 +774,7 @@ std::pair<std::vector<int>, std::vector<int>> FCIComputerGPU::evaluate_map(
 
     int bcounter = 0;
     for (int index = 0; index < nbeta_strs_; ++index) {
-        int current = graph_.get_bstr_at_idx(index);
+        int current = graph_gpu_.get_bstr_at_idx(index);
         if (((~current) & bpmask) == 0 && (current & bhmask) == 0) {
             bmap[bcounter] = index;
             bcounter++;
@@ -1206,6 +1210,7 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     
     // local_timer my_timer = local_timer();
     // my_timer.reset();
+    timer_.reset();
     if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
         throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
     }
@@ -1239,6 +1244,9 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
 
     int tensor_mem = Cin.size() * sizeof(cuDoubleComplex);
 
+    timer_.acc_record("initialization in nbody1_acc");
+    timer_.reset();
+
     // my_timer.record("making pointers");
     // my_timer.reset();
     cudaMalloc(&d_sourcea, sourcea_mem);
@@ -1247,6 +1255,9 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     cudaMalloc(&d_targetb, targetb_mem);
     cudaMalloc(&d_paritya, paritya_mem);
     cudaMalloc(&d_parityb, parityb_mem);
+
+    timer_.acc_record("cuda malloc in nbody1_acc");
+    timer_.reset();
 
     // cudaMalloc(&d_Cin,  tensor_mem);
     // cudaMalloc(&d_Cout, tensor_mem);
@@ -1260,6 +1271,9 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     cudaMemcpy(d_targetb, targetb.data(), targetb_mem, cudaMemcpyHostToDevice);
     cudaMemcpy(d_paritya, paritya.data(), paritya_mem, cudaMemcpyHostToDevice);
     cudaMemcpy(d_parityb, parityb.data(), parityb_mem, cudaMemcpyHostToDevice);
+
+    timer_.acc_record("cuda memcpy in nbody1_acc");
+    timer_.reset();
 
     // cudaMemcpy(d_Cin,  Cin.read_h_data().data(),  tensor_mem, cudaMemcpyHostToDevice);
     // cudaMemcpy(d_Cout, Cout.read_h_data().data(), tensor_mem, cudaMemcpyHostToDevice);
@@ -1284,7 +1298,8 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
         targetb.size(),
         tensor_mem);
 
-
+    timer_.acc_record("calling gpu function");
+    timer_.reset();
     // my_timer.record("gpu function");
     // my_timer.reset();
 
@@ -1301,6 +1316,8 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     // cudaFree(d_Cin);
     // cudaFree(d_Cout);
 
+    timer_.acc_record("cudafree");
+    timer_.reset();
 
     cudaError_t error = cudaGetLastError();
     if (error != cudaSuccess) {
@@ -1329,27 +1346,32 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
     }
 
     local_timer my_timer = local_timer();
-    my_timer.reset();
+    // my_timer.reset();
+    timer_.reset();
 
-    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ualfamap = graph_.make_mapping_each(
+    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ualfamap = graph_gpu_.make_mapping_each(
         true,
         daga,
         undaga);
 
-    my_timer.record("first 'make_mapping_each' in apply_individual_nbody_accumulate");
-    my_timer.reset();
+    // my_timer.record("first 'make_mapping_each' in apply_individual_nbody_accumulate");
+    // my_timer.reset();
+    timer_.acc_record("first make_mapping_each in apply_individual_nbody_accumulate");
+    timer_.reset();
 
     if (std::get<0>(ualfamap) == 0) {
         return;
     }
 
-    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ubetamap = graph_.make_mapping_each(
+    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ubetamap = graph_gpu_.make_mapping_each(
         false,
         dagb,
         undagb);
 
-    my_timer.record("second 'make_mapping_each' in apply_individual_nbody_accumulate");
-    my_timer.reset();
+    // my_timer.record("second 'make_mapping_each' in apply_individual_nbody_accumulate");
+    // my_timer.reset();
+    timer_.acc_record("second make_mapping_each in apply_individual_nobdy_accumulate");
+    timer_.reset();
 
     if (std::get<0>(ubetamap) == 0) {
         return;
@@ -1362,29 +1384,34 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
     std::vector<int> targetb(std::get<0>(ubetamap));
     std::vector<int> parityb(std::get<0>(ubetamap));
 
-    my_timer.record("a lot of initialization in apply_individual_nbody_accumulate");
-    my_timer.reset();
-
+    // my_timer.record("a lot of initialization in apply_individual_nbody_accumulate");
+    // my_timer.reset();
+    timer_.acc_record("a lot of initialization in apply_individual_nbody_accumulate");
+    timer_.reset();
     /// NICK: All this can be done in the make_mapping_each fucntion.
     /// Maybe try like a make_abbrev_mapping_each
 
     /// NICK: Might be slow, check this out...
     for (int i = 0; i < std::get<0>(ualfamap); i++) {
         sourcea[i] = std::get<1>(ualfamap)[i];
-        targeta[i] = graph_.get_aind_for_str(std::get<2>(ualfamap)[i]);
+        targeta[i] = graph_gpu_.get_aind_for_str(std::get<2>(ualfamap)[i]);
         paritya[i] = 1.0 - 2.0 * std::get<3>(ualfamap)[i];
     }
 
-    my_timer.record("first for loop in apply_individual_nbody_accumulate");
-    my_timer.reset();
+    // my_timer.record("first for loop in apply_individual_nbody_accumulate");
+    // my_timer.reset();
+    timer_.acc_record("first for loop in apply_individual_nbody_accumulate");
+    timer_.reset();
 
     for (int i = 0; i < std::get<0>(ubetamap); i++) {
         sourceb[i] = std::get<1>(ubetamap)[i];
-        targetb[i] = graph_.get_bind_for_str(std::get<2>(ubetamap)[i]);
+        targetb[i] = graph_gpu_.get_bind_for_str(std::get<2>(ubetamap)[i]);
         parityb[i] = 1.0 - 2.0 * std::get<3>(ubetamap)[i];
     }
 
-    my_timer.record("second for loop in apply_individual_nbody_accumulate");
+    // my_timer.record("second for loop in apply_individual_nbody_accumulate");
+    timer_.acc_record("second for loop in apply_individual_nbody_accumulate");
+    timer_.reset();
     // std::cout << my_timer.str_table() << std::endl;
     // this is where the if statement goes
     apply_individual_nbody1_accumulate(
@@ -1397,6 +1424,77 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
         sourceb,
         targetb,
         parityb);
+
+}
+
+void FCIComputerGPU::apply_individual_nbody_accumulate_gpu(
+    const std::complex<double> coeff,
+    const TensorGPU& Cin,
+    TensorGPU& Cout,
+    const std::vector<int>& daga,
+    const std::vector<int>& undaga, 
+    const std::vector<int>& dagb,
+    const std::vector<int>& undagb,
+    int* d_sourcea,
+    int* d_targeta,
+    int* d_paritya,
+    int* d_sourceb,
+    int* d_targetb,
+    int* d_parityb)
+{
+
+    if((daga.size() != undaga.size()) or (dagb.size() != undagb.size())){
+        throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
+    }
+
+    local_timer my_timer = local_timer();
+    timer_.reset();
+
+    int* d_counta;
+    cudaMalloc((void**)&d_counta, sizeof(int));
+
+    graph_gpu_.make_mapping_each_gpu(true, daga, undaga, d_sourcea, d_targeta, d_paritya, d_counta);
+
+    int counta;
+    cudaMemcpy(&counta, d_counta, sizeof(int), cudaMemcpyDeviceToHost);
+    cudaFree(d_counta);
+
+    if (counta == 0) {
+        return;
+    }
+
+    timer_.acc_record("first make_mapping_each in apply_individual_nbody_accumulate");
+    timer_.reset();
+
+    int* d_countb;
+    cudaMalloc((void**)&d_countb, sizeof(int));
+
+    graph_gpu_.make_mapping_each_gpu(false, dagb, undagb, d_sourceb, d_targetb, d_parityb, d_countb);
+
+    int countb;
+    cudaMemcpy(&countb, d_countb, sizeof(int), cudaMemcpyDeviceToHost);
+    cudaFree(d_countb);
+
+    if (countb == 0) {
+        return;
+    }
+
+    timer_.acc_record("second make_mapping_each in apply_individual_nbody_accumulate");
+    timer_.reset();
+
+    apply_individual_nbody1_accumulate(
+        coeff, 
+        Cin,
+        Cout,
+        d_sourcea,
+        d_targeta,
+        d_paritya,
+        d_sourceb,
+        d_targetb,
+        d_parityb);
+
+    timer_.acc_record("apply_individual_nbody1_accumulate");
+    timer_.reset();
 
 }
 
@@ -1413,7 +1511,8 @@ void FCIComputerGPU::apply_individual_sqop_term(
     std::vector<int> annb;
 
     local_timer my_timer = local_timer();
-    my_timer.reset();
+    // my_timer.reset();
+    timer_.reset();
 
     for(size_t i = 0; i < std::get<1>(term).size(); i++){
         if(std::get<1>(term)[i]%2 == 0){
@@ -1423,8 +1522,10 @@ void FCIComputerGPU::apply_individual_sqop_term(
         }
     }
 
-    my_timer.record("first loop in apply_individual_sqop_term");
-    my_timer.reset();
+    // my_timer.record("first loop in apply_individual_sqop_term");
+    // my_timer.reset();
+    timer_.acc_record("first loop in apply_individual_sqop_term");
+    timer_.reset();
 
     for(size_t i = 0; i < std::get<2>(term).size(); i++){
         if(std::get<2>(term)[i]%2 == 0){
@@ -1434,8 +1535,10 @@ void FCIComputerGPU::apply_individual_sqop_term(
         }
     }
 
-    my_timer.record("second loop in apply_individual_sqop_term");
-    my_timer.reset();
+    // my_timer.record("second loop in apply_individual_sqop_term");
+    // my_timer.reset();
+    timer_.acc_record("second loop in apply_individual_sqop_term");
+    timer_.reset();
 
     if (std::get<1>(term).size() != std::get<2>(term).size()) {
         throw std::invalid_argument("Each term must have same number of anihilators and creators");
@@ -1446,17 +1549,33 @@ void FCIComputerGPU::apply_individual_sqop_term(
     ops1.insert(ops1.end(), ops2.begin(), ops2.end());
 
     int nswaps = parity_sort(ops1);
-    my_timer.record("some parity things");
+    // my_timer.record("some parity things");
+    timer_.acc_record("some parity things");
+    timer_.reset();
     // std::cout << my_timer.str_table() << std::endl;
 
-    apply_individual_nbody_accumulate(
+    int* d_sourcea;
+    int* d_targeta;
+    int* d_paritya;
+    int* d_sourceb;
+    int* d_targetb;
+    int* d_parityb;
+
+
+    apply_individual_nbody_accumulate_gpu(
         pow(-1, nswaps) * std::get<0>(term),
         Cin,
         Cout,
         crea,
         anna, 
         creb,
-        annb);
+        annb,
+        d_sourcea,
+        d_targeta,
+        d_paritya,
+        d_sourceb,
+        d_targetb,
+        d_parityb);
 }
 
 // do I need to make the C_ variable of this class a TensorGPU object
@@ -1476,8 +1595,8 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
 
     
     local_timer my_timer = local_timer();
-    my_timer.reset();
-    
+    //my_timer.reset();
+    timer_.reset();
     // cudaMemcpy(Cin.d_data(), C_.d_data(), Cin.size() * sizeof(cuDoubleComplex))
 
     C_.zero_gpu();
@@ -1493,8 +1612,10 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
     // cudaMemcpy(d_C_, C_.read_h_data().data(), d_C_mem, cudaMemcpyHostToDevice);
 
 
-    my_timer.record("making tensor things");
-    my_timer.reset();
+    // my_timer.record("making tensor things");
+    // my_timer.reset();
+    timer_.acc_record("making tensor things");
+    timer_.reset();
 
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
@@ -1507,7 +1628,9 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
 
     // later you have a function C_.get_dptr() that returs the device pointer
 
-    my_timer.record("first for loop in apply_sqop");
+    // my_timer.record("first for loop in apply_sqop");
+    timer_.acc_record("first for loop in apply_sqop");
+    std::cout << timer_.str_table() << std::endl;
     // std::cout << my_timer.str_table() << std::endl;
 
 }

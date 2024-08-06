@@ -22,7 +22,7 @@ sqop.add_term(3.0, [1], [5])
 
 sqop.add_term(2.0, [4], [0])
 sqop.add_term(2.0, [0], [4])
-print(sqop)
+# print(sqop)
 
 
 
@@ -32,7 +32,7 @@ print("===========================")
 print(fci_comp)
 print(fci_comp2)
 
-fci_comp.do_on_gpu()
+# fci_comp.do_on_gpu()
 fci_comp.apply_sqop(sqop)
 fci_comp2.apply_sqop(sqop)
 
