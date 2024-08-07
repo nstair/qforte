@@ -1196,90 +1196,34 @@ void FCIComputerGPU::apply_sqop_evolution(
         adjoint); 
 }
 
-void FCIComputerGPU::apply_individual_nbody1_accumulate(
+void FCIComputerGPU::apply_individual_nbody1_accumulate_gpu(
     const std::complex<double> coeff, 
     const TensorGPU& Cin,
     TensorGPU& Cout,
-    std::vector<int>& sourcea,
-    std::vector<int>& targeta,
-    std::vector<int>& paritya,
-    std::vector<int>& sourceb,
-    std::vector<int>& targetb,
-    std::vector<int>& parityb)
+    const int acount,
+    const int bcount,
+    const int* d_targeta,
+    const int* d_sourcea,
+    const int* d_paritya,
+    const int* d_targetb,
+    const int* d_sourceb,
+    const int* d_parityb)
 {
     
-    // local_timer my_timer = local_timer();
-    // my_timer.reset();
-    timer_.reset();
-    if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
-        throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
-    }
+    
+    // timer_.reset();
+    // timer_.acc_record("cuda malloc in nbody1_acc");
 
-    if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
-        throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
-    }
-    // only part that has kernel
 
-    // make device pointers out of all the things coming in - use cuda mem copy to a device pointer
-    // my_timer.record("error checks");
-    // my_timer.reset();
-    int* d_sourcea;
-    int* d_sourceb;
-    int* d_targeta;
-    int* d_targetb;
-    int* d_paritya;
-    int* d_parityb;
+    // if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
+    //     throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
+    // }
 
-    // cuDoubleComplex* d_Cin;
-    // cuDoubleComplex* d_Cout;
-
-    // cumalloc for these
-
-    int sourcea_mem = sourcea.size() * sizeof(int);
-    int sourceb_mem = sourceb.size() * sizeof(int);
-    int targetb_mem = targetb.size() * sizeof(int);
-    int targeta_mem = targeta.size() * sizeof(int);
-    int paritya_mem = paritya.size() * sizeof(int);
-    int parityb_mem = parityb.size() * sizeof(int);
+    // if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
+    //     throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
+    // }    
 
     int tensor_mem = Cin.size() * sizeof(cuDoubleComplex);
-
-    timer_.acc_record("initialization in nbody1_acc");
-    timer_.reset();
-
-    // my_timer.record("making pointers");
-    // my_timer.reset();
-    cudaMalloc(&d_sourcea, sourcea_mem);
-    cudaMalloc(&d_sourceb, sourceb_mem);
-    cudaMalloc(&d_targeta, targeta_mem);
-    cudaMalloc(&d_targetb, targetb_mem);
-    cudaMalloc(&d_paritya, paritya_mem);
-    cudaMalloc(&d_parityb, parityb_mem);
-
-    timer_.acc_record("cuda malloc in nbody1_acc");
-    timer_.reset();
-
-    // cudaMalloc(&d_Cin,  tensor_mem);
-    // cudaMalloc(&d_Cout, tensor_mem);
-
-    // my_timer.record("cudamallocs");
-    // my_timer.reset();
-
-    cudaMemcpy(d_sourcea, sourcea.data(), sourcea_mem, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_sourceb, sourceb.data(), sourceb_mem, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_targeta, targeta.data(), targeta_mem, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_targetb, targetb.data(), targetb_mem, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_paritya, paritya.data(), paritya_mem, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_parityb, parityb.data(), parityb_mem, cudaMemcpyHostToDevice);
-
-    timer_.acc_record("cuda memcpy in nbody1_acc");
-    timer_.reset();
-
-    // cudaMemcpy(d_Cin,  Cin.read_h_data().data(),  tensor_mem, cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_Cout, Cout.read_h_data().data(), tensor_mem, cudaMemcpyHostToDevice);
-
-    // my_timer.record("cudamemcpy");
-    // my_timer.reset();
 
     cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
 
@@ -1294,40 +1238,15 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
         d_targetb,
         d_parityb,
         nbeta_strs_,
-        targeta.size(),
-        targetb.size(),
+        acount,
+        bcount,
         tensor_mem);
-
-    timer_.acc_record("calling gpu function");
-    timer_.reset();
-    // my_timer.record("gpu function");
-    // my_timer.reset();
-
-
-    // cudaMemcpy(Cout.data().data(), d_Cout, tensor_mem, cudaMemcpyDeviceToHost);
-
-
-    cudaFree(d_sourcea);
-    cudaFree(d_sourceb);
-    cudaFree(d_targeta);
-    cudaFree(d_targetb);
-    cudaFree(d_paritya);
-    cudaFree(d_parityb);
-    // cudaFree(d_Cin);
-    // cudaFree(d_Cout);
-
-    timer_.acc_record("cudafree");
-    timer_.reset();
 
     cudaError_t error = cudaGetLastError();
     if (error != cudaSuccess) {
         std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
         throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
     }
-
-    // my_timer.record("cuda free and transfer");
-    // std::cout << my_timer.str_table() << std::endl;
-
 }
 
 
@@ -1482,16 +1401,16 @@ void FCIComputerGPU::apply_individual_nbody_accumulate_gpu(
     timer_.acc_record("second make_mapping_each in apply_individual_nbody_accumulate");
     timer_.reset();
 
-    apply_individual_nbody1_accumulate(
-        coeff, 
-        Cin,
-        Cout,
-        d_sourcea,
-        d_targeta,
-        d_paritya,
-        d_sourceb,
-        d_targetb,
-        d_parityb);
+    // apply_individual_nbody1_accumulate(
+    //     coeff, 
+    //     Cin,
+    //     Cout,
+    //     d_sourcea,
+    //     d_targeta,
+    //     d_paritya,
+    //     d_sourceb,
+    //     d_targetb,
+    //     d_parityb);
 
     timer_.acc_record("apply_individual_nbody1_accumulate");
     timer_.reset();
@@ -1660,7 +1579,13 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
 
             int nswaps = parity_sort(ops1);
 
+            std::complex<double> coeff = pow(-1, nswaps) * std::get<0>(term);
+
             // ==> apply_individual_nbody_accumulate_gpu <==
+            std::vector<int> daga = crea;
+            std::vector<int> dagb = creb;
+            std::vector<int> undaga = anna;
+            std::vector<int> undagb = annb;
 
             if((daga.size() != undaga.size()) or (dagb.size() != undagb.size())){
                 throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
@@ -1682,7 +1607,7 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
 
             int counta;
             cudaMemcpy(&counta, d_counta, sizeof(int), cudaMemcpyDeviceToHost);
-            cudaFree(d_counta);
+            
 
             if (counta == 0) {
                 return;
@@ -1707,7 +1632,7 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
 
             int countb;
             cudaMemcpy(&countb, d_countb, sizeof(int), cudaMemcpyDeviceToHost);
-            cudaFree(d_countb);
+            
 
             if (countb == 0) {
                 return;
@@ -1715,16 +1640,21 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
 
             /// NICK: Additional beta list munging?
 
-            apply_individual_nbody1_accumulate(
+            apply_individual_nbody1_accumulate_gpu(
                 coeff, 
                 Cin,
-                Cout,
+                C_,
+                counta,
+                countb,
                 d_sourcea,
                 d_targeta,
                 d_paritya,
                 d_sourceb,
                 d_targetb,
                 d_parityb);
+
+            cudaFree(d_counta);
+            cudaFree(d_countb);
         }
     }
 

@@ -10,7 +10,7 @@
 #include <cuda_runtime.h>
 #include <cuComplex.h>
 
-struct PairHash {
+struct PairHashGPU {
     template <class T1, class T2>
     std::size_t operator () (const std::pair<T1, T2>& p) const {
         auto h1 = std::hash<T1>{}(p.first);
@@ -19,7 +19,7 @@ struct PairHash {
     }
 };
 
-using Spinmap = std::unordered_map<std::pair<int, int>, std::vector<std::tuple<int, int, int>>, PairHash>;
+using SpinmapGPU = std::unordered_map<std::pair<int, int>, std::vector<std::tuple<int, int, int>>, PairHashGPU>;
 
 class FCIGraphGPU {
 public:
@@ -39,13 +39,13 @@ public:
         size_t length); 
 
     /// Construct the FCI Mapping
-    Spinmap build_mapping(
+    SpinmapGPU build_mapping(
         const std::vector<uint64_t>& strings, 
         int nele, 
         const std::unordered_map<uint64_t, size_t>& index);
 
     std::vector<std::vector<std::vector<int>>> map_to_deexc(
-        const Spinmap& mappings, 
+        const SpinmapGPU& mappings, 
         int states,
         int norbs,
         int nele);
@@ -65,7 +65,7 @@ public:
         const std::vector<int>& dag, 
         const std::vector<int>& undag);
 
-    int make_mapping_each_gpu(
+    int* make_mapping_each_gpu(
         bool alpha, 
         const std::vector<int>& dag, 
         const std::vector<int>& undag,
@@ -178,8 +178,8 @@ public:
     std::unordered_map<uint64_t, size_t> get_aind() const { return aind_; }
     std::unordered_map<uint64_t, size_t> get_bind() const { return bind_; }
 
-    Spinmap get_alfa_map() const { return alfa_map_; }
-    Spinmap get_beta_map() const { return beta_map_; }
+    SpinmapGPU get_alfa_map() const { return alfa_map_; }
+    SpinmapGPU get_beta_map() const { return beta_map_; }
 
     int get_ndexca() const { return dexca_[0].size(); }
     int get_ndexcb() const { return dexcb_[0].size(); }
@@ -206,8 +206,8 @@ private:
     std::unordered_map<uint64_t, size_t> aind_;
     std::unordered_map<uint64_t, size_t> bind_;
 
-    Spinmap alfa_map_;
-    Spinmap beta_map_;
+    SpinmapGPU alfa_map_;
+    SpinmapGPU beta_map_;
 
     std::vector<std::vector<std::vector<int>>> dexca_;
     std::vector<std::vector<std::vector<int>>> dexcb_;

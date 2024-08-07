@@ -271,6 +271,19 @@ class FCIComputerGPU {
       std::vector<int>& parityb);
 
 
+    void apply_individual_nbody1_accumulate_gpu(
+      const std::complex<double> coeff, 
+      const TensorGPU& Cin,
+      TensorGPU& Cout,
+      const int acount,
+      const int bcount,
+      const int* d_targeta,
+      const int* d_sourcea,
+      const int* d_paritya,
+      const int* d_targetb,
+      const int* d_sourceb,
+      const int* d_parityb);
+
 
     /// Apply a single term of a SQOperator to the FCIComputerGPU after
     /// re-indexing the creators and anihilators. 

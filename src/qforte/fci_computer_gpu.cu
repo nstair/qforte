@@ -62,7 +62,7 @@ __global__ void apply_individual_nbody1_accumulate_kernel(
     const int* d_sourceb,
     const int* d_targetb,
     const int* d_parityb,
-    int nbeta_strs_,
+    int nbeta_strs,
     int targeta_size,
     int targetb_size,
     int tensor_size) 
@@ -71,9 +71,9 @@ __global__ void apply_individual_nbody1_accumulate_kernel(
 
     if (idx < targeta_size) {
 
-        int ta_idx = d_targeta[idx] * nbeta_strs_;
+        int ta_idx = d_targeta[idx] * nbeta_strs;
 
-        int sa_idx = d_sourcea[idx] * nbeta_strs_;
+        int sa_idx = d_sourcea[idx] * nbeta_strs;
 
         cuDoubleComplex pref = cuCmul(coeff, make_cuDoubleComplex(d_paritya[idx], 0.0));
 
@@ -100,13 +100,26 @@ void apply_individual_nbody1_accumulate_wrapper(
     const int* d_sourceb,
     const int* d_targetb,
     const int* d_parityb,
-    int nbeta_strs_,
+    int nbeta_strs,
     int targeta_size,
     int targetb_size,
     int tensor_size) 
 {
     int blocksPerGrid = (tensor_size + 256 - 1) / 256;
-    apply_individual_nbody1_accumulate_kernel<<<blocksPerGrid, 256>>>(coeff, d_Cin, d_Cout, d_sourcea, d_targeta, d_paritya, d_sourceb, d_targetb, d_parityb, nbeta_strs_, targeta_size, targetb_size, tensor_size);
+    apply_individual_nbody1_accumulate_kernel<<<blocksPerGrid, 256>>>(
+        coeff, 
+        d_Cin, 
+        d_Cout, 
+        d_sourcea, 
+        d_targeta, 
+        d_paritya, 
+        d_sourceb, 
+        d_targetb, 
+        d_parityb, 
+        nbeta_strs, 
+        targeta_size, 
+        targetb_size, 
+        tensor_size);
    
 
     // Check for any errors launching the kernel

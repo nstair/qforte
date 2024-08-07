@@ -1,13 +1,14 @@
-#include "fci_graph_gpu.h"
 #include <stdexcept>
 #include <algorithm>
 #include <cstdint>
 #include <unordered_map>
 #include <iostream>
-
-#include "fci_graph_gpu.cuh"
-
 #include <bitset>
+
+#include "fci_graph_gpu.h"
+#include "fci_graph_gpu.cuh"
+#include "cuda_runtime.h"
+
 
 /// Custom construcotr
 FCIGraphGPU::FCIGraphGPU(int nalfa, int nbeta, int norb) 
@@ -104,13 +105,13 @@ std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> FCIGraphG
     return std::make_pair(string_list, index_list);
 }
 
-Spinmap FCIGraphGPU::build_mapping(
+SpinmapGPU FCIGraphGPU::build_mapping(
     const std::vector<uint64_t>& strings, 
     int nele, 
     const std::unordered_map<uint64_t, size_t>& index) 
 {
     int norb = norb_;
-    Spinmap out;
+    SpinmapGPU out;
 
     for (int iorb = 0; iorb < norb; ++iorb) {
         for (int jorb = 0; jorb < norb; ++jorb) {
@@ -134,7 +135,7 @@ Spinmap FCIGraphGPU::build_mapping(
         }
     }
 
-    Spinmap result;
+    SpinmapGPU result;
     for (const auto& entry : out) {
         const auto& key = entry.first;
         const auto& value = entry.second;
@@ -153,7 +154,7 @@ Spinmap FCIGraphGPU::build_mapping(
 }
 
 std::vector<std::vector<std::vector<int>>> FCIGraphGPU::map_to_deexc(
-    const Spinmap& mappings, 
+    const SpinmapGPU& mappings, 
     int states, 
     int norbs,
     int nele) 
@@ -254,7 +255,7 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraphGP
 
 /// NICK: May be an accelerated version of this funciton, may also be important as it comes up in
 // every instance of apply individual op!
-int FCIGraphGPU::make_mapping_each_gpu(
+int* FCIGraphGPU::make_mapping_each_gpu(
     bool alpha, 
     const std::vector<int>& dag, 
     const std::vector<int>& undag,
@@ -316,7 +317,7 @@ int FCIGraphGPU::make_mapping_each_gpu(
     cudaFree(d_dag);
     cudaFree(d_undag);
 
-    return d_count&
+    return d_count;
 }
 
 /// NICK: 1. Consider a faster blas veriosn, 2. consider using qubit basis, 3. rename (too long)

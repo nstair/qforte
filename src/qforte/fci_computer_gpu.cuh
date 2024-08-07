@@ -27,7 +27,7 @@ __global__ void apply_individual_nbody1_accumulate_kernel(
     const int* d_sourceb,
     const int* d_targetb,
     const int* d_parityb,
-    int nbeta_strs_,
+    int nbeta_strs,
     int targeta_size,
     int targetb_size,
     int tensor_size);
@@ -43,7 +43,7 @@ extern "C" void apply_individual_nbody1_accumulate_wrapper(
     const int* d_sourceb,
     const int* d_targetb,
     const int* d_parityb,
-    int nbeta_strs_,
+    int nbeta_strs,
     int targeta_size,
     int targetb_size,
     int tensor_size);

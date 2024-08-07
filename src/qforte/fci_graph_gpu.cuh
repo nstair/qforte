@@ -1,8 +1,10 @@
-#pragma once
+#include <stdint.h>
+
+// #pragma once
 #include <complex>
 #include <cuComplex.h>
 
-#include <stdint.h>
+
 
 // Function to set a specific bit in a bitmask
 __device__ uint64_t set_bit(uint64_t mask, int pos);
