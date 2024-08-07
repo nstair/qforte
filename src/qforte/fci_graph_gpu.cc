@@ -41,9 +41,31 @@ FCIGraphGPU::FCIGraphGPU(int nalfa, int nbeta, int norb)
 
     dexca_vec_ = unroll_from_3d(dexca_);
     dexcb_vec_ = unroll_from_3d(dexcb_);
+
+    /// NICK: the GPU may not like uint64_t and may requre regual ints instead...
+    cudaMalloc((void**)&d_astr_, lena_ * sizeof(uint64_t));
+    cudaMalloc((void**)&d_bstr_, lenb_ * sizeof(uint64_t));
+
+    cudaMemcpy(d_astr_, astr_.data(), astr_.size() * sizeof(uint64_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_bstr_, bstr_.data(), bstr_.size() * sizeof(uint64_t), cudaMemcpyHostToDevice);
+
+    cudaMalloc((void**)&d_dexca_vec_, dexca_vec_.size() * sizeof(int));
+    cudaMalloc((void**)&d_dexcb_vec_, dexcb_vec_.size() * sizeof(int));
+    
+    cudaMemcpy(d_dexca_vec_, dexca_vec_.data(), dexca_vec_.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_dexcb_vec_, dexcb_vec_.data(), dexcb_vec_.size() * sizeof(int), cudaMemcpyHostToDevice);
 }
 
 FCIGraphGPU::FCIGraphGPU() : FCIGraphGPU(0, 0, 0) {}
+
+/// Destructor
+FCIGraphGPU::~FCIGraphGPU()
+{
+    cudaFree(d_astr_);
+    cudaFree(d_bstr_);
+    cudaFree(d_dexca_vec_);
+    cudaFree(d_dexcb_vec_);
+}
 
 std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> FCIGraphGPU::build_strings(
     int nele, 
@@ -232,7 +254,7 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraphGP
 
 /// NICK: May be an accelerated version of this funciton, may also be important as it comes up in
 // every instance of apply individual op!
-void FCIGraphGPU::make_mapping_each_gpu(
+int FCIGraphGPU::make_mapping_each_gpu(
     bool alpha, 
     const std::vector<int>& dag, 
     const std::vector<int>& undag,
@@ -244,40 +266,57 @@ void FCIGraphGPU::make_mapping_each_gpu(
     std::vector<uint64_t> strings = alpha ? get_astr() : get_bstr();
     int length = alpha ? lena_ : lenb_;
 
-    // Allocate device memory
-    uint64_t* d_strings;
     int* d_dag;
     int* d_undag;
 
-    cudaMalloc((void**)&d_strings, length * sizeof(uint64_t));
     cudaMalloc((void**)&d_dag, dag.size() * sizeof(int));
     cudaMalloc((void**)&d_undag, undag.size() * sizeof(int));
 
-    // Copy data to device
-    cudaMemcpy(d_strings, strings.data(), length * sizeof(uint64_t), cudaMemcpyHostToDevice);
     cudaMemcpy(d_dag, dag.data(), dag.size() * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_undag, undag.data(), undag.size() * sizeof(int), cudaMemcpyHostToDevice);
 
-    // Initialize count to zero
     cudaMemset(d_count, 0, sizeof(int));
 
     // Launch kernel
     int blockSize = 256; // Adjust this based on your hardware
     int numBlocks = (length + blockSize - 1) / blockSize;
-    make_mapping_each_kernel(
-        alpha,
-        d_dag, dag.size(),
-        d_undag, undag.size(),
-        d_strings, length,
-        d_source, d_target, d_parity, d_count);
+
+    if(alpha){
+        make_mapping_each_wrapper(
+        d_dag, 
+        dag.size(),
+        d_undag, 
+        undag.size(),
+        d_astr_, 
+        length,
+        d_source, 
+        d_target, 
+        d_parity, 
+        d_count);
+    } else {
+        make_mapping_each_wrapper(
+        d_dag, 
+        dag.size(),
+        d_undag, 
+        undag.size(),
+        d_bstr_, 
+        length,
+        d_source, 
+        d_target, 
+        d_parity, 
+        d_count);
+    }
+
+    
 
     // Wait for GPU to finish before accessing on host
     cudaDeviceSynchronize();
 
     // Free device memory
-    cudaFree(d_strings);
     cudaFree(d_dag);
     cudaFree(d_undag);
+
+    return d_count&
 }
 
 /// NICK: 1. Consider a faster blas veriosn, 2. consider using qubit basis, 3. rename (too long)

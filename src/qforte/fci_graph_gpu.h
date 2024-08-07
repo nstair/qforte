@@ -27,7 +27,11 @@ public:
     /// Constructor
     FCIGraphGPU(int nalfa, int nbeta, int norb);
 
+    /// Default constructor
     FCIGraphGPU();
+
+    /// Default deconstructor, just frees device memory
+    ~FCIGraphGPU();
 
     /// Build alfa/beta bitstrings to index the FCI Computer
     std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> build_strings(
@@ -61,7 +65,7 @@ public:
         const std::vector<int>& dag, 
         const std::vector<int>& undag);
 
-    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> make_mapping_each_gpu(
+    int make_mapping_each_gpu(
         bool alpha, 
         const std::vector<int>& dag, 
         const std::vector<int>& undag,
@@ -210,6 +214,13 @@ private:
 
     std::vector<int> dexca_vec_;
     std::vector<int> dexcb_vec_;
+
+    //device pointers
+    uint64_t* d_astr_;
+    uint64_t* d_bstr_;
+
+    int* d_dexca_vec_;
+    int* d_dexcb_vec_;
     
 };
 

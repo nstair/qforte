@@ -3,6 +3,16 @@
 #include <iostream>
 
 
+// __device__ double2 cuDoubleComplexToDouble2(cuDoubleComplex z) {
+//     double2 d;
+//     d.x = cuCreal(z);
+//     d.y = cuCimag(z);
+//     return d;
+// }
+
+// __device__ cuDoubleComplex double2ToCuDoubleComplex(double2 d) {
+//     return make_cuDoubleComplex(d.x, d.y);
+// }
 
 // __global__ void apply_individual_nbody1_accumulate_kernel(
 //     const cuDoubleComplex coeff, 
@@ -19,30 +29,27 @@
 //     int targetb_size,
 //     int tensor_size) 
 // {
-//     int index1 = blockIdx.x * blockDim.x + threadIdx.x;
-//     // int index2 = blockIdx.d_Cout * blockDim.d_Cout + threadIdx.d_Cout;
-    
-//     if (index1 < targeta_size) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-//         int ta_idx = d_targeta[index1] * nbeta_strs_;
-//         int sa_idx = d_sourcea[index1] * nbeta_strs_;
+//     if (idx < targeta_size) {
+//         int ta_idx = d_targeta[idx] * nbeta_strs_;
+//         int sa_idx = d_sourcea[idx] * nbeta_strs_;
 
-//         cuDoubleComplex pref = cuCmul(coeff, make_cuDoubleComplex(d_paritya[index1], 0.0));
+//         cuDoubleComplex pref = cuCmul(coeff, make_cuDoubleComplex(d_paritya[idx], 0.0));
 
-//         for (int j = 0; j < targetb_size; j++) {
-
+//         for (int j = 0; j < targetb_size; ++j) {
 //             cuDoubleComplex term = cuCmul(pref, make_cuDoubleComplex(d_parityb[j], 0.0));
 //             term = cuCmul(term, d_Cin[sa_idx + d_sourceb[j]]);
-//             // atomicAdd(&d_Cout[ta_idx + d_targetb[j]].x, term.x);
-//             // atomicAdd(&d_Cout[ta_idx + d_targetb[j]].y, term.y);
-//             d_Cout[ta_idx + d_targetb[j]].x += term.x;
-//             // d_Cout[ta_idx + d_targetb[j]].y += term.y;
 
+//             double2 term_double2 = cuDoubleComplexToDouble2(term);
+//             double2* d_Cout_double2 = reinterpret_cast<double2*>(&d_Cout[ta_idx + d_targetb[j]]);
+
+//             atomicAdd(&d_Cout_double2->x, term_double2.x);
+//             atomicAdd(&d_Cout_double2->y, term_double2.y);
 //         }
-
-
 //     }
 // }
+
 
 // CUDA kernel
 __global__ void apply_individual_nbody1_accumulate_kernel(
@@ -80,7 +87,6 @@ __global__ void apply_individual_nbody1_accumulate_kernel(
             d_Cout[ta_idx + d_targetb[j]] = cuCadd(term,  d_Cout[ta_idx + d_targetb[j]]);
 
         }
-
     }
 }
 

@@ -1586,20 +1586,16 @@ void FCIComputerGPU::apply_individual_sqop_term(
 /// NICK: Check out  accumulation, don't need to do it this way..
 void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
 
-    // gpu_error()
-    // assures C_ is on the gpu
+    gpu_error();
     C_.gpu_error();
     TensorGPU Cin(C_.shape(), "Cin", true);
     Cin.copy_in_gpu(C_);
 
-
-    
-    local_timer my_timer = local_timer();
-    //my_timer.reset();
-    timer_.reset();
-    // cudaMemcpy(Cin.d_data(), C_.d_data(), Cin.size() * sizeof(cuDoubleComplex))
-
     C_.zero_gpu();
+    
+    // local_timer my_timer = local_timer();
+    // my_timer.reset();
+    // timer_.reset();
 
     // cuDoubleComplex* d_Cin_;
     // int d_Cin_mem = Cin.size() * sizeof(cuDoubleComplex);
@@ -1611,27 +1607,133 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
     // cudaMalloc(&d_C_, d_C_mem);
     // cudaMemcpy(d_C_, C_.read_h_data().data(), d_C_mem, cudaMemcpyHostToDevice);
 
+    // allocate and initialize the
 
-    // my_timer.record("making tensor things");
-    // my_timer.reset();
-    timer_.acc_record("making tensor things");
-    timer_.reset();
+    int* d_sourcea;
+    int* d_targeta;
+    int* d_paritya;
+    int* d_sourceb;
+    int* d_targetb;
+    int* d_parityb;
+
+    cudaMalloc(&d_sourcea, nalfa_strs_ * sizeof(int));
+    cudaMalloc(&d_sourceb, nalfa_strs_ * sizeof(int));
+    cudaMalloc(&d_targeta, nalfa_strs_ * sizeof(int));
+    cudaMalloc(&d_targetb, nbeta_strs_ * sizeof(int));
+    cudaMalloc(&d_paritya, nbeta_strs_ * sizeof(int));
+    cudaMalloc(&d_parityb, nbeta_strs_ * sizeof(int));
 
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
-        apply_individual_sqop_term(
-            term,
-            Cin,
-            C_);
+
+            std::vector<int> crea;
+            std::vector<int> anna;
+
+            std::vector<int> creb;
+            std::vector<int> annb;
+
+            // ===> populate ab cre/ann lists <===
+
+            for(size_t i = 0; i < std::get<1>(term).size(); i++){
+                if(std::get<1>(term)[i]%2 == 0){
+                    crea.push_back(std::floor(std::get<1>(term)[i] / 2));
+                } else {
+                    creb.push_back(std::floor(std::get<1>(term)[i] / 2));
+                }
+            }
+
+            for(size_t i = 0; i < std::get<2>(term).size(); i++){
+                if(std::get<2>(term)[i]%2 == 0){
+                    anna.push_back(std::floor(std::get<2>(term)[i] / 2));
+                } else {
+                    annb.push_back(std::floor(std::get<2>(term)[i] / 2));
+                }
+            }
+
+            if (std::get<1>(term).size() != std::get<2>(term).size()) {
+                throw std::invalid_argument("Each term must have same number of anihilators and creators");
+            }   
+
+            std::vector<size_t> ops1(std::get<1>(term));
+            std::vector<size_t> ops2(std::get<2>(term));
+            ops1.insert(ops1.end(), ops2.begin(), ops2.end());
+
+            int nswaps = parity_sort(ops1);
+
+            // ==> apply_individual_nbody_accumulate_gpu <==
+
+            if((daga.size() != undaga.size()) or (dagb.size() != undagb.size())){
+                throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
+            }
+
+            // ===> get the alpha s/t/p lists <===
+            /// NICK: probably do this outside the loop
+            int* d_counta;
+            cudaMalloc((void**)&d_counta, sizeof(int));
+
+            graph_gpu_.make_mapping_each_gpu(
+                true, 
+                daga, 
+                undaga, 
+                d_sourcea, 
+                d_targeta, 
+                d_paritya, 
+                d_counta);
+
+            int counta;
+            cudaMemcpy(&counta, d_counta, sizeof(int), cudaMemcpyDeviceToHost);
+            cudaFree(d_counta);
+
+            if (counta == 0) {
+                return;
+            }
+
+            /// NICK: Additional alpha list munging?
+
+            int* d_countb;
+            cudaMalloc((void**)&d_countb, sizeof(int));
+
+            graph_gpu_.make_mapping_each_gpu(
+                false, 
+                dagb, 
+                undagb, 
+                d_sourceb, 
+                d_targetb, 
+                d_parityb, 
+                d_countb);
+
+            // ===> get the beta s/t/p lists <===
+            /// NICK: probably do this outside the loop
+
+            int countb;
+            cudaMemcpy(&countb, d_countb, sizeof(int), cudaMemcpyDeviceToHost);
+            cudaFree(d_countb);
+
+            if (countb == 0) {
+                return;
+            }
+
+            /// NICK: Additional beta list munging?
+
+            apply_individual_nbody1_accumulate(
+                coeff, 
+                Cin,
+                Cout,
+                d_sourcea,
+                d_targeta,
+                d_paritya,
+                d_sourceb,
+                d_targetb,
+                d_parityb);
         }
     }
 
-    // later you have a function C_.get_dptr() that returs the device pointer
-
-    // my_timer.record("first for loop in apply_sqop");
-    timer_.acc_record("first for loop in apply_sqop");
-    std::cout << timer_.str_table() << std::endl;
-    // std::cout << my_timer.str_table() << std::endl;
+    cudaFree(d_sourcea);
+    cudaFree(d_targeta);
+    cudaFree(d_paritya);
+    cudaFree(d_sourceb);
+    cudaFree(d_targetb);
+    cudaFree(d_parityb);
 
 }
 

@@ -2,27 +2,39 @@
 #include <complex>
 #include <cuComplex.h>
 
+#include <stdint.h>
+
+// Function to set a specific bit in a bitmask
+__device__ uint64_t set_bit(uint64_t mask, int pos);
+
+// Function to unset a specific bit in a bitmask
+__device__ uint64_t unset_bit(uint64_t mask, int pos);
+
+// Function to count bits above a certain position
+__device__ int count_bits_above(uint64_t number, int pos);
+
+// Function to check if a value is in an array
+__device__ bool contains(const int* array, int size, int value);
+
 __global__ void make_mapping_each_kernel(
-    bool alpha,
     const int* dag,
-    int dag_size,
+    const int dag_size,
     const int* undag,
-    int undag_size,
+    const int undag_size,
     const uint64_t* strings,
-    int length,
+    const int length,
     int* source,
     int* target,
     int* parity,
     int* count);
 
 extern "C" void make_mapping_each_wrapper(
-    bool alpha,
     const int* dag,
-    int dag_size,
+    const int dag_size,
     const int* undag,
-    int undag_size,
+    const int undag_size,
     const uint64_t* strings,
-    int length,
+    const int length,
     int* source,
     int* target,
     int* parity,
