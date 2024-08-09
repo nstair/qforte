@@ -10,10 +10,11 @@ print('-------------------------')
 geom = [('H', (0., 0., 0.)), 
         ('H', (0., 0., 1.00)),
         ('H', (0., 0., 2.00)), 
-        ('H', (0., 0., 3.00))]
-        # ('H', (0., 0., 2.00))] 
-        # ('H', (0., 0., 2.50)),
+        ('H', (0., 0., 3.00)),
+        ('H', (0., 0., 4.00)),
+        ('H', (0., 0., 5.00)),
         # ('H', (0., 0., 3.00)), 
+        ]
         # ('H', (0., 0., 3.50))]
 # Get the molecule object that now contains both the fermionic and qubit Hamiltonians.
 mol = system_factory(build_type='psi4', 
@@ -57,7 +58,7 @@ alg = QITE(mol,
         verbose=0, 
         print_summary_file=0)
 
-alg.run(beta=3.4, 
+alg.run(beta=10.0, 
         db = 0.1, 
         sparseSb=0, 
         expansion_type='All', 
@@ -66,8 +67,8 @@ alg.run(beta=3.4,
         print_pool=1, 
         evolve_dfham=0, 
         random_state=0, 
-        selected_pool=1, 
-        t_thresh=1.0e-4,)
+        selected_pool=0, 
+        t_thresh=1.0e-5,)
 
 Egs_FCI = alg.get_gs_energy()
 

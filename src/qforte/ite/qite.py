@@ -172,7 +172,7 @@ class QITE(Algorithm):
             if(self._use_exact_evolution):
                 self._fname = f'beta_{self._beta}_db_{self._db}_EXACT_EVOLUTION'
             else:
-                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}'
+                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_selected_pool_{self._selected_pool}_t_{self._t_thresh}'
 
         self._sz = 0
 
@@ -760,7 +760,8 @@ class QITE(Algorithm):
 
             if(self._print_pool):
                 f_pool = open(f"pool_qite_{self._fname}_summary.dat", "w+", buffering=1)
-                f_pool.write(f'Initial SQOP Pool:\n{self._sig}\n')
+                if(not self._selected_pool):
+                    f_pool.write(f'Initial SQOP Pool:\n{self._sig}\n')
 
         for kb in range(1, self._nbeta):
             if(self._use_exact_evolution):
@@ -894,9 +895,10 @@ class QITE(Algorithm):
                 f.write(f'  {kb*self._db:7.3f}    {self._Ekb[kb]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}\n')
                 
                 if(self._print_pool):
-                    sorted_pool = self._sig.terms()
-                    # sorted_pool = sorted(self._sig.terms(), key=lambda t: (len(t[1].terms()[0][2]), t[1].terms()[0][2]))
-                    f_pool.write(f'iteration {kb} pool coeffs: {[term[0] for term in sorted_pool]}\n')
+                    if(not self._selected_pool):
+                        sorted_pool = self._sig.terms()
+                        # sorted_pool = sorted(self._sig.terms(), key=lambda t: (len(t[1].terms()[0][2]), t[1].terms()[0][2]))
+                        f_pool.write(f'iteration {kb} pool coeffs: {[term[0] for term in sorted_pool]}\n')
 
         self._Egs = self._Ekb[-1]
 
