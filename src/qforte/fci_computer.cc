@@ -70,6 +70,8 @@ FCIComputer::FCIComputer(int nel, int sz, int norb) :
     C_.set_name("FCI Computer");
 
     graph_ = FCIGraph(nalfa_el_, nbeta_el_, norb_);
+
+    timer_ = local_timer();
 }
 
 /// Set a particular element of the tensor stored in FCIComputer, specified by idxs
@@ -2060,8 +2062,8 @@ void FCIComputer::apply_individual_nbody1_accumulate_cpu(
     if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
         throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
     }
-    local_timer my_timer = local_timer();
-    my_timer.reset();
+    // local_timer my_timer = local_timer();
+    timer_.reset();
     // only part that has kernel
     for (int i = 0; i < targeta.size(); i++) {
         int ta_idx = targeta[i] * nbeta_strs_;
@@ -2071,7 +2073,8 @@ void FCIComputer::apply_individual_nbody1_accumulate_cpu(
             Cout.data()[ta_idx + targetb[j]] += pref * static_cast<std::complex<double>>(parityb[j]) * Cin.read_data()[sa_idx + sourceb[j]];
         }
     }
-    my_timer.record("cpu function");
+    
+    timer_.acc_record("cpu function");
     // std::cout << my_timer.str_table() << std::endl;
 }
 

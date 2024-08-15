@@ -7,9 +7,10 @@
 #include "qforte-def.h" 
 #include "tensor.h" 
 #include "fci_graph.h" 
+#include "timer.h"
 #include "df_hamiltonian.h" 
 
-
+class local_timer;
 class Gate;
 class QubitBasis;
 class SQOperator;
@@ -664,6 +665,8 @@ class FCIComputer {
     /// get timings
     std::vector<std::pair<std::string, double>> get_timings() { return timings_; }
 
+    local_timer get_acc_timer() { return timer_; }
+
     /// clear the timings
     void clear_timings() { timings_.clear(); }
 
@@ -713,6 +716,8 @@ class FCIComputer {
 
     /// The corresponding FCIGraph for this computer
     FCIGraph graph_;
+
+    local_timer timer_;
 
     /// the coefficients of the ending state in the tensor product basis
     // std::vector<std::complex<double>> new_coeff_;

@@ -8,11 +8,12 @@
 #include "tensor.h" 
 #include "tensor_gpu.h"
 #include "fci_graph.h"
+#include "timer.h"
 
 #include <cuda_runtime.h>
 #include <cuComplex.h>
 
-
+class local_timer;
 class Gate;
 class QubitBasis;
 class SQOperator;
@@ -399,6 +400,8 @@ class FCIComputerGPU {
     /// clear the timings
     void clear_timings() { timings_.clear(); }
 
+    local_timer get_acc_timer() { return timer_; }
+
 
   private:
 
@@ -443,6 +446,8 @@ class FCIComputerGPU {
 
     /// The corresponding FCIGraph for this computer
     FCIGraph graph_;
+
+    local_timer timer_;
 
     /// the coefficients of the ending state in the tensor product basis
     // std::vector<std::complex<double>> new_coeff_;

@@ -72,6 +72,8 @@ FCIComputerGPU::FCIComputerGPU(int nel, int sz, int norb, bool on_gpu) :
     C_.set_name("FCI Computer");
 
     graph_ = FCIGraph(nalfa_el_, nbeta_el_, norb_);
+
+    timer_ = local_timer();
 }
 
 /// Set a particular element of the tensor stored in FCIComputerGPU, specified by idxs
@@ -1205,7 +1207,7 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
 {
     
     // local_timer my_timer = local_timer();
-    // my_timer.reset();
+    timer_.reset();
     if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
         throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
     }
@@ -1215,6 +1217,17 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     }
     // only part that has kernel
 
+    std::vector<cuDoubleComplex> paritya_complex(paritya.size());
+    std::vector<cuDoubleComplex> parityb_complex(parityb.size());
+
+    for (size_t i = 0; i < paritya.size(); ++i) {
+        paritya_complex[i] = make_cuDoubleComplex(paritya[i], 0.0);
+    }
+
+    for (size_t i = 0; i < parityb.size(); ++i) {
+        parityb_complex[i] = make_cuDoubleComplex(parityb[i], 0.0);
+    }
+
     // make device pointers out of all the things coming in - use cuda mem copy to a device pointer
     // my_timer.record("error checks");
     // my_timer.reset();
@@ -1222,8 +1235,11 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     int* d_sourceb;
     int* d_targeta;
     int* d_targetb;
-    int* d_paritya;
-    int* d_parityb;
+    // int* d_paritya;
+    // int* d_parityb;
+
+    cuDoubleComplex* d_paritya;
+    cuDoubleComplex* d_parityb;
 
     // cuDoubleComplex* d_Cin;
     // cuDoubleComplex* d_Cout;
@@ -1234,10 +1250,16 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     int sourceb_mem = sourceb.size() * sizeof(int);
     int targetb_mem = targetb.size() * sizeof(int);
     int targeta_mem = targeta.size() * sizeof(int);
-    int paritya_mem = paritya.size() * sizeof(int);
-    int parityb_mem = parityb.size() * sizeof(int);
+    // int paritya_mem = paritya.size() * sizeof(int);
+    // int parityb_mem = parityb.size() * sizeof(int);
+
+    int paritya_mem = paritya.size() * sizeof(cuDoubleComplex);
+    int parityb_mem = parityb.size() * sizeof(cuDoubleComplex);
 
     int tensor_mem = Cin.size() * sizeof(cuDoubleComplex);
+
+    timer_.acc_record("initialization in nbody1_acc");
+    timer_.reset();
 
     // my_timer.record("making pointers");
     // my_timer.reset();
@@ -1245,8 +1267,12 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     cudaMalloc(&d_sourceb, sourceb_mem);
     cudaMalloc(&d_targeta, targeta_mem);
     cudaMalloc(&d_targetb, targetb_mem);
+
     cudaMalloc(&d_paritya, paritya_mem);
     cudaMalloc(&d_parityb, parityb_mem);
+
+    timer_.acc_record("cuda malloc in nbody1_acc");
+    timer_.reset();
 
     // cudaMalloc(&d_Cin,  tensor_mem);
     // cudaMalloc(&d_Cout, tensor_mem);
@@ -1258,8 +1284,14 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     cudaMemcpy(d_sourceb, sourceb.data(), sourceb_mem, cudaMemcpyHostToDevice);
     cudaMemcpy(d_targeta, targeta.data(), targeta_mem, cudaMemcpyHostToDevice);
     cudaMemcpy(d_targetb, targetb.data(), targetb_mem, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_paritya, paritya.data(), paritya_mem, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_parityb, parityb.data(), parityb_mem, cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_paritya, paritya.data(), paritya_mem, cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_parityb, parityb.data(), parityb_mem, cudaMemcpyHostToDevice);
+
+    cudaMemcpy(d_paritya, paritya_complex.data(), paritya_mem, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_parityb, parityb_complex.data(), parityb_mem, cudaMemcpyHostToDevice);
+
+    timer_.acc_record("cuda memcpy in nbody1_acc");
+    timer_.reset();
 
     // cudaMemcpy(d_Cin,  Cin.read_h_data().data(),  tensor_mem, cudaMemcpyHostToDevice);
     // cudaMemcpy(d_Cout, Cout.read_h_data().data(), tensor_mem, cudaMemcpyHostToDevice);
@@ -1285,6 +1317,8 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
         tensor_mem);
 
 
+    timer_.acc_record("calling gpu function");
+    timer_.reset();
     // my_timer.record("gpu function");
     // my_timer.reset();
 
@@ -1300,6 +1334,9 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     cudaFree(d_parityb);
     // cudaFree(d_Cin);
     // cudaFree(d_Cout);
+
+    timer_.acc_record("cudafree");
+    timer_.reset();
 
 
     cudaError_t error = cudaGetLastError();
@@ -1329,15 +1366,15 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
     }
 
     local_timer my_timer = local_timer();
-    my_timer.reset();
+    timer_.reset();
 
     std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ualfamap = graph_.make_mapping_each(
         true,
         daga,
         undaga);
 
-    my_timer.record("first 'make_mapping_each' in apply_individual_nbody_accumulate");
-    my_timer.reset();
+    timer_.acc_record("first 'make_mapping_each' in apply_individual_nbody_accumulate");
+    timer_.reset();
 
     if (std::get<0>(ualfamap) == 0) {
         return;
@@ -1348,8 +1385,8 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
         dagb,
         undagb);
 
-    my_timer.record("second 'make_mapping_each' in apply_individual_nbody_accumulate");
-    my_timer.reset();
+    timer_.acc_record("second 'make_mapping_each' in apply_individual_nbody_accumulate");
+    timer_.reset();
 
     if (std::get<0>(ubetamap) == 0) {
         return;
@@ -1362,8 +1399,8 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
     std::vector<int> targetb(std::get<0>(ubetamap));
     std::vector<int> parityb(std::get<0>(ubetamap));
 
-    my_timer.record("a lot of initialization in apply_individual_nbody_accumulate");
-    my_timer.reset();
+    timer_.acc_record("a lot of initialization in apply_individual_nbody_accumulate");
+    timer_.reset();
 
     /// NICK: All this can be done in the make_mapping_each fucntion.
     /// Maybe try like a make_abbrev_mapping_each
@@ -1375,8 +1412,8 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
         paritya[i] = 1.0 - 2.0 * std::get<3>(ualfamap)[i];
     }
 
-    my_timer.record("first for loop in apply_individual_nbody_accumulate");
-    my_timer.reset();
+    timer_.acc_record("first for loop in apply_individual_nbody_accumulate");
+    timer_.reset();
 
     for (int i = 0; i < std::get<0>(ubetamap); i++) {
         sourceb[i] = std::get<1>(ubetamap)[i];
@@ -1384,7 +1421,8 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
         parityb[i] = 1.0 - 2.0 * std::get<3>(ubetamap)[i];
     }
 
-    my_timer.record("second for loop in apply_individual_nbody_accumulate");
+    timer_.acc_record("second for loop in apply_individual_nbody_accumulate");
+    timer_.reset();
     // std::cout << my_timer.str_table() << std::endl;
     // this is where the if statement goes
     apply_individual_nbody1_accumulate(
@@ -1413,7 +1451,7 @@ void FCIComputerGPU::apply_individual_sqop_term(
     std::vector<int> annb;
 
     local_timer my_timer = local_timer();
-    my_timer.reset();
+    timer_.reset();
 
     for(size_t i = 0; i < std::get<1>(term).size(); i++){
         if(std::get<1>(term)[i]%2 == 0){
@@ -1423,8 +1461,8 @@ void FCIComputerGPU::apply_individual_sqop_term(
         }
     }
 
-    my_timer.record("first loop in apply_individual_sqop_term");
-    my_timer.reset();
+    timer_.acc_record("first loop in apply_individual_sqop_term");
+    timer_.reset();
 
     for(size_t i = 0; i < std::get<2>(term).size(); i++){
         if(std::get<2>(term)[i]%2 == 0){
@@ -1434,8 +1472,8 @@ void FCIComputerGPU::apply_individual_sqop_term(
         }
     }
 
-    my_timer.record("second loop in apply_individual_sqop_term");
-    my_timer.reset();
+    timer_.acc_record("second loop in apply_individual_sqop_term");
+    timer_.reset();
 
     if (std::get<1>(term).size() != std::get<2>(term).size()) {
         throw std::invalid_argument("Each term must have same number of anihilators and creators");
@@ -1446,7 +1484,8 @@ void FCIComputerGPU::apply_individual_sqop_term(
     ops1.insert(ops1.end(), ops2.begin(), ops2.end());
 
     int nswaps = parity_sort(ops1);
-    my_timer.record("some parity things");
+    timer_.acc_record("some parity things");
+    timer_.reset();
     // std::cout << my_timer.str_table() << std::endl;
 
     apply_individual_nbody_accumulate(
@@ -1476,7 +1515,7 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
 
     
     local_timer my_timer = local_timer();
-    my_timer.reset();
+    timer_.reset();
     
     // cudaMemcpy(Cin.d_data(), C_.d_data(), Cin.size() * sizeof(cuDoubleComplex))
 
@@ -1493,8 +1532,8 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
     // cudaMemcpy(d_C_, C_.read_h_data().data(), d_C_mem, cudaMemcpyHostToDevice);
 
 
-    my_timer.record("making tensor things");
-    my_timer.reset();
+    timer_.acc_record("making tensor things");
+    timer_.reset();
 
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
@@ -1507,7 +1546,8 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
 
     // later you have a function C_.get_dptr() that returs the device pointer
 
-    my_timer.record("first for loop in apply_sqop");
+    timer_.acc_record("first for loop in apply_sqop");
+    std::cout << timer_.acc_str_table() << std::endl;
     // std::cout << my_timer.str_table() << std::endl;
 
 }
