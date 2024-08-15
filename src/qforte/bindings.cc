@@ -208,6 +208,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("set_element", &FCIComputerGPU::set_element)
         .def("to_gpu", &FCIComputerGPU::to_gpu)
         .def("to_cpu", &FCIComputerGPU::to_cpu)
+        .def("get_acc_timer", &FCIComputerGPU::get_acc_timer)
         .def("set_state", &FCIComputerGPU::set_state)
         .def("set_state_gpu", &FCIComputerGPU::set_state_gpu)
         .def("set_state_from_tensor", &FCIComputerGPU::set_state_from_tensor)
@@ -264,6 +265,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("set_element", &FCIComputer::set_element)
         .def("do_on_gpu", &FCIComputer::do_on_gpu)
         .def("do_on_cpu", &FCIComputer::do_on_cpu)
+        .def("get_acc_timer", &FCIComputer::get_acc_timer)
         .def("apply_tensor_spin_1bdy", &FCIComputer::apply_tensor_spin_1bdy)
         .def("apply_tensor_spin_12bdy", &FCIComputer::apply_tensor_spin_12bdy)
         .def("apply_tensor_spin_012bdy", &FCIComputer::apply_tensor_spin_012bdy)
@@ -460,6 +462,8 @@ PYBIND11_MODULE(qforte, m) {
         .def("reset", &local_timer::reset)
         .def("get", &local_timer::get)
         .def("record", &local_timer::record)
+        .def("get_timings", &local_timer::get_timings)
+        .def("get_acc_timings", &local_timer::get_acc_timings)
         .def("__str__", &local_timer::str_table);
 
     m.def(
