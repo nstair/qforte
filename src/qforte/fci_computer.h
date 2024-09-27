@@ -251,6 +251,16 @@ class FCIComputer {
       const int max_taylor_iter,
       const bool real_evolution);
 
+    /// A funciton to apply the exact time evolution of an operator pool
+    /// usnig a tayler expanson.
+    /// Onus on the user to assure evolution is unitary.
+    void evolve_pool_taylor(
+      const SQOpPool& oppl,
+      const double evolution_time,
+      const double convergence_thresh,
+      const int max_taylor_iter,
+      const bool real_evolution);
+
     /// A funciton to apply the exact time evolution of an operator
     /// usnig a tayler expanson.
     /// Onus on the user to assure evolution is unitary.
@@ -323,6 +333,12 @@ class FCIComputer {
       const DFHamiltonian& df_ham,
       const double nuc_rep_en);
 
+    /// Similar to apply_df_ham, but the zero leaf is decompsed explicitly into givens rotations,
+    /// and the diagonal operator and applied similar to the two body terms.
+    void apply_df_ham_all_givens(
+      const DFHamiltonian& df_ham,
+      const double nuc_rep_en);
+
     /// Applies the trotterized form of a
     /// double factorized hamiltonain time evolution,
     /// NOTE: thresholds for the double factorization eigenvalue cutoffs
@@ -330,6 +346,21 @@ class FCIComputer {
     void evolve_df_ham_trotter(
       const DFHamiltonian& df_ham,
       const double evolution_time);
+
+    void evolve_df_ham_trotter_all_givens(
+      const DFHamiltonian& df_ham,
+      const double evolution_time,
+      const bool real_evolution);
+
+    /// A funciton to apply the exact time evolution of a double factorized Hamiltonian
+    /// usnig a tayler expanson.
+    void evolve_df_ham_taylor(
+      const DFHamiltonian& df_ham,
+      const double nuc_rep_en,
+      const double evolution_time,
+      const double convergence_thresh,
+      const int max_taylor_iter,
+      const bool real_evolution);
 
     /// Evolve the wave funciton under a givens rotation specified by the matrix U.
     void evolve_givens(
@@ -340,7 +371,15 @@ class FCIComputer {
     /// matrix V.
     void evolve_diagonal_from_mat(
       const Tensor& V,
-      const double evolution_time);
+      const double evolution_time,
+      const bool real_evolution = false);
+
+    /// Evolve the wave fuction by a diagonal operator specified by the
+    /// vector D.
+    void evolve_diagonal_from_mat_one_body(
+      const Tensor& D,
+      const double evolution_time,
+      const bool real_evolution = false);
 
     /// Apply a diagonal operator defined by V to the wave funciton.
     void apply_diagonal_from_mat(const Tensor& V);

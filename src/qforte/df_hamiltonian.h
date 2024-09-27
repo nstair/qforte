@@ -123,6 +123,14 @@ class DFHamiltonian {
       trotter_basis_change_matrices_[0] = g0_trott;
     }
 
+    void set_aug_one_body_basis_change(Tensor& aug_one_body_basis_change) {
+      aug_one_body_basis_change_ = aug_one_body_basis_change;
+    }
+
+    void set_aug_one_body_diag(Tensor& aug_one_body_diag) {
+      aug_one_body_diag_ = aug_one_body_diag;
+    }
+
     size_t get_nel() const {return nel_;}
 
     size_t get_norb() const {return norb_;}
@@ -135,6 +143,10 @@ class DFHamiltonian {
     Tensor get_one_body_ints() const {return one_body_ints_;}
 
     Tensor get_one_body_correction() const {return one_body_correction_;}
+
+    Tensor get_aug_one_body_basis_change() const {return aug_one_body_basis_change_;}
+
+    Tensor get_aug_one_body_diag() const {return aug_one_body_diag_;}
     
     std::vector<Tensor> get_scaled_density_density_matrices() const {
       return scaled_density_density_matrices_;
@@ -166,6 +178,12 @@ class DFHamiltonian {
 
     /// one body contribtions form the two body operator
     Tensor one_body_correction_;
+
+    /// Eigenvectors of the augmented one body integral matrix 
+    Tensor aug_one_body_basis_change_;
+
+    /// Eigenvalues of the augmented one body integral matrix 
+    Tensor aug_one_body_diag_;
 
     /// re-scaled density matricies, do NOT already account for time steps.
     std::vector<Tensor> scaled_density_density_matrices_;

@@ -1047,11 +1047,6 @@ void FCIComputer::evolve_op_taylor(
     Tensor Cevol = C_;
 
     for (int order = 1; order < max_taylor_iter; ++order) {
-
-        // std::cout << "I get here, order: " << order << std::endl;
-
-        // std::cout << "C_: " << C_.str() << std::endl;
-        // std::cout << "Cevol: " << Cevol.str() << std::endl;
         std::complex<double> coeff;
 
         if (real_evolution) {
@@ -1074,6 +1069,94 @@ void FCIComputer::evolve_op_taylor(
         }
     }
     C_ = Cevol;
+
+    if (real_evolution) {
+        double norm = C_.norm();
+        C_.scale(1.0/norm);
+    }
+}
+
+void FCIComputer::evolve_df_ham_taylor(
+      const DFHamiltonian& df_ham,
+      const double nuc_rep_en,
+      const double evolution_time,
+      const double convergence_thresh,
+      const int max_taylor_iter,
+      const bool real_evolution)
+
+{
+    Tensor Cevol = C_;
+
+    for (int order = 1; order < max_taylor_iter; ++order) {
+
+        std::complex<double> coeff;
+
+        if (real_evolution) {
+            coeff = std::complex<double>(-evolution_time, 0.0);
+        } else {
+            coeff = std::complex<double>(0.0, -evolution_time);
+        }
+
+        apply_df_ham(df_ham, nuc_rep_en);
+        scale(coeff);
+
+        Cevol.zaxpy(
+            C_,
+            1.0 / std::tgamma(order+1),
+            1,
+            1);
+        
+        if (C_.norm() * std::abs(coeff) < convergence_thresh) {
+            break;
+        }
+    }
+    C_ = Cevol;
+
+    if (real_evolution) {
+        double norm = C_.norm();
+        C_.scale(1.0/norm);
+    }
+}
+
+void FCIComputer::evolve_pool_taylor(
+      const SQOpPool& oppl,
+      const double evolution_time,
+      const double convergence_thresh,
+      const int max_taylor_iter,
+      const bool real_evolution)
+
+{
+    Tensor Cevol = C_;
+
+    for (int order = 1; order < max_taylor_iter; ++order) {
+
+        std::complex<double> coeff;
+
+        if (real_evolution) {
+            coeff = std::complex<double>(-evolution_time, 0.0);
+        } else {
+            coeff = std::complex<double>(0.0, -evolution_time);
+        }
+
+        apply_sqop_pool(oppl);
+        scale(coeff);
+
+        Cevol.zaxpy(
+            C_,
+            1.0 / std::tgamma(order+1),
+            1,
+            1);
+        
+        if (C_.norm() * std::abs(coeff) < convergence_thresh) {
+            break;
+        }
+    }
+    C_ = Cevol;
+
+    if(real_evolution){
+        auto norm = C_.norm();
+        C_.scale(1.0/norm);
+    }
 }
 
 void FCIComputer::evolve_tensor_taylor(
@@ -1123,6 +1206,11 @@ void FCIComputer::evolve_tensor_taylor(
         }
     }
     C_ = Cevol;
+
+    if (real_evolution) {
+        double norm = C_.norm();
+        C_.scale(1.0/norm);
+    }
 }
 
 void FCIComputer::evolve_pool_trotter_basic(
@@ -1616,6 +1704,138 @@ void FCIComputer::apply_df_ham(
     C_ = Cnew;
 }
 
+// NOTE(Nick): This funciton may be SLOW, will want to reduce the amount of 
+// tensory copying to accelerate.
+void FCIComputer::apply_df_ham_all_givens(
+      const DFHamiltonian& df_ham,
+      const double nuc_rep_en)
+{
+    size_t nleaves = df_ham.get_basis_change_matrices().size();
+
+    if (nleaves != df_ham.get_scaled_density_density_matrices().size()){
+        throw std::invalid_argument("Incompatiable array lengths.");
+    }
+
+    Tensor Cin = C_;
+    Tensor Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
+
+    SQOpPool gopool;
+    SQOpPool dopool;
+    
+    // get pool for Go_alfa
+    gopool.append_givens_ops_sector(
+        df_ham.get_aug_one_body_basis_change(),
+        1.0,
+        true
+    );
+
+    // get pool for Go_beta
+    gopool.append_givens_ops_sector(
+        df_ham.get_aug_one_body_basis_change(),
+        1.0,
+        false
+    );
+
+    // get pool for do_beta
+    dopool.append_one_body_diagonal_ops_all(
+        df_ham.get_aug_one_body_diag(),
+        -1.0
+    );
+
+    // apply Go
+    evolve_pool_trotter_basic(
+        gopool,
+        false,
+        false
+    );
+
+    // apply Do
+    apply_sqop_pool(dopool);
+
+    // apply Go^dag
+    evolve_pool_trotter_basic(
+        gopool,
+        false,
+        true
+    );
+
+    // accumulate
+    Cnew.zaxpy(
+        C_,
+        1.0,
+        1,
+        1
+    );
+
+    for (size_t l = 0; l < nleaves; ++l) {
+
+        // reset to the initial state
+        C_ = Cin;
+
+        SQOpPool glpool;
+        SQOpPool dlpool;
+        
+        // get pool for Gl_alfa
+        glpool.append_givens_ops_sector(
+            df_ham.get_basis_change_matrices()[l],
+            1.0,
+            true
+        );
+
+        // get pool for Gl_beta
+        glpool.append_givens_ops_sector(
+            df_ham.get_basis_change_matrices()[l],
+            1.0,
+            false
+        );
+
+        // get pool for dl_beta
+        dlpool.append_diagonal_ops_all(
+            df_ham.get_scaled_density_density_matrices()[l],
+            1.0
+        );
+
+        // apply Gl
+        evolve_pool_trotter_basic(
+            glpool,
+            false,
+            false
+        );
+
+        // NOTE(Nick): SLOW, we want the below funciton for fast diagonal applicaion
+        // apply_diagonal_from_mat(
+        //     df_ham.get_scaled_density_density_matrices()[l]
+        // );
+
+        apply_sqop_pool(dlpool);
+
+        // apply Gl^dag
+        evolve_pool_trotter_basic(
+            glpool,
+            false,
+            true
+        );
+
+        // accumulate
+        Cnew.zaxpy(
+            C_,
+            1.0,
+            1,
+            1
+        );
+    }
+
+    // account for zero body energy
+    Cnew.zaxpy(
+            Cin,
+            nuc_rep_en,
+            1,
+            1
+        );
+
+    C_ = Cnew;
+}
+
 void FCIComputer::evolve_df_ham_trotter(
       const DFHamiltonian& df_ham,
       const double evolution_time)
@@ -1654,7 +1874,141 @@ void FCIComputer::evolve_df_ham_trotter(
             false
         );
     }
+}
 
+void FCIComputer::evolve_df_ham_trotter_all_givens(
+      const DFHamiltonian& df_ham,
+      const double evolution_time,
+      const bool real_evolution)
+{
+    size_t nleaves = df_ham.get_basis_change_matrices().size();
+
+    if (nleaves != df_ham.get_scaled_density_density_matrices().size()){
+        throw std::invalid_argument("Incompatiable array lengths.");
+    }
+
+    std::complex<double> coeff;
+
+    if (real_evolution) {
+        coeff = std::complex<double>(-evolution_time, 0.0);
+    } else {
+        coeff = std::complex<double>(0.0, -evolution_time);
+    }
+
+    // ===> Pool Formatoin <===
+
+    SQOpPool gopool;
+    SQOpPool dopool;
+    
+    // NOTE(Nick): need to divide by evoltion_time if evolve_pool_trotter_basic is used!
+    // get pool for Go_alfa
+    gopool.append_givens_ops_sector(
+        df_ham.get_aug_one_body_basis_change(),
+        1.0, 
+        true
+    );
+
+    // get pool for Go_beta
+    gopool.append_givens_ops_sector(
+        df_ham.get_aug_one_body_basis_change(),
+        1.0,
+        false
+    );
+
+    // Tensor Do_square({norb_, norb_}, "Do_square");
+    // for(int p = 0; p < norb_; ++p){
+    //     int pp = p * norb_ + p;
+    //     Do_square.data()[pp] = -df_ham.get_aug_one_body_diag().data()[p];
+    // }
+
+    // get pool for do
+    dopool.append_one_body_diagonal_ops_all(
+        df_ham.get_aug_one_body_diag(),
+        -evolution_time 
+    );
+
+    // ===> Pool Application <===
+
+    // apply Go
+    evolve_pool_trotter_basic(
+        gopool,
+        false,
+        false
+    );
+
+    // apply e^Do
+    // evolve_pool_trotter_basic(
+    //     dopool,
+    //     false,
+    //     false
+    // );
+
+    // Nick you are here, make this funciton work!
+    // Likely the issue is applying a 1 body diagonal operator in the first place.
+    evolve_diagonal_from_mat_one_body(
+        df_ham.get_aug_one_body_diag(),
+        evolution_time,
+        real_evolution
+    );
+
+    // apply Go^dag
+    evolve_pool_trotter_basic(
+        gopool,
+        false,
+        true
+    );
+
+    for (size_t l = 0; l < nleaves; ++l) {
+
+        SQOpPool glpool;
+        SQOpPool dlpool;
+        
+        // get pool for Gl_alfa
+        glpool.append_givens_ops_sector(
+            df_ham.get_basis_change_matrices()[l],
+            1.0,
+            true
+        );
+
+        // get pool for Gl_beta
+        glpool.append_givens_ops_sector(
+            df_ham.get_basis_change_matrices()[l],
+            1.0,
+            false
+        );
+
+        // get pool for dl_beta
+        dlpool.append_diagonal_ops_all(
+            df_ham.get_scaled_density_density_matrices()[l],
+            evolution_time 
+        );
+
+        // apply Gl
+        evolve_pool_trotter_basic(
+            glpool,
+            false,
+            false
+        );
+
+        evolve_diagonal_from_mat(
+            df_ham.get_scaled_density_density_matrices()[l],
+            evolution_time,
+            real_evolution
+        );
+
+        // evolve_pool_trotter_basic(
+        //     dlpool,
+        //     false,
+        //     false
+        // );
+
+        // apply Gl^dag
+        evolve_pool_trotter_basic(
+            glpool,
+            false,
+            true
+        );
+    }
 }
 
 // NOTE(Nick): If this proves exceedingly slow,
@@ -1730,15 +2084,25 @@ void FCIComputer::evolve_givens(
 
 void FCIComputer::evolve_diagonal_from_mat(
     const Tensor& V,
-    const double evolution_time)
+    const double evolution_time,
+    const bool real_evolution)
 {
+
+    V.shape_error({norb_, norb_});
 
     // NOTE(Nick): time sclae the arrays, maybe make V non const and just scale by 1/t after?
     Tensor V2 = V;
     Tensor D({V.shape()[0]}, "D2");
 
-    std::complex<double> idt(0.0, -evolution_time); 
-    V2.scale(idt);
+    std::complex<double> coeff;
+
+    if (real_evolution) {
+        coeff = std::complex<double>(-evolution_time, 0.0);
+    } else {
+        coeff = std::complex<double>(0.0, -evolution_time);
+    }
+
+    V2.scale(coeff);
 
     apply_diagonal_array(
         C_, 
@@ -1751,6 +2115,52 @@ void FCIComputer::evolve_diagonal_from_mat(
         nalfa_el_,
         nbeta_el_,
         norb_);
+
+    if (real_evolution) {
+        double norm = C_.norm();
+        C_.scale(1.0/norm);
+    }
+
+}
+
+void FCIComputer::evolve_diagonal_from_mat_one_body(
+    const Tensor& D,
+    const double evolution_time,
+    const bool real_evolution)
+{
+
+    D.shape_error({norb_});
+
+    // NOTE(Nick): time sclae the arrays, maybe make V non const and just scale by 1/t after?
+    Tensor D2 = D;
+    Tensor V({D.shape()[0], D.shape()[0]}, "V2");
+
+    std::complex<double> coeff;
+
+    if (real_evolution) {
+        coeff = std::complex<double>(-evolution_time, 0.0);
+    } else {
+        coeff = std::complex<double>(0.0, -evolution_time);
+    }
+
+    D2.scale(coeff);
+
+    apply_diagonal_array(
+        C_, 
+        graph_.get_astr(),
+        graph_.get_bstr(),
+        D2,
+        V,
+        nalfa_strs_,
+        nbeta_strs_,
+        nalfa_el_,
+        nbeta_el_,
+        norb_);
+
+    if (real_evolution) {
+        double norm = C_.norm();
+        C_.scale(1.0/norm);
+    }
 
 }
 

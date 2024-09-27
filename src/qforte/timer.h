@@ -21,6 +21,10 @@ class local_timer {
     /// returns a string representing a timings table
     std::string str_table(); 
 
+    std::vector<std::pair<std::string, double>> get_timings() {
+      return timings_;
+    };
+
   private:
     /// stores the time when this object is created
     std::chrono::high_resolution_clock::time_point start_;

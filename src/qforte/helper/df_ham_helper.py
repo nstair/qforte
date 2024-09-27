@@ -261,3 +261,37 @@ def time_scale_first_leaf(
 
     df_ham.set_trotter_first_leaf_basis_chage(g0trot_qf)
 
+def do_augmented_one_body_factorization(df_ham):
+
+    h1e_qf = df_ham.get_one_body_ints()
+    h1e_cor_qf = df_ham.get_one_body_correction()
+
+    h1e_aug = np.zeros(shape=h1e_cor_qf.shape(), dtype=np.complex128)
+
+    for I in range(h1e_cor_qf.size()): 
+        h1e_aug.ravel()[I] = h1e_qf.data()[I] + h1e_cor_qf.data()[I]
+
+    # Diagonalize the one-body matrix.
+    D, eigenvectors = np.linalg.eigh(h1e_aug)
+        
+    U = np.conjugate(eigenvectors.transpose())
+
+    Uqf = qf.Tensor(
+        shape=np.shape(U), 
+        name='set_trotter_aug_one_body_basis_change')
+            
+    Uqf.fill_from_nparray(
+        U.ravel(), 
+        np.shape(U))
+    
+    Dqf = qf.Tensor(
+        shape=np.shape(D), 
+        name='set_trotter_aug_one_body_basis_change')
+            
+    Dqf.fill_from_nparray(
+        D.ravel(), 
+        np.shape(D))
+
+    df_ham.set_aug_one_body_basis_change(Uqf)
+    df_ham.set_aug_one_body_diag(Dqf)
+

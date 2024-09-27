@@ -274,24 +274,9 @@ def create_psi_mol(**kwargs):
             # NOTE: build_df_ham should not be called unless store_mo_ints is True, if called here,
             # mo_oeis and mo_teis are defined using openfermion ordering.
 
-            # Load h1e and h2e for Li-H the .npz file
-            # loaded_data = np.load('of_mol_e0_h1e_h2e.npz')
-            # e0 = loaded_data['e0']
-            # p4_mo_oeis = loaded_data['h1e']
-            # p4_mo_teis = loaded_data['h2e']
-
 
             # keep ordering consistant with openfermion eri tensors
             p4_mo_teis = np.asarray(p4_mo_teis.transpose(0, 2, 3, 1), order='C')
-
-            # # need restricted version
-            # p4_mo_teis2 = copy.deepcopy(np.einsum("ijlk", -0.5 * p4_mo_teis))
-
-            # # additoinal manipulation
-            # h1e_2 = copy.deepcopy(p4_mo_oeis)
-            # h2e_2 = np.moveaxis(copy.deepcopy(h2e_rest_2), 1, 2) * (-1.0)
-            # h1e_2 -= np.einsum('ikkj->ij', h2e_rest_2)
-
 
             # do first factorization from integrals
             ff_eigenvalues, one_body_squares, one_body_correction = first_factorization(
@@ -315,7 +300,6 @@ def create_psi_mol(**kwargs):
             # get the zero leaf, set to zero, this will make it more obvious if you try to evolve
             # without setting the first leaf...
             trotter_basis_change_matrices = [
-                # basis_change_matrices[0] @ expm(-1.0j * (p4_mo_oeis + one_body_correction[::2, ::2]))
                 np.zeros(shape=(nmo,nmo))
             ]
 
@@ -411,17 +395,6 @@ def create_psi_mol(**kwargs):
                 qf_trotter_basis_change_matrices.append(
                     qf_trotter_basis_change_mat
                 )
-            
-            # build df_hamiltonain object
-
-            # print(f"type(qf_scaled_density_density_matrices): {type(qf_scaled_density_density_matrices)}")
-            # print(f"type(qf_scaled_density_density_matrices[0]): {type(qf_scaled_density_density_matrices[0])}")
-
-            # print(f"type(qf_basis_change_matrices): {type(qf_basis_change_matrices)}")
-            # print(f"type(qf_basis_change_matrices[0]): {type(qf_basis_change_matrices[0])}")
-
-            # print(f"type(qf_trotter_basis_change_matrices): {type(qf_trotter_basis_change_matrices)}")
-            # print(f"type(qf_trotter_basis_change_matrices[0]): {type(qf_trotter_basis_change_matrices[0])}")
 
             qforte_mol._df_ham = qforte.DFHamiltonian(
                 nel=nel,

@@ -135,6 +135,9 @@ class Algorithm(ABC):
         self._qb_ham = system.hamiltonian
         self._sq_ham = system.sq_hamiltonian
 
+        if(hasattr(system, 'df_ham')):
+            self._df_ham = system.df_ham
+
         if(hasattr(system, 'nuclear_repulsion_energy')):
             self._nuclear_repulsion_energy = system.nuclear_repulsion_energy
         else:

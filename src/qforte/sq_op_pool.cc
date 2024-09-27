@@ -12,6 +12,7 @@
 
 #include <stdexcept>
 #include <algorithm>
+#include <complex>
 
 void SQOpPool::add_term(std::complex<double> coeff, const SQOperator& sq_op ){
     terms_.push_back(std::make_pair(coeff, sq_op));
@@ -713,10 +714,102 @@ void SQOpPool::fill_pool_df_trotter(
     }
 }
 
+void SQOpPool::fill_pool_df_trotter_all_diag(
+    const DFHamiltonian& df_ham,
+    const std::complex<double> coeff)
+{
+    // structure should resembel the apply DFHam funciton in fci_computer.cc
+    size_t nleaves = df_ham.get_basis_change_matrices().size();
+
+    if (nleaves != df_ham.get_scaled_density_density_matrices().size()){
+        throw std::invalid_argument("Incompatiable array lengths.");
+    }
+
+    /// This function will return a pool that applies
+    /// Note the indexing where N = number of 2-body leaves 
+
+    ///...(G[N-1]^ D3 G[N-1])...(G2^ D2 G2)(G1^ D1 G1)(G0^ D0 G0) X (Go^ Do Go)
+
+    /// Where the zero leaf here, the augmented one 
+    /// body perator is Oaug = G0^ D0 G0, and the givens rotations are not
+    /// combined.
+
+    append_givens_ops_sector(
+        df_ham.get_aug_one_body_basis_change(),
+        1.0/coeff,
+        true,
+        false
+    );
+
+    append_givens_ops_sector(
+        df_ham.get_aug_one_body_basis_change(),
+        1.0/coeff,
+        false,
+        false
+    );
+
+    /// NOTE(Nick): note the -1.0
+    append_one_body_diagonal_ops_all(
+        df_ham.get_aug_one_body_diag(),
+        -1.0
+    );
+
+    append_givens_ops_sector(
+        df_ham.get_aug_one_body_basis_change(),
+        1.0/coeff,
+        true,
+        true
+    );
+    
+    append_givens_ops_sector(
+        df_ham.get_aug_one_body_basis_change(),
+        1.0/coeff,
+        false,
+        true
+    );
+
+    for (size_t l = 0; l < nleaves; ++l) {
+
+        append_givens_ops_sector(
+            df_ham.get_basis_change_matrices()[l],
+            1.0/coeff,
+            true,
+            false
+        );
+
+        append_givens_ops_sector(
+            df_ham.get_basis_change_matrices()[l],
+            1.0/coeff,
+            false,
+            false
+        );
+
+        append_diagonal_ops_all(
+            df_ham.get_scaled_density_density_matrices()[l],
+            1.0
+        );
+
+        append_givens_ops_sector(
+            df_ham.get_basis_change_matrices()[l],
+            1.0/coeff,
+            true,
+            true
+        );
+
+        append_givens_ops_sector(
+            df_ham.get_basis_change_matrices()[l],
+            1.0/coeff,
+            false,
+            true
+        );
+    }
+}
+
 void SQOpPool::append_givens_ops_sector(
     const Tensor& U,
     const std::complex<double> coeff,
-    const bool is_alfa)
+    const bool is_alfa,
+    const bool adjoint)
 {
     size_t sigma = 0;
     if (is_alfa){ 
@@ -739,37 +832,80 @@ void SQOpPool::append_givens_ops_sector(
 
     auto diags = std::get<4>(rots_and_diag);
 
-    for (size_t k = 0; k < ivec.size(); k++){
-        size_t i = ivec[k];
-        size_t j = jvec[k];
-        double tht = thts[k];
-        double phi = phis[k];
+    if(adjoint){
 
-        if (std::abs(phi) > 1.0e-12){
-            SQOperator num_op1; 
-            num_op1.add_term(-phi/2.0, {2 * j + sigma}, {2 * j + sigma});
-            num_op1.add_term(-phi/2.0, {2 * j + sigma}, {2 * j + sigma});   
-            terms_.push_back(std::make_pair(coeff, num_op1));      
+        // for (size_t l = 0; l < diags.size(); l++){
+        for (size_t l = diags.size() - 1; l < diags.size(); l--) {
+            if (std::abs(diags[l]) > 1.0e-12) {
+                double diag_angle = std::atan2(diags[l].imag(), diags[l].real());
+                SQOperator num_op2;
+                num_op2.add_term(+diag_angle/2.0, {2 * l + sigma}, {2 * l + sigma});
+                num_op2.add_term(+diag_angle/2.0, {2 * l + sigma}, {2 * l + sigma});
+                terms_.push_back(std::make_pair(coeff, num_op2));  
+            }
         }
 
-        if (std::abs(tht) > 1.0e-12) {
-            std::complex<double> itheta(0.0, tht);
-            SQOperator single;
-            single.add_term(-itheta, {2 * i + sigma}, {2 * j + sigma});
-            single.add_term(+itheta, {2 * j + sigma}, {2 * i + sigma});
-            terms_.push_back(std::make_pair(coeff, single));  
+        // for (size_t k = 0; k < ivec.size(); k++){
+        for (size_t k = ivec.size() - 1; k < ivec.size(); k--) {
+            size_t i = ivec[k];
+            size_t j = jvec[k];
+            double tht = thts[k];
+            double phi = phis[k];
+
+            if (std::abs(tht) > 1.0e-12) {
+                std::complex<double> itheta(0.0, -tht);
+                SQOperator single;
+                single.add_term(+itheta, {2 * j + sigma}, {2 * i + sigma});
+                single.add_term(-itheta, {2 * i + sigma}, {2 * j + sigma});
+                terms_.push_back(std::make_pair(coeff, single));  
+            }
+
+            if (std::abs(phi) > 1.0e-12){
+                SQOperator num_op1; 
+                num_op1.add_term(+phi/2.0, {2 * j + sigma}, {2 * j + sigma});
+                num_op1.add_term(+phi/2.0, {2 * j + sigma}, {2 * j + sigma});   
+                terms_.push_back(std::make_pair(coeff, num_op1));      
+            }
         }
-    }
+            
         
-    for (size_t l = 0; l < diags.size(); l++){
-        if (std::abs(diags[l]) > 1.0e-12) {
-            double diag_angle = std::atan2(diags[l].imag(), diags[l].real());
-            SQOperator num_op2;
-            num_op2.add_term(-diag_angle/2.0, {2 * l + sigma}, {2 * l + sigma});
-            num_op2.add_term(-diag_angle/2.0, {2 * l + sigma}, {2 * l + sigma});
-            terms_.push_back(std::make_pair(coeff, num_op2));  
+    } else {
+        for (size_t k = 0; k < ivec.size(); k++){
+            size_t i = ivec[k];
+            size_t j = jvec[k];
+            double tht = thts[k];
+            double phi = phis[k];
+
+            if (std::abs(phi) > 1.0e-12){
+                SQOperator num_op1; 
+                num_op1.add_term(-phi/2.0, {2 * j + sigma}, {2 * j + sigma});
+                num_op1.add_term(-phi/2.0, {2 * j + sigma}, {2 * j + sigma});   
+                terms_.push_back(std::make_pair(coeff, num_op1));      
+            }
+
+            if (std::abs(tht) > 1.0e-12) {
+                std::complex<double> itheta(0.0, tht);
+                SQOperator single;
+                single.add_term(-itheta, {2 * i + sigma}, {2 * j + sigma});
+                single.add_term(+itheta, {2 * j + sigma}, {2 * i + sigma});
+                terms_.push_back(std::make_pair(coeff, single));  
+            }
+        }
+            
+        for (size_t l = 0; l < diags.size(); l++){
+            if (std::abs(diags[l]) > 1.0e-12) {
+                double diag_angle = std::atan2(diags[l].imag(), diags[l].real());
+                SQOperator num_op2;
+                num_op2.add_term(-diag_angle/2.0, {2 * l + sigma}, {2 * l + sigma});
+                num_op2.add_term(-diag_angle/2.0, {2 * l + sigma}, {2 * l + sigma});
+                terms_.push_back(std::make_pair(coeff, num_op2));  
+            }
         }
     }
+
+    
+
+    
 }
 
 void SQOpPool::append_diagonal_ops_all(
@@ -798,6 +934,29 @@ void SQOpPool::append_diagonal_ops_all(
                         terms_.push_back(std::make_pair(coeff, num_op));    
                     }
                 }
+            }
+        }
+    }
+}
+
+void SQOpPool::append_one_body_diagonal_ops_all(
+    const Tensor& D, 
+    const std::complex<double> coeff)
+{
+
+    int norbs = D.shape()[0];
+
+    for (size_t p = 0; p < norbs; p++) {
+        for (size_t sig = 0; sig < 2; sig++){
+            // size_t pq = p*norbs + q;
+            std::complex<double> dp = D.read_data()[p];
+            if (std::abs(dp) > 1.0e-12){
+                SQOperator num_op;
+                
+                num_op.add_term(-0.5 * dp, {2 * p + sig}, {2 * p + sig});
+                num_op.add_term(-0.5 * dp, {2 * p + sig}, {2 * p + sig});
+                
+                terms_.push_back(std::make_pair(coeff, num_op));    
             }
         }
     }

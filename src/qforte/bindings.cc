@@ -85,6 +85,10 @@ PYBIND11_MODULE(qforte, m) {
             "trotter_basis_change_matrices"_a, 
             "Make a DFHamiltonian with with all intermediats pre-computed with numpy")
         .def("set_trotter_first_leaf_basis_chage", &DFHamiltonian::set_trotter_first_leaf_basis_chage)
+        .def("set_aug_one_body_basis_change", &DFHamiltonian::set_aug_one_body_basis_change)
+        .def("get_aug_one_body_basis_change", &DFHamiltonian::get_aug_one_body_basis_change)
+        .def("set_aug_one_body_diag", &DFHamiltonian::set_aug_one_body_diag)
+        .def("get_aug_one_body_diag", &DFHamiltonian::get_aug_one_body_diag)
         .def("get_ff_eigenvalues", &DFHamiltonian::get_ff_eigenvalues)
         .def("get_one_body_squares", &DFHamiltonian::get_one_body_squares)
         .def("get_one_body_ints", &DFHamiltonian::get_one_body_ints)
@@ -138,9 +142,11 @@ PYBIND11_MODULE(qforte, m) {
         .def("fill_pool", &SQOpPool::fill_pool)
         .def("fill_pool_kUpCCGSD", &SQOpPool::fill_pool_kUpCCGSD)
         .def("fill_pool_sq_hva", &SQOpPool::fill_pool_sq_hva)
+        .def("fill_pool_df_trotter_all_diag", &SQOpPool::fill_pool_df_trotter_all_diag)
         .def("fill_pool_df_trotter", &SQOpPool::fill_pool_df_trotter)
         .def("append_givens_ops_sector", &SQOpPool::append_givens_ops_sector)
         .def("append_diagonal_ops_all", &SQOpPool::append_diagonal_ops_all)
+        .def("append_one_body_diagonal_ops_all", &SQOpPool::append_one_body_diagonal_ops_all)
         .def("str", &SQOpPool::str)
         .def("__getitem__", [](const SQOpPool &pool, size_t i) { return pool.terms()[i]; })
         .def("__iter__", [](const SQOpPool &pool) { return py::make_iterator(pool.terms()); },
@@ -258,6 +264,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_exp_val_tensor", &FCIComputer::get_exp_val_tensor)
         .def("scale", &FCIComputer::scale)
         .def("evolve_op_taylor", &FCIComputer::evolve_op_taylor)
+        .def("evolve_pool_taylor", &FCIComputer::evolve_pool_taylor)
         .def("evolve_tensor_taylor", &FCIComputer::evolve_tensor_taylor)
         .def("apply_sqop_evolution", &FCIComputer::apply_sqop_evolution, 
             py::arg("time"),
@@ -279,9 +286,13 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("adjoint") = false
             )
         .def("apply_df_ham", &FCIComputer::apply_df_ham)
+        .def("apply_df_ham_all_givens", &FCIComputer::apply_df_ham_all_givens)
         .def("evolve_df_ham_trotter", &FCIComputer::evolve_df_ham_trotter)
+        .def("evolve_df_ham_trotter_all_givens", &FCIComputer::evolve_df_ham_trotter_all_givens)
+        .def("evolve_df_ham_taylor", &FCIComputer::evolve_df_ham_taylor)
         .def("evolve_givens", &FCIComputer::evolve_givens)
         .def("evolve_diagonal_from_mat", &FCIComputer::evolve_diagonal_from_mat)
+        .def("evolve_diagonal_from_mat_one_body", &FCIComputer::evolve_diagonal_from_mat_one_body)
         .def("set_state", &FCIComputer::set_state)
         .def("get_state", &FCIComputer::get_state)
         .def("get_state_deep", &FCIComputer::get_state_deep)
@@ -429,6 +440,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("reset", &local_timer::reset)
         .def("get", &local_timer::get)
         .def("record", &local_timer::record)
+        .def("get_timings", &local_timer::get_timings)
         .def("__str__", &local_timer::str_table);
 
     m.def(

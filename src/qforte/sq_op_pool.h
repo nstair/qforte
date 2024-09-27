@@ -64,18 +64,31 @@ class SQOpPool {
     /// DFHamiltonian. 
     void fill_pool_df_trotter(const DFHamiltonian& df_ham, const std::complex<double> coeff);
 
+    /// builds the sq operator pool that, when trotterized, 
+    /// reporduces the (trotterized) evolution uder a
+    /// DFHamiltonian. Assumes the augmented one body operator is also diagonalized
+    void fill_pool_df_trotter_all_diag(const DFHamiltonian& df_ham, const std::complex<double> coeff);
+
     /// Append SQ operatrs to the pool corresponding to a Givens rotation defined 
     /// by the matrix U. Used primarily in fill_pool_df_trotter.
     void append_givens_ops_sector(
       const Tensor& U, 
       const std::complex<double> coeff, 
-      const bool is_alfa);
+      const bool is_alfa,
+      const bool adjoint=false);
 
     /// Append alpha / beta mixed SQ operatrs to the pool corresponding 
     /// to an exponentiated diagonal operator defined by V.
     /// Used primarily in fill_pool_df_trotter.
     void append_diagonal_ops_all(
       const Tensor& V, 
+      const std::complex<double> coeff);
+
+    /// Append alpha / beta mixed SQ operatrs to the pool corresponding 
+    /// to an exponentiated one body diagonal operator defined by D.
+    /// Used primarily in fill_pool_df_trotter.
+    void append_one_body_diagonal_ops_all(
+      const Tensor& D, 
       const std::complex<double> coeff);
 
     /// return a vector of string representing this sq operator pool
