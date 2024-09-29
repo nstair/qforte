@@ -1,6 +1,9 @@
-#include "tensor.h"
 #include "tensor_gpu.h"
 #include "blas_math.h"
+#include "cuda_runtime.h"
+#include "tensor.h"
+#include "tensor_gpu_kernels.cuh"
+
 
 // May need an analog these eventually
 // #include "../util/string.hpp"
@@ -14,17 +17,19 @@
 #include <cstring>
 #include <utility>
 #include <algorithm>
+
 // namespace lightspeed { 
 
-size_t Tensor::total_memory__ = 0;
+size_t TensorGPU::total_memory__ = 0;
 
 /// Constructor
-Tensor::Tensor(
+TensorGPU::TensorGPU(
     const std::vector<size_t>& shape,
-    const std::string& name
-    ) :
+    const std::string& name,
+    bool on_gpu) :
     shape_(shape),
-    name_(name)
+    name_(name),
+    on_gpu_(on_gpu)
 {
     strides_.resize(shape_.size());
     size_ = 1L;
@@ -32,33 +37,146 @@ Tensor::Tensor(
         strides_[i] = size_;
         size_ *= shape_[i];
     }  
-    data_.resize(size_,0.0);
+    h_data_.resize(size_,0.0);
 
     initialized_ = 1;
 
     // Ed's special memory thing
-    total_memory__ += data_.size() * sizeof(std::complex<double>);
+    total_memory__ += h_data_.size() * sizeof(std::complex<double>);
+
+    // allocate device memory
+    cudaMalloc((void**) & d_data_, size_ * sizeof(std::complex<double>));
 }
 
-Tensor::Tensor()
+TensorGPU::TensorGPU()
 {
     shape_.assign(1, 1);
     strides_.resize(1);
     size_ = 1L;
-    data_.resize(size_, 0.0);
-    total_memory__ += data_.size() * sizeof(std::complex<double>);
+    h_data_.resize(size_, 0.0);
+    total_memory__ += h_data_.size() * sizeof(std::complex<double>);
+    on_gpu_ = false;
+
+    // allocate device memory
+    cudaMalloc((void**) & d_data_, size_ * sizeof(std::complex<double>));
+
 }
 
 /// Destructor
-Tensor::~Tensor()
+TensorGPU::~TensorGPU()
 {
     // Ed's special memory thing
-    total_memory__ -= data_.size() * sizeof(std::complex<double>);
+    total_memory__ -= h_data_.size() * sizeof(std::complex<double>);
+
+    // free the device memory
+    cudaFree(d_data_);
 }
 
-/// Set a particular element of tis Tensor, specified by idxs
-// TODO(Nick) usde strides_
-void Tensor::set(
+
+void TensorGPU::to_gpu()
+{
+    cpu_error();
+    if (initialized_ == 0) {
+        std::cerr << "Tensor not initialized" << std::endl;
+        return;
+    }
+
+    on_gpu_ = 1;
+
+    cudaError_t error_status = cudaMemcpy(d_data_, h_data_.data(), size_ * sizeof(std::complex<double>), cudaMemcpyHostToDevice);
+
+    if (error_status != cudaSuccess) {
+        std::cerr << "Failed to transfer data to GPU. Error msg: " << cudaGetErrorString(error_status) << std::endl;
+    }
+
+}
+
+// change to 'to_cpu'
+void TensorGPU::to_cpu()
+{
+    gpu_error();
+    if (initialized_ == 0) {
+        std::cerr << "Tensor not initialized" << std::endl;
+        return;
+    }
+
+    on_gpu_ = 0;
+
+    cudaError_t error_status = cudaMemcpy(h_data_.data(), d_data_, size_ * sizeof(std::complex<double>), cudaMemcpyDeviceToHost);
+
+    if (error_status != cudaSuccess) {
+        std::cerr << "Failed to transfer data to CPU. Error msg: " << cudaGetErrorString(error_status) << std::endl;
+    }
+
+}
+
+void TensorGPU::add(const TensorGPU& other) {
+
+    if (shape_ != other.shape_) {
+        throw std::runtime_error("Tensor shapes are not compatible for addition.");
+    }
+
+    // add_wrapper(d_data_, other.get_d_data(), size_, 256);
+
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
+        throw std::runtime_error("Failed to execute the add operation on the GPU.");
+    }
+}
+
+void TensorGPU::add2(const TensorGPU& other) {
+
+    if (shape_ != other.shape_) {
+        throw std::runtime_error("Tensor shapes are not compatible for addition.");
+    }
+
+    gpu_error();
+    other.gpu_error();
+    add_wrapper2(d_data_, other.read_d_data(), size_, 256);
+
+    
+
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
+        throw std::runtime_error("Failed to execute the add operation on the GPU.");
+    }
+}
+
+void TensorGPU::gpu_error() const {
+
+    if (not on_gpu_) {
+        throw std::runtime_error("Data not on GPU for Tensor" + name_);
+    }
+
+}
+
+void TensorGPU::cpu_error() const {
+
+    if (on_gpu_) {
+        throw std::runtime_error("Data not on CPU for Tensor" + name_);
+    }
+
+}
+
+void TensorGPU::zero()
+{
+    cpu_error();
+    memset(h_data_.data(), '\0', sizeof(std::complex<double>) * size_);
+}
+
+void TensorGPU::zero_gpu()
+{
+    gpu_error();
+    cudaError_t err = cudaMemset(d_data_, '\0', sizeof(cuDoubleComplex) * size_);
+
+    if (err != cudaSuccess) {
+        fprintf(stderr, "cudaMemset failed: %s\n", cudaGetErrorString(err));
+    }
+}
+
+void TensorGPU::set(
     const std::vector<size_t>& idxs,
     const std::complex<double> val
         )
@@ -66,9 +184,9 @@ void Tensor::set(
     ndim_error(idxs.size());
 
     if( idxs.size() == 1 ) {
-        data_[idxs[0]] = val;
+        h_data_[idxs[0]] = val;
     } else if (idxs.size() == 2) {
-        data_[shape()[1]*idxs[0] + idxs[1]] = val;
+        h_data_[shape()[1]*idxs[0] + idxs[1]] = val;
     } else {
         for (int i = 0; i < ndim(); i++) {
             if (idxs[i] < 0 || idxs[i] >= shape()[i]) {
@@ -82,11 +200,63 @@ void Tensor::set(
             vidx += idxs[i] * stride;
             stride *= shape()[i];
         }
-        data_[vidx] = val;
+        h_data_[vidx] = val;
     } 
 }
 
-void Tensor::add_to_element(
+void TensorGPU::ndim_error(size_t ndims) const
+{
+    if (!(ndim() == ndims)) {
+        std::stringstream ss;
+        ss << "Tensor should be " << ndims << " ndim, but is " << ndim() << " ndim.";
+        throw std::runtime_error(ss.str());
+    }
+}
+
+void TensorGPU::fill_from_nparray(std::vector<std::complex<double>> arr, std::vector<size_t> shape)
+{
+
+    cpu_error();
+
+    if (shape_ != shape){
+        throw std::runtime_error("The shapes are not the same.");
+    }
+
+    std::memcpy(h_data_.data(), arr.data(), sizeof(std::complex<double>) * size_);
+
+}
+
+double TensorGPU::norm(){
+
+    double result = 0;
+
+    for (int i = 0; i < size_; i++){
+
+        result += std::real(h_data_[i]) * std::real(h_data_[i]) + std::imag(h_data_[i]) * std::imag(h_data_[i]);
+
+    }
+
+    result = std::sqrt(result);
+
+    return result;
+
+}
+
+
+
+/*
+
+add private member variable that checks to see if it is on the gpu
+functions change this variable
+
+change the name of from_gpu
+
+gpu_error checks that variable
+
+*/
+
+
+void TensorGPU::add_to_element(
     const std::vector<size_t>& idxs,
     const std::complex<double> val
         )
@@ -94,9 +264,9 @@ void Tensor::add_to_element(
     ndim_error(idxs.size());
 
     if( idxs.size() == 1 ) {
-        data_[idxs[0]] += val;
+        h_data_[idxs[0]] += val;
     } else if (idxs.size() == 2) {
-        data_[shape()[1]*idxs[0] + idxs[1]] += val;
+        h_data_[shape()[1]*idxs[0] + idxs[1]] += val;
     } else {
         for (int i = 0; i < ndim(); i++) {
             if (idxs[i] < 0 || idxs[i] >= shape()[i]) {
@@ -110,18 +280,18 @@ void Tensor::add_to_element(
             vidx += idxs[i] * stride;
             stride *= shape()[i];
         }
-        data_[vidx] = +val;
+        h_data_[vidx] = +val;
     } 
 }
 
-void Tensor::fill_from_np(std::vector<std::complex<double>> arr, std::vector<size_t> shape){
+void TensorGPU::fill_from_np(std::vector<std::complex<double>> arr, std::vector<size_t> shape){
     if (shape_ != shape){
         throw std::runtime_error("The Shapes are not the same.");
     }
-    std::memcpy(data_.data(), arr.data(), sizeof(std::complex<double>)*size_);
+    std::memcpy(h_data_.data(), arr.data(), sizeof(std::complex<double>)*size_);
 }
 
-void Tensor::zero_with_shape(const std::vector<size_t>& shape)
+void TensorGPU::zero_with_shape(const std::vector<size_t>& shape, bool on_gpu)
 {
     std::vector<size_t> strides;
     strides.resize(shape.size());
@@ -135,17 +305,40 @@ void Tensor::zero_with_shape(const std::vector<size_t>& shape)
     shape_ = shape;
     strides_ = strides;
     size_ = size;
-    data_.resize(size_, 0.0);
-    memset(data_.data(),'\0',sizeof(std::complex<double>)*size_);
+    h_data_.resize(size_, 0.0);
+    memset(h_data_.data(),'\0',sizeof(std::complex<double>)*size_);
 
     initialized_ = 1;
 
     // Ed's special memory thing
-    total_memory__ = data_.size() * sizeof(std::complex<double>);
+    total_memory__ = h_data_.size() * sizeof(std::complex<double>);
+
+    cudaError_t err1 = cudaFree(d_data_);
+    if (err1 != cudaSuccess) {
+        fprintf(stderr, "cudaFree failed: %s\n", cudaGetErrorString(err1));
+        return;
+    }
+
+    // Allocate new memory
+    cudaError_t err2 = cudaMalloc((void**) & d_data_, size_ * sizeof(cuDoubleComplex));
+    if (err2 != cudaSuccess) {
+        fprintf(stderr, "cudaMalloc failed: %s\n", cudaGetErrorString(err2));
+        return;
+    }
+
+    cudaError_t err3 = cudaMemset(d_data_, '\0', sizeof(cuDoubleComplex) * size_);
+
+    if (err3 != cudaSuccess) {
+        fprintf(stderr, "cudaMemset failed: %s\n", cudaGetErrorString(err3));
+    }
+
+    on_gpu_ = on_gpu;
 }
 
+
+
 /// Get the vector index for this tensor based on the tensor index
-size_t Tensor::tidx_to_vidx(const std::vector<size_t>& tidx) const
+size_t TensorGPU::tidx_to_vidx(const std::vector<size_t>& tidx) const
 {   
     size_t vidx = 0;
     for (int i = ndim() - 1; i >= 0; i--) {
@@ -154,7 +347,7 @@ size_t Tensor::tidx_to_vidx(const std::vector<size_t>& tidx) const
     return vidx;
 }
 
-size_t Tensor::tidx_to_trans_vidx(const std::vector<size_t>& tidx, const std::vector<size_t>& axes) const
+size_t TensorGPU::tidx_to_trans_vidx(const std::vector<size_t>& tidx, const std::vector<size_t>& axes) const
 {   
     size_t vidx = 0;
     for (int i = ndim() - 1; i >= 0; i--) {
@@ -164,7 +357,7 @@ size_t Tensor::tidx_to_trans_vidx(const std::vector<size_t>& tidx, const std::ve
 }
 
 /// Get the tensor index for this tensor based on the vector index
-std::vector<size_t> Tensor::vidx_to_tidx(size_t vidx) const
+std::vector<size_t> TensorGPU::vidx_to_tidx(size_t vidx) const
 {
     std::vector<size_t> tidx(ndim());
     size_t vidx_tmp = vidx;
@@ -176,18 +369,18 @@ std::vector<size_t> Tensor::vidx_to_tidx(size_t vidx) const
     return tidx;
 }
 
-/// Get a particular element of tis Tensor, specified by idxs
+/// Get a particular element of tis TensorGPU, specified by idxs
 // TODO(Nick/Tyler) use strides_
-std::complex<double> Tensor::get(
+std::complex<double> TensorGPU::get(
     const std::vector<size_t>& idxs
     ) const
 {
     ndim_error(idxs.size());
 
     if( idxs.size() == 1 ) {
-        return data_[idxs[0]];
+        return h_data_[idxs[0]];
     } else if (idxs.size() == 2) {
-        return data_[shape()[1]*idxs[0] + idxs[1]];
+        return h_data_[shape()[1]*idxs[0] + idxs[1]];
     } else {
         for (int i = 0; i < ndim(); i++) {
             if (idxs[i] < 0 || idxs[i] >= shape()[i]) {
@@ -203,26 +396,17 @@ std::complex<double> Tensor::get(
             stride *= shape()[i];
         }
 
-        return data_[vidx];
+        return h_data_[vidx];
     }
 }
 
-void Tensor::ndim_error(size_t ndims) const
-{
-    if (!(ndim() == ndims)) {
-        std::stringstream ss;
-        ss << "Tensor should be " << ndims << " ndim, but is " << ndim() << " ndim.";
-        throw std::runtime_error(ss.str());
-    }
-}
-
-void Tensor::shape_error(const std::vector<size_t>& shape) const
+void TensorGPU::shape_error(const std::vector<size_t>& shape) const
 {
     ndim_error(shape.size());
     for (size_t i = 0; i < ndim(); i++) {
         if (shape_[i] != shape[i]) {
             std::stringstream ss;
-            ss << "Tensor should be (";
+            ss << "TensorGPU should be (";
             for (size_t j = 0; j < ndim(); j++) {
                 ss << shape[j];
                 if (j < ndim() - 1) {
@@ -242,131 +426,108 @@ void Tensor::shape_error(const std::vector<size_t>& shape) const
     }
 }
 
-void Tensor::square_error() const 
+void TensorGPU::square_error() const 
 {
     ndim_error(2);
     if (shape_[0] != shape_[1]) {
         std::stringstream ss;
-        ss << "Tensor should be square, but is ";
+        ss << "TensorGPU should be square, but is ";
         ss << "(" << shape_[0] << "," << shape_[1] << ") shape.";
         throw std::runtime_error(ss.str());
     }
 }
 
-std::shared_ptr<Tensor> Tensor::clone()
+std::shared_ptr<TensorGPU> TensorGPU::clone()
 {
-    return std::shared_ptr<Tensor>(new Tensor(*this)); 
+    return std::shared_ptr<TensorGPU>(new TensorGPU(*this)); 
 }
 
-void Tensor::zero()
-{
-    memset(data_.data(),'\0',sizeof(std::complex<double>)*size_);
-}
-
-void Tensor::identity()
+void TensorGPU::identity()
 {
     square_error();
     zero();
     for (size_t i = 0; i < shape_[0]; i++) {
-        data_[i * shape_[1] + i] = 1.0;
+        h_data_[i * shape_[1] + i] = 1.0;
     }
 }
 
-void Tensor::symmetrize()
+void TensorGPU::symmetrize()
 {
     square_error();
     for (size_t i = 0; i < shape_[0]; i++) {
         for (size_t j = 0; j < shape_[0]; j++) {
-            data_[i * shape_[1] + j] =
-            data_[j * shape_[1] + i] = 0.5 * (
-            data_[i * shape_[1] + j] +
-            data_[j * shape_[1] + i]);
+            h_data_[i * shape_[1] + j] =
+            h_data_[j * shape_[1] + i] = 0.5 * (
+            h_data_[i * shape_[1] + j] +
+            h_data_[j * shape_[1] + i]);
         }
     }
 }
 
-void Tensor::antisymmetrize()
+void TensorGPU::antisymmetrize()
 {
     square_error();
     for (size_t i = 0; i < shape_[0]; i++) {
         for (size_t j = 0; j < shape_[0]; j++) {
             std::complex<double> val = 0.5 * (
-            data_[i * shape_[1] + j] -
-            data_[j * shape_[1] + i]);
-            data_[i * shape_[1] + j] = val;
-            data_[j * shape_[1] + i] = - val;
+            h_data_[i * shape_[1] + j] -
+            h_data_[j * shape_[1] + i]);
+            h_data_[i * shape_[1] + j] = val;
+            h_data_[j * shape_[1] + i] = - val;
         }
     }
 }
 
 // TODO(NICK:) reimplement Scal
-// void Tensor::scale(std::complex<double> a)
+// void TensorGPU::scale(std::complex<double> a)
 // {
-//     // C_DSCAL(size_,a,data_.data(),1);
+//     // C_DSCAL(size_,a,h_data_.data(),1);
 //     for(size_t i = 0; i < size_; i++){
-//         data_[i] *= a;
+//         h_data_[i] *= a;
 //     }
 // }
 
-void Tensor::scale(std::complex<double> a)
+void TensorGPU::scale(std::complex<double> a)
 {
-    math_zscale(size_, a, data_.data(), 1);
+    math_zscale(size_, a, h_data_.data(), 1);
 }
 
-void Tensor::copy_in(
-    const Tensor& other
-    )
-{
-    shape_error(other.shape());
-    std::memcpy(data_.data(), other.read_data().data(), sizeof(std::complex<double>)*size_);
-}
-
-void Tensor::copy_in_tensorgpu(
+void TensorGPU::copy_in(
     const TensorGPU& other
     )
 {
-    shape_error(other.shape());
+    cpu_error();
     other.cpu_error();
-    std::memcpy(data_.data(), other.read_h_data().data(), sizeof(std::complex<double>)*size_);
-}
-
-void Tensor::add(const Tensor& other) 
-{
     shape_error(other.shape());
-    for(size_t i = 0; i < size_; i++){
-        data_[i] += other.read_data()[i];
-    }
-
+    std::memcpy(h_data_.data(), other.read_h_data().data(), sizeof(std::complex<double>)*size_);
 }
 
+void TensorGPU::copy_in_gpu(const TensorGPU& other)
+{
+    gpu_error();
+    other.gpu_error();
+    shape_error(other.shape());
+    cudaMemcpy(d_data_, other.read_d_data(), size_ * sizeof(cuDoubleComplex), cudaMemcpyDeviceToDevice);
+}
 
-void Tensor::subtract(const Tensor& other){
+void TensorGPU::copy_in_from_tensor(const Tensor& other)
+{
+    cpu_error();
+    shape_error(other.shape());
+    std::memcpy(h_data_.data(), other.read_data().data(), sizeof(std::complex<double>)*size_);    
+}
+
+void TensorGPU::subtract(const TensorGPU& other){
 
     shape_error(other.shape());
     for (size_t i = 0; i < size_; i++){
-        data_[i] -= other.read_data()[i];
+        h_data_[i] -= other.read_h_data()[i];
     }
 }
 
-double Tensor::norm(){
+// void TensorGPU::axpby(
 
-    double result = 0;
-
-    for (int i = 0; i < size_; i++){
-
-        result += std::real(data_[i]) * std::real(data_[i]) + std::imag(data_[i]) * std::imag(data_[i]);
-
-    }
-
-    result = std::sqrt(result);
-
-    return result;
-
-}
-
-// void Tensor::axpby(
-
-// void Tensor::zaxpby(
+// void TensorGPU::zaxpby(
 
 //     const std::shared_ptr<Tensor>& other,
 //     std::complex<double> a,
@@ -375,12 +536,12 @@ double Tensor::norm(){
 // {
 //     shape_error(other->shape());
     
-//     C_DSCAL(size_,b,data_.data(),1);
-//     C_DAXPY(size_,a,other->data().data(),1,data_.data(),1); 
+//     C_DSCAL(size_,b,h_data_.data(),1);
+//     C_DAXPY(size_,a,other->data().data(),1,h_data_.data(),1); 
 // } OLD
 
-void Tensor::zaxpby(
-    const Tensor& x,
+void TensorGPU::zaxpby(
+    const TensorGPU& x,
     std::complex<double> a,
     std::complex<double> b,
     const int incx,
@@ -388,32 +549,32 @@ void Tensor::zaxpby(
     )
 {
     shape_error(x.shape());
-    math_zscale(size_, b, data_.data(),1);
-    math_zaxpy(size_, a, x.read_data().data(), incx, data_.data(), incy); 
+    math_zscale(size_, b, h_data_.data(),1);
+    math_zaxpy(size_, a, x.read_h_data().data(), incx, h_data_.data(), incy); 
 }
 
-void Tensor::zaxpy(
-    const Tensor& x, 
+void TensorGPU::zaxpy(
+    const TensorGPU& x, 
     const std::complex<double> alpha, 
     const int incx, 
     const int incy)
 {
     // Check if the two tensors have compatible shapes
     if (shape_ != x.shape()) {
-        throw std::runtime_error("Tensor::zaxpy: Incompatible tensor shapes for axpy operation.");
+        throw std::runtime_error("TensorGPU::zaxpy: Incompatible tensor shapes for axpy operation.");
     }
 
     // Get the raw data pointers for both tensors
-    const std::complex<double>* x_data = x.read_data().data();
-    std::complex<double>* y_data = data_.data();
+    const std::complex<double>* x_data = x.read_h_data().data();
+    std::complex<double>* y_data = h_data_.data();
 
     // Call the zaxpy function from blas_math.h to perform the operation
     math_zaxpy(size_, alpha, x_data, incx, y_data, incy);
 }
 
 
-void Tensor::gemm(
-    const Tensor& B,
+void TensorGPU::gemm(
+    const TensorGPU& B,
     const char transa,
     const char transb,
     const std::complex<double> alpha,
@@ -429,11 +590,11 @@ void Tensor::gemm(
   const int N = (transb == 'N') ? B.shape()[1] : B.shape()[0];
   const int K = (transa == 'N') ? shape_[1] : shape_[0];
   
-  std::complex<double>* A_data = data_.data();
-  const std::complex<double>* B_data = B.read_data().data();
+  std::complex<double>* A_data = h_data_.data();
+  const std::complex<double>* B_data = B.read_h_data().data();
   
-  // Since Tensor C is 'this' Tensor
-  std::complex<double>* C_data = data_.data();
+  // Since TensorGPU C is 'this' TensorGPU
+  std::complex<double>* C_data = h_data_.data();
 
   if(mult_B_on_right) {
     math_zgemm(transa, transb, M, N, K, alpha, A_data, shape_[1], B_data, B.shape()[1], beta, C_data, shape_[1]);
@@ -445,45 +606,45 @@ void Tensor::gemm(
 }
 
 
-std::complex<double> Tensor::vector_dot(
-    const Tensor& other
+std::complex<double> TensorGPU::vector_dot(
+    const TensorGPU& other
     ) const
 {
     shape_error(other.shape());
 
     // return math_zdot(
     //     size_, 
-    //     const_cast<std::complex<double>*>(data_.data()), 
+    //     const_cast<std::complex<double>*>(h_data_.data()), 
     //     1, 
-    //     other.read_data().data(), 
+    //     other.read_h_data().data(), 
     //     1);
 
     std::complex<double> result = 0.0;
 
     for (int i = 0; i < size_; i++){
-        result += std::conj(data_[i]) * other.read_data()[i];
+        result += std::conj(h_data_[i]) * other.read_h_data()[i];
     }
 
     return result;
 
     // return math_zdot(
     //     size_, 
-    //     data_.data(), 
+    //     h_data_.data(), 
     //     1, 
-    //     other.read_data().data(), 
+    //     other.read_h_data().data(), 
     //     1);
     
 }
 
 // NOTE(Nick) we maywant to return sharred pointer to a tensor instead...
-// std::shared_pointer<Tensor> Tensor::transpose() const
-Tensor Tensor::transpose() const
+// std::shared_pointer<TensorGPU> TensorGPU::transpose() const
+TensorGPU TensorGPU::transpose() const
 {
     ndim_error(2);
-    // std::shared_ptr<Tensor> T(new Tensor({shape_[1], shape_[0]}));
-    Tensor T({shape_[1], shape_[0]});
+    // std::shared_ptr<TensorGPU> T(new TensorGPU({shape_[1], shape_[0]}));
+    TensorGPU T({shape_[1], shape_[0]});
     std::complex<double>* Tp = T.data().data();
-    const std::complex<double>* Ap = data_.data();
+    const std::complex<double>* Ap = h_data_.data();
     for (size_t ind1 = 0; ind1 < shape_[0]; ind1++) {
         for (size_t ind2 = 0; ind2 < shape_[1]; ind2++) {
             Tp[ind2 * shape_[0] + ind1] = Ap[ind1 * shape_[1] + ind2];
@@ -493,7 +654,7 @@ Tensor Tensor::transpose() const
 }
 
 // NOTE(Nick) we maywant to return sharred pointer to a tensor instead...
-Tensor Tensor::general_transpose(const std::vector<size_t>& axes) const 
+TensorGPU TensorGPU::general_transpose(const std::vector<size_t>& axes) const 
 {
     if (axes.size() != ndim()) {
         throw std::invalid_argument("Invalid axes permutation");
@@ -504,25 +665,25 @@ Tensor Tensor::general_transpose(const std::vector<size_t>& axes) const
         transposed_shape[i] = shape_[axes[i]];
     }
 
-    // std::shared_ptr<Tensor> transposed_tensor(new Tensor(transposed_shape));
-    Tensor transposed_tensor(transposed_shape);
+    // std::shared_ptr<TensorGPU> transposed_tensor(new TensorGPU(transposed_shape));
+    TensorGPU transposed_tensor(transposed_shape);
 
     std::complex<double>* transposed_data = transposed_tensor.data().data();
-    // const std::complex<double>* original_data = data_.data();
+    // const std::complex<double>* original_data = h_data_.data();
 
     // This works but probably can be made more efficient.
     // Fix if it turns out to be a bottleneck
     for (size_t i = 0; i < size_; i++){
         std::vector<size_t> tidx_trans = vidx_to_tidx(i);
         size_t t_vidx = transposed_tensor.tidx_to_trans_vidx(tidx_trans, axes);
-        transposed_data[t_vidx] = data_[i];
+        transposed_data[t_vidx] = h_data_[i];
     }
 
     return transposed_tensor;  
 }
 
 
-Tensor Tensor::slice(std::vector<std::pair<size_t, size_t>> idxs)const{
+TensorGPU TensorGPU::slice(std::vector<std::pair<size_t, size_t>> idxs)const{
 
     std::vector<size_t> new_shape(idxs.size());
     std::vector<size_t> new_shape2;
@@ -550,7 +711,7 @@ Tensor Tensor::slice(std::vector<std::pair<size_t, size_t>> idxs)const{
         if(dim != 1) { new_shape2.push_back(dim); }
     }
 
-    Tensor new_tensor(new_shape2, name_ + "_sliced");
+    TensorGPU new_tensor(new_shape2, name_ + "_sliced");
 
     std::vector<size_t> old_tidx(ndim());
     std::fill(old_tidx.begin(), old_tidx.end(), 0);
@@ -572,7 +733,7 @@ Tensor Tensor::slice(std::vector<std::pair<size_t, size_t>> idxs)const{
 
         if (is_in_slice){
             size_t new_vidx = new_tensor.tidx_to_vidx(new_tidx);
-            new_tensor.data()[new_vidx] = data_[vidx];
+            new_tensor.data()[new_vidx] = h_data_[vidx];
         }
 
     }
@@ -581,11 +742,11 @@ Tensor Tensor::slice(std::vector<std::pair<size_t, size_t>> idxs)const{
     return new_tensor;
 }
 
-std::vector<std::vector<size_t>> Tensor::get_nonzero_tidxs() const 
+std::vector<std::vector<size_t>> TensorGPU::get_nonzero_tidxs() const 
 {   
     std::vector<std::vector<size_t>> nonzero_tidxs;
     for(size_t i = 0; i < size_; i++) {
-        if(data_[i] != 0.0){
+        if(h_data_[i] != 0.0){
             std::vector<size_t> tidxs = vidx_to_tidx(i);
             nonzero_tidxs.push_back(tidxs);
         }
@@ -595,7 +756,7 @@ std::vector<std::vector<size_t>> Tensor::get_nonzero_tidxs() const
 
 // TODO(Tyler?): Column printing is a little clunky for complex
 // need to fix
-std::string Tensor::str(
+std::string TensorGPU::str(
     bool print_data, 
     bool print_complex, 
     int maxcols,
@@ -604,7 +765,7 @@ std::string Tensor::str(
     ) const
 {
     std::string str = "";
-    str += std::printf( "Tensor: %s\n", name_.c_str());
+    str += std::printf( "TensorGPU: %s\n", name_.c_str());
     str += std::printf( "  Ndim  = %zu\n", ndim());
     str += std::printf( "  Size  = %zu\n", size());
     str += std::printf( "  Shape = (");
@@ -665,7 +826,7 @@ std::string Tensor::str(
                     str += std::printf( "*,*):\n\n");
                 }
 
-                const std::complex<double>* vp = data_.data() + page * page_size;
+                const std::complex<double>* vp = h_data_.data() + page * page_size;
                 if (order == 0) {
                     str += std::printf( order0str1.c_str(), *(vp));
                 } else if(order == 1) {
@@ -702,13 +863,13 @@ std::string Tensor::str(
     return str;
 }
 
-std::string Tensor::print_nonzero() const 
+std::string TensorGPU::print_nonzero() const 
 {   
-    std::string str = "\n Nonzero indices and elements of Tensor: \n";
+    std::string str = "\n Nonzero indices and elements of TensorGPU: \n";
     str += " ========================================== ";
 
     for(size_t i = 0; i < size_; i++) {
-        if(data_[i] != 0.0){
+        if(h_data_[i] != 0.0){
             std::vector<size_t> tidxs = vidx_to_tidx(i);
             std::stringstream tidxs_stream;
             std::copy(
@@ -721,9 +882,9 @@ std::string Tensor::print_nonzero() const
             str += "\n  ( ";
             str += tidxs_string;
             str += ")  ";
-            str += std::to_string(data_[i].real());
+            str += std::to_string(h_data_[i].real());
             str += " + ";
-            str += std::to_string(data_[i].imag());
+            str += std::to_string(h_data_[i].imag());
         }
     }
     return str;
@@ -731,32 +892,6 @@ std::string Tensor::print_nonzero() const
 // py::array_t<double> array
 // std::vector<std::complex<double>>
 
-void Tensor::fill_from_nparray(std::vector<std::complex<double>> arr, std::vector<size_t> shape){
-
-    if (shape_ != shape){
-        throw std::runtime_error("The Shapes are not the same.");
-    }
-
-    if (size_ != arr.size()){
-        throw std::runtime_error("The Sizes are not the same!");
-    }
-
-    std::memcpy(data_.data(), arr.data(), sizeof(std::complex<double>)*size_);
-
-}
-
-// /// Careful, onus on user to make sure shapes are consistant
-// void Tensor::copy_to_nparray(std::vector<std::complex<double>>& arr){
-
-//     if (size_ != arr.size()){
-//         throw std::runtime_error("The sizes are not the same.");
-//     }
-
-//     // std::memcpy(arr.data(), data_.data(), sizeof(std::complex<double>)*size_);
-
-//     std::fill(arr.begin(), arr.end(), 1.0);
-
-// }
 
 // TODO(Nick): Re-Implement
 // void Tensor::print() const

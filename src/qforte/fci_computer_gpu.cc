@@ -15,6 +15,7 @@
 #include "qubit_operator.h"
 #include "tensor.h"
 #include "tensor_operator.h"
+#include "tensor_gpu.h"
 #include "qubit_op_pool.h"
 #include "sq_op_pool.h"
 #include "timer.h"
@@ -22,16 +23,17 @@
 #include "blas_math.h"
 #include "cuda_runtime.h"
 
-#include "fci_computer.h"
+#include "fci_computer_gpu.h"
 #include "fci_graph.h"
 
+#include "fci_computer_gpu.cuh"
 
 
-
-FCIComputer::FCIComputer(int nel, int sz, int norb) : 
+FCIComputerGPU::FCIComputerGPU(int nel, int sz, int norb, bool on_gpu) : 
     nel_(nel), 
     sz_(sz),
-    norb_(norb) {
+    norb_(norb),
+    on_gpu_(on_gpu) {
 
     if (nel_ < 0) {
         throw std::invalid_argument("Cannot have negative electrons");
@@ -66,7 +68,7 @@ FCIComputer::FCIComputer(int nel, int sz, int norb) :
         nbeta_strs_ = 0;
     }
 
-    C_.zero_with_shape({nalfa_strs_, nbeta_strs_});
+    C_.zero_with_shape({nalfa_strs_, nbeta_strs_}, on_gpu_);
     C_.set_name("FCI Computer");
 
     graph_ = FCIGraph(nalfa_el_, nbeta_el_, norb_);
@@ -74,8 +76,8 @@ FCIComputer::FCIComputer(int nel, int sz, int norb) :
     timer_ = local_timer();
 }
 
-/// Set a particular element of the tensor stored in FCIComputer, specified by idxs
-void FCIComputer::set_element(
+/// Set a particular element of the tensor stored in FCIComputerGPU, specified by idxs
+void FCIComputerGPU::set_element(
     const std::vector<size_t>& idxs,
     const std::complex<double> val
         )
@@ -83,34 +85,63 @@ void FCIComputer::set_element(
     C_.set(idxs, val);
 }
 
-void FCIComputer::do_on_gpu() {
-    use_gpu_operations_ = true;
+void FCIComputerGPU::gpu_error() const {
+
+    if (not on_gpu_) {
+        throw std::runtime_error("Data not on GPU for FCIComputerGPU" + name_);
+    }
+
 }
 
-void FCIComputer::do_on_cpu() {
-    use_gpu_operations_ = false;
+void FCIComputerGPU::cpu_error() const {
+
+    if (on_gpu_) {
+        throw std::runtime_error("Data not on CPU for FCIComputerGPU" + name_);
+    }
+
+}
+
+void FCIComputerGPU::to_gpu()
+{
+    cpu_error();
+
+    C_.to_gpu();
+
+    on_gpu_ = 1;
+
+}
+
+// change to 'to_cpu'
+void FCIComputerGPU::to_cpu()
+{
+    gpu_error();
+
+    C_.to_cpu();
+
+    on_gpu_ = 0;
+
 }
 
 /// apply a TensorOperator to the current state 
-void apply_tensor_operator(const TensorOperator& top);
+// void apply_tensor_operator(const TensorOperator& top);
 
 /// apply a Tensor represending a 1-body spin-orbital indexed operator to the current state 
-void FCIComputer::apply_tensor_spin_1bdy(const Tensor& h1e, size_t norb) {
+void FCIComputerGPU::apply_tensor_spin_1bdy(const TensorGPU& h1e, size_t norb) {
 
     if(h1e.size() != (norb * 2) * (norb * 2)){
         throw std::invalid_argument("Expecting h1e to be nso x nso for apply_tensor_spin_1bdy");
     }
 
-    Tensor Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
+    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
 
-    Tensor h1e_blk1 = h1e.slice(
+    TensorGPU h1e_blk1 = h1e.slice(
         {
             std::make_pair(0, norb_), 
             std::make_pair(0, norb_)
             }
         );
 
-    Tensor h1e_blk2 = h1e.slice(
+    TensorGPU h1e_blk2 = h1e.slice(
         {
             std::make_pair(norb_, 2*norb_), 
             std::make_pair(norb_, 2*norb_)
@@ -140,255 +171,221 @@ void FCIComputer::apply_tensor_spin_1bdy(const Tensor& h1e, size_t norb) {
     C_ = Cnew;
 }
 
-/// apply a Tensor represending a 1-body spatial-orbital indexed operator to the current state 
-void FCIComputer::apply_tensor_spat_1bdy(const Tensor& h1e, size_t norb) {
-
-    if(h1e.size() != (norb) * (norb)){
-        throw std::invalid_argument("Expecting h1e to be nso x nso for apply_tensor_spin_1bdy");
-    }
-
-    Tensor Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
-
-    apply_array_1bdy(
-        Cnew,
-        graph_.read_dexca_vec(),
-        nalfa_strs_,
-        nbeta_strs_,
-        graph_.get_ndexca(),
-        h1e,
-        norb_,
-        true);
-
-    C_.transpose();
-
-    apply_array_1bdy(
-        Cnew,
-        graph_.read_dexcb_vec(),
-        nbeta_strs_,
-        nalfa_strs_,
-        graph_.get_ndexcb(),
-        h1e,
-        norb_,
-        false);
-
-    C_ = Cnew;
-}
-
-/// apply Tensors represending 1-body and 2-body spin-orbital indexed operator to the current state 
+/// apply TensorGPUs represending 1-body and 2-body spin-orbital indexed operator to the current state 
 /// A LOT of wasted memory here, will want to improve...
-void FCIComputer::apply_tensor_spin_12bdy(
-    const Tensor& h1e, 
-    const Tensor& h2e, 
-    size_t norb) 
-{
-    if(norb > 10 or norb_ > 10){
-        throw std::invalid_argument("Don't use this function with more that 10 orbitals, too much memory");
-    }
+// void FCIComputerGPU::apply_tensor_spin_12bdy(
+//     const TensorGPU& h1e, 
+//     const TensorGPU& h2e, 
+//     size_t norb) 
+// {
+//     if(norb > 10 or norb_ > 10){
+//         throw std::invalid_argument("Don't use this function with more that 10 orbitals, too much memory");
+//     }
 
-    if(h1e.size() != (norb * 2) * (norb * 2)){
-        throw std::invalid_argument("Expecting h1e to be nso x nso for apply_tensor_spin_12bdy");
-    }
+//     if(h1e.size() != (norb * 2) * (norb * 2)){
+//         throw std::invalid_argument("Expecting h1e to be nso x nso for apply_tensor_spin_12bdy");
+//     }
 
-    if(h2e.size() != (norb * 2) * (norb * 2) * (norb * 2) * (norb * 2) ){
-        throw std::invalid_argument("Expecting h2e to be nso x nso x nso nso for apply_tensor_spin_12bdy");
-    }
+//     if(h2e.size() != (norb * 2) * (norb * 2) * (norb * 2) * (norb * 2) ){
+//         throw std::invalid_argument("Expecting h2e to be nso x nso x nso nso for apply_tensor_spin_12bdy");
+//     }
 
-    Tensor Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
-    Tensor h1e_new = h1e;
+//     TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
+//     TensorGPU h1e_new = h1e;
 
-    Tensor h2e_new(h2e.shape(), "A2");
-    Tensor::permute(
-        {"i", "j", "k", "l"}, 
-        {"i", "k", "j", "l"}, 
-        h2e, 
-        h2e_new); 
+//     TensorGPU h2e_new(h2e.shape(), "A2");
+//     TensorGPU::permute(
+//         {"i", "j", "k", "l"}, 
+//         {"i", "k", "j", "l"}, 
+//         h2e, 
+//         h2e_new); 
 
-    h2e_new.scale(-1.0);
+//     h2e_new.scale(-1.0);
 
-    for(int k = 0; k < 2 * norb_; k++){
-        Tensor h2e_k = h2e.slice(
-        {
-            std::make_pair(0, 2 * norb_), 
-            std::make_pair(k, k+1),
-            std::make_pair(k, k+1), 
-            std::make_pair(0, 2 * norb_)
-            }
-        );
+//     for(int k = 0; k < 2 * norb_; k++){
+//         TensorGPU h2e_k = h2e.slice(
+//         {
+//             std::make_pair(0, 2 * norb_), 
+//             std::make_pair(k, k+1),
+//             std::make_pair(k, k+1), 
+//             std::make_pair(0, 2 * norb_)
+//             }
+//         );
 
-        h2e_k.scale(-1.0);
+//         h2e_k.scale(-1.0);
 
-        h1e_new.zaxpy(
-            h2e_k,
-            1.0,
-            1,
-            1);
-    }
+//         h1e_new.zaxpy(
+//             h2e_k,
+//             1.0,
+//             1,
+//             1);
+//     }
 
-    /// NICK: Keeping this here in case future debuggin is needed
-    // 1 std::cout << "\n\n  ====> h1e <====" << h1e_new.print_nonzero() << std::endl;
-    // 1 std::cout << "\n\n  ====> h2e <====" << h2e_new.print_nonzero() << std::endl;
+//     /// NICK: Keeping this here in case future debuggin is needed
+//     // 1 std::cout << "\n\n  ====> h1e <====" << h1e_new.print_nonzero() << std::endl;
+//     // 1 std::cout << "\n\n  ====> h2e <====" << h2e_new.print_nonzero() << std::endl;
 
-    Tensor h1e_blk1 = h1e_new.slice(
-        {
-            std::make_pair(0, norb_), 
-            std::make_pair(0, norb_)
-            }
-        );
+//     TensorGPU h1e_blk1 = h1e_new.slice(
+//         {
+//             std::make_pair(0, norb_), 
+//             std::make_pair(0, norb_)
+//             }
+//         );
 
-    Tensor h1e_blk2 = h1e_new.slice(
-        {
-            std::make_pair(norb_, 2*norb_), 
-            std::make_pair(norb_, 2*norb_)
-            }
-        );
+//     TensorGPU h1e_blk2 = h1e_new.slice(
+//         {
+//             std::make_pair(norb_, 2*norb_), 
+//             std::make_pair(norb_, 2*norb_)
+//             }
+//         );
 
-    Tensor h2e_blk11 = h2e_new.slice(
-        {
-            std::make_pair(0, norb_), 
-            std::make_pair(0, norb_),
-            std::make_pair(0, norb_), 
-            std::make_pair(0, norb_)
-            }
-        );
+//     TensorGPU h2e_blk11 = h2e_new.slice(
+//         {
+//             std::make_pair(0, norb_), 
+//             std::make_pair(0, norb_),
+//             std::make_pair(0, norb_), 
+//             std::make_pair(0, norb_)
+//             }
+//         );
 
-    Tensor h2e_blk12 = h2e_new.slice(
-        {
-            std::make_pair(0, norb_), 
-            std::make_pair(0, norb_),
-            std::make_pair(norb_, 2*norb_), 
-            std::make_pair(norb_, 2*norb_)
-            }
-        );
+//     TensorGPU h2e_blk12 = h2e_new.slice(
+//         {
+//             std::make_pair(0, norb_), 
+//             std::make_pair(0, norb_),
+//             std::make_pair(norb_, 2*norb_), 
+//             std::make_pair(norb_, 2*norb_)
+//             }
+//         );
 
-    Tensor h2e_blk21 = h2e_new.slice(
-        {
-            std::make_pair(norb_, 2*norb_), 
-            std::make_pair(norb_, 2*norb_),
-            std::make_pair(0, norb_), 
-            std::make_pair(0, norb_)
-            }
-        );
+//     TensorGPU h2e_blk21 = h2e_new.slice(
+//         {
+//             std::make_pair(norb_, 2*norb_), 
+//             std::make_pair(norb_, 2*norb_),
+//             std::make_pair(0, norb_), 
+//             std::make_pair(0, norb_)
+//             }
+//         );
 
-    Tensor h2e_blk22 = h2e_new.slice(
-        {
-            std::make_pair(norb_, 2*norb_), 
-            std::make_pair(norb_, 2*norb_),
-            std::make_pair(norb_, 2*norb_), 
-            std::make_pair(norb_, 2*norb_)
-            }
-        );
+//     TensorGPU h2e_blk22 = h2e_new.slice(
+//         {
+//             std::make_pair(norb_, 2*norb_), 
+//             std::make_pair(norb_, 2*norb_),
+//             std::make_pair(norb_, 2*norb_), 
+//             std::make_pair(norb_, 2*norb_)
+//             }
+//         );
 
-    std::pair<Tensor, Tensor> dvec = calculate_dvec_spin_with_coeff();
+//     std::pair<TensorGPU, TensorGPU> dvec = calculate_dvec_spin_with_coeff();
     
-    Tensor dveca_new(dvec.first.shape(),  "dveca_new");
-    Tensor dvecb_new(dvec.second.shape(), "dvecb_new");
+//     TensorGPU dveca_new(dvec.first.shape(),  "dveca_new");
+//     TensorGPU dvecb_new(dvec.second.shape(), "dvecb_new");
 
-    Tensor::einsum(
-        {"i", "j"},
-        {"i", "j", "k", "l"},
-        {"k", "l"},
-        h1e_blk1,
-        dvec.first,
-        Cnew, 
-        1.0,
-        0.0
-    );
+//     TensorGPU::einsum(
+//         {"i", "j"},
+//         {"i", "j", "k", "l"},
+//         {"k", "l"},
+//         h1e_blk1,
+//         dvec.first,
+//         Cnew, 
+//         1.0,
+//         0.0
+//     );
 
-    Tensor::einsum(
-        {"i", "j"},
-        {"i", "j", "k", "l"},
-        {"k", "l"},
-        h1e_blk2,
-        dvec.second,
-        Cnew, 
-        1.0,
-        0.0
-    );
+//     TensorGPU::einsum(
+//         {"i", "j"},
+//         {"i", "j", "k", "l"},
+//         {"k", "l"},
+//         h1e_blk2,
+//         dvec.second,
+//         Cnew, 
+//         1.0,
+//         0.0
+//     );
 
-    Tensor::einsum(
-        {"i", "j", "k", "l"},
-        {"k", "l", "m", "n"},
-        {"i", "j", "m", "n"},
-        h2e_blk11,
-        dvec.first,
-        dveca_new, 
-        1.0,
-        0.0
-    );
+//     TensorGPU::einsum(
+//         {"i", "j", "k", "l"},
+//         {"k", "l", "m", "n"},
+//         {"i", "j", "m", "n"},
+//         h2e_blk11,
+//         dvec.first,
+//         dveca_new, 
+//         1.0,
+//         0.0
+//     );
 
-    Tensor::einsum(
-        {"i", "j", "k", "l"},
-        {"k", "l", "m", "n"},
-        {"i", "j", "m", "n"},
-        h2e_blk12,
-        dvec.second,
-        dveca_new, 
-        1.0,
-        0.0
-    );
+//     TensorGPU::einsum(
+//         {"i", "j", "k", "l"},
+//         {"k", "l", "m", "n"},
+//         {"i", "j", "m", "n"},
+//         h2e_blk12,
+//         dvec.second,
+//         dveca_new, 
+//         1.0,
+//         0.0
+//     );
 
-    Tensor::einsum(
-        {"i", "j", "k", "l"},
-        {"k", "l", "m", "n"},
-        {"i", "j", "m", "n"},
-        h2e_blk21,
-        dvec.first,
-        dvecb_new, 
-        1.0,
-        0.0
-    );
+//     TensorGPU::einsum(
+//         {"i", "j", "k", "l"},
+//         {"k", "l", "m", "n"},
+//         {"i", "j", "m", "n"},
+//         h2e_blk21,
+//         dvec.first,
+//         dvecb_new, 
+//         1.0,
+//         0.0
+//     );
 
-    Tensor::einsum(
-        {"i", "j", "k", "l"},
-        {"k", "l", "m", "n"},
-        {"i", "j", "m", "n"},
-        h2e_blk22,
-        dvec.second,
-        dvecb_new, 
-        1.0,
-        0.0
-    );
+//     TensorGPU::einsum(
+//         {"i", "j", "k", "l"},
+//         {"k", "l", "m", "n"},
+//         {"i", "j", "m", "n"},
+//         h2e_blk22,
+//         dvec.second,
+//         dvecb_new, 
+//         1.0,
+//         0.0
+//     );
 
-    std::pair<Tensor, Tensor> dvec_new = std::make_pair(dveca_new, dvecb_new);
+//     std::pair<TensorGPU, TensorGPU> dvec_new = std::make_pair(dveca_new, dvecb_new);
 
-    Cnew.zaxpy(
-        calculate_coeff_spin_with_dvec(dvec_new),
-        1.0,
-        1,
-        1    
-    );
+//     Cnew.zaxpy(
+//         calculate_coeff_spin_with_dvec(dvec_new),
+//         1.0,
+//         1,
+//         1    
+//     );
 
-    C_ = Cnew;
-}
+//     C_ = Cnew;
+// }
 
-/// apply Tensors represending 1-body and 2-body spin-orbital indexed operator to the current state 
-void FCIComputer::apply_tensor_spin_012bdy(
-    const Tensor& h0e, 
-    const Tensor& h1e, 
-    const Tensor& h2e, 
-    size_t norb) 
-{
-    h0e.shape_error({1});
-    Tensor Cold = C_;
+/// apply TensorGPUs represending 1-body and 2-body spin-orbital indexed operator to the current state 
+// void FCIComputerGPU::apply_tensor_spin_012bdy(
+//     const TensorGPU& h0e, 
+//     const TensorGPU& h1e, 
+//     const TensorGPU& h2e, 
+//     size_t norb) 
+// {
+//     h0e.shape_error({1});
+//     TensorGPU Cold = C_;
     
-    apply_tensor_spin_12bdy(
-        h1e,
-        h2e,
-        norb);
+//     apply_tensor_spin_12bdy(
+//         h1e,
+//         h2e,
+//         norb);
 
-    C_.zaxpy(
-        Cold,
-        h0e.get({0}),
-        1,
-        1    
-    );
-}
+//     C_.zaxpy(
+//         Cold,
+//         h0e.get({0}),
+//         1,
+//         1    
+//     );
+// }
 
 /// apply Tensors represending 1-body and 2-body spatial-orbital indexed operator to the current state 
-void FCIComputer::apply_tensor_spat_12bdy(
-    const Tensor& h1e, 
-    const Tensor& h2e, 
-    const Tensor& h2e_einsum, 
+void FCIComputerGPU::apply_tensor_spat_12bdy(
+    const TensorGPU& h1e, 
+    const TensorGPU& h2e, 
+    const TensorGPU& h2e_einsum, 
     size_t norb) 
 {
     if(h1e.size() != (norb) * (norb)){
@@ -399,7 +396,7 @@ void FCIComputer::apply_tensor_spat_12bdy(
         throw std::invalid_argument("Expecting h2e to be nso x nso x nso nso for apply_tensor_spin_12bdy");
     }
 
-    Tensor Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
+    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
     Cnew.zero();
 
     lm_apply_array12_same_spin_opt(
@@ -444,15 +441,15 @@ void FCIComputer::apply_tensor_spat_12bdy(
 
 /// apply Tensors represending 1-body and 2-body spatial-orbital indexed operator
 /// as well as a constant to the current state 
-void FCIComputer::apply_tensor_spat_012bdy(
+void FCIComputerGPU::apply_tensor_spat_012bdy(
     const std::complex<double> h0e,
-    const Tensor& h1e, 
-    const Tensor& h2e, 
-    const Tensor& h2e_einsum, 
+    const TensorGPU& h1e, 
+    const TensorGPU& h2e, 
+    const TensorGPU& h2e_einsum, 
     size_t norb) 
 {
     
-    Tensor Ctemp = C_;
+    TensorGPU Ctemp = C_;
     
     apply_tensor_spat_12bdy(
         h1e,
@@ -470,10 +467,10 @@ void FCIComputer::apply_tensor_spat_012bdy(
 
 // NICK: VERY VERY Slow, will want even a better c++ implementation!
 // Try with einsum once working or perhaps someting like the above...?
-std::pair<Tensor, Tensor> FCIComputer::calculate_dvec_spin_with_coeff() {
+std::pair<TensorGPU, TensorGPU> FCIComputerGPU::calculate_dvec_spin_with_coeff() {
 
-    Tensor dveca({norb_, norb_, nalfa_strs_, nbeta_strs_}, "dveca");
-    Tensor dvecb({norb_, norb_, nalfa_strs_, nbeta_strs_}, "dvecb");
+    TensorGPU dveca({norb_, norb_, nalfa_strs_, nbeta_strs_}, "dveca");
+    TensorGPU dvecb({norb_, norb_, nalfa_strs_, nbeta_strs_}, "dvecb");
 
     for (size_t i = 0; i < norb_; ++i) {
         for (size_t j = 0; j < norb_; ++j) {
@@ -507,8 +504,8 @@ std::pair<Tensor, Tensor> FCIComputer::calculate_dvec_spin_with_coeff() {
 }
 
 // ALSO SLOW
-Tensor FCIComputer::calculate_coeff_spin_with_dvec(std::pair<Tensor, Tensor>& dvec) {
-    Tensor Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
+TensorGPU FCIComputerGPU::calculate_coeff_spin_with_dvec(std::pair<TensorGPU, TensorGPU>& dvec) {
+    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
 
     for (size_t i = 0; i < norb_; ++i) {
         for (size_t j = 0; j < norb_; ++j) {
@@ -544,13 +541,13 @@ Tensor FCIComputer::calculate_coeff_spin_with_dvec(std::pair<Tensor, Tensor>& dv
 }
 
 /// NICK: make this more c++ style, not a fan of the raw pointers :(
-void FCIComputer::apply_array_1bdy(
-    Tensor& out,
+void FCIComputerGPU::apply_array_1bdy(
+    TensorGPU& out,
     const std::vector<int>& dexc,
     const int astates,
     const int bstates,
     const int ndexc,
-    const Tensor& h1e,
+    const TensorGPU& h1e,
     const int norbs,
     const bool is_alpha)
 {
@@ -569,7 +566,7 @@ void FCIComputer::apply_array_1bdy(
             const int ijshift = cdexc[1];
             const int parity = cdexc[2];
 
-            const std::complex<double> pref = static_cast<double>(parity) * h1e.read_data()[ijshift];
+            const std::complex<double> pref = static_cast<double>(parity) * h1e.read_h_data()[ijshift];
             const std::complex<double>* xptr = C_.data().data() + target * inc1;
 
             math_zaxpy(states2, pref, xptr, inc2, cout, inc2);
@@ -577,14 +574,14 @@ void FCIComputer::apply_array_1bdy(
     }
 }
 
-void FCIComputer::lm_apply_array12_same_spin_opt(
-    Tensor& out,
+void FCIComputerGPU::lm_apply_array12_same_spin_opt(
+    TensorGPU& out,
     const std::vector<int>& dexc,
     const int alpha_states,
     const int beta_states,
     const int ndexc,
-    const Tensor& h1e,
-    const Tensor& h2e,
+    const TensorGPU& h1e,
+    const TensorGPU& h2e,
     const int norbs,
     const bool is_alpha)
 {
@@ -608,8 +605,8 @@ void FCIComputer::lm_apply_array12_same_spin_opt(
             const int *cdexc2 = dexc.data() + 3 * s2 * ndexc;
             const int *lim2 = cdexc2 + 3 * ndexc;
             const int h2e_id = ijshift * norbs * norbs;
-            const std::complex<double> *h2etmp = h2e.read_data().data() + h2e_id;
-            temp[s2] += static_cast<double>(parity1) * h1e.read_data()[ijshift];
+            const std::complex<double> *h2etmp = h2e.read_h_data().data() + h2e_id;
+            temp[s2] += static_cast<double>(parity1) * h1e.read_h_data()[ijshift];
 
             for (; cdexc2 < lim2; cdexc2 += 3) {
                 const int target = cdexc2[0];
@@ -628,15 +625,15 @@ void FCIComputer::lm_apply_array12_same_spin_opt(
     }
 }
 
-void FCIComputer::lm_apply_array12_diff_spin_opt(
-    Tensor& out,
+void FCIComputerGPU::lm_apply_array12_diff_spin_opt(
+    TensorGPU& out,
     const std::vector<int>& adexc,
     const std::vector<int>& bdexc,
     const int alpha_states,
     const int beta_states,
     const int nadexc,
     const int nbdexc,
-    const Tensor& h2e,
+    const TensorGPU& h2e,
     const int norbs) 
 {
     const int nadexc_tot = alpha_states * nadexc;
@@ -682,7 +679,7 @@ void FCIComputer::lm_apply_array12_diff_spin_opt(
             math_zaxpy(beta_states, zsign, cptr, one, tptr, nsig);
         }
 
-        const std::complex<double> *tmperi = h2e.read_data().data() + orbid * norbs2;
+        const std::complex<double> *tmperi = h2e.read_h_data().data() + orbid * norbs2;
 
         for (int s2 = 0; s2 < beta_states; ++s2) {
             
@@ -712,11 +709,11 @@ void FCIComputer::lm_apply_array12_diff_spin_opt(
 }
 
 /// apply a 1-body and 2-body TensorOperator to the current state 
-void apply_tensor_spin_12_body(const TensorOperator& top){
-    // Stuff
-}
+// void apply_tensor_spin_12_body(const TensorOperator& top){
+//     // Stuff
+// }
 
-std::pair<std::vector<int>, std::vector<int>> FCIComputer::evaluate_map_number(
+std::pair<std::vector<int>, std::vector<int>> FCIComputerGPU::evaluate_map_number(
     const std::vector<int>& numa, 
     const std::vector<int>& numb) 
 {
@@ -750,7 +747,7 @@ std::pair<std::vector<int>, std::vector<int>> FCIComputer::evaluate_map_number(
     return std::make_pair(amap, bmap);
 }
 
-std::pair<std::vector<int>, std::vector<int>> FCIComputer::evaluate_map(
+std::pair<std::vector<int>, std::vector<int>> FCIComputerGPU::evaluate_map(
     const std::vector<int>& crea,
     const std::vector<int>& anna,
     const std::vector<int>& creb,
@@ -787,14 +784,14 @@ std::pair<std::vector<int>, std::vector<int>> FCIComputer::evaluate_map(
     return std::make_pair(amap, bmap);
 }
 
-void FCIComputer::apply_cos_inplace(
+void FCIComputerGPU::apply_cos_inplace(
     const std::complex<double> time,
     const std::complex<double> coeff,
     const std::vector<int>& crea,
     const std::vector<int>& anna,
     const std::vector<int>& creb,
     const std::vector<int>& annb,
-    Tensor& Cout)
+    TensorGPU& Cout)
 {
     const std::complex<double> cabs = std::abs(coeff);
     const std::complex<double> factor = std::cos(time * cabs);
@@ -810,7 +807,7 @@ void FCIComputer::apply_cos_inplace(
     }
 }
 
-int FCIComputer::isolate_number_operators(
+int FCIComputerGPU::isolate_number_operators(
     const std::vector<int>& cre,
     const std::vector<int>& ann,
     std::vector<int>& crework,
@@ -833,22 +830,17 @@ int FCIComputer::isolate_number_operators(
     return par;
 }
 
-void FCIComputer::evolve_individual_nbody_easy(
+void FCIComputerGPU::evolve_individual_nbody_easy(
     const std::complex<double> time,
     const std::complex<double> coeff,
-    const Tensor& Cin,  
-    Tensor& Cout,       
+    const TensorGPU& Cin,  
+    TensorGPU& Cout,       
     const std::vector<int>& crea,
     const std::vector<int>& anna,
     const std::vector<int>& creb,
     const std::vector<int>& annb) 
 {
-    int n_a = anna.size();
-    int n_b = annb.size();
-
-    int power = n_a * (n_a - 1) / 2 + n_b * (n_b - 1) / 2;
-    std::complex<double> prefactor = coeff * std::pow(-1, power);
-    std::complex<double> factor = std::exp(-time * std::real(prefactor) * std::complex<double>(0.0, 1.0));
+    std::complex<double> factor = std::exp(-time * std::real(coeff) * std::complex<double>(0.0, 1.0));
     std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number(anna, annb);
 
     if (maps.first.size() != 0 and maps.second.size() != 0){
@@ -860,11 +852,11 @@ void FCIComputer::evolve_individual_nbody_easy(
     }
 }
 
-void FCIComputer::evolve_individual_nbody_hard(
+void FCIComputerGPU::evolve_individual_nbody_hard(
     const std::complex<double> time,
     const std::complex<double> coeff,
-    const Tensor& Cin,  
-    Tensor& Cout,       
+    const TensorGPU& Cin,  
+    TensorGPU& Cout,       
     const std::vector<int>& crea,
     const std::vector<int>& anna,
     const std::vector<int>& creb,
@@ -911,6 +903,8 @@ void FCIComputer::evolve_individual_nbody_hard(
         undagworkb,
         Cout);
 
+    // std::cout << "\n Cout After 1st Cos Application \n" << Cout.str(true, true) << std::endl;
+
     std::vector<int> numbera_undagworka(numbera.begin(), numbera.end());
     numbera_undagworka.insert(numbera_undagworka.end(), undagworka.begin(), undagworka.end());
 
@@ -926,6 +920,8 @@ void FCIComputer::evolve_individual_nbody_hard(
         dagworkb,
         Cout);
 
+    // std::cout << "\n Cout After 2nd Cos Application \n" << Cout.str(true, true) << std::endl;
+
     int phase = std::pow(-1, (crea.size() + anna.size()) * (creb.size() + annb.size()));
     std::complex<double> work_cof = std::conj(coeff) * static_cast<double>(phase) * std::complex<double>(0.0, -1.0);
 
@@ -938,6 +934,8 @@ void FCIComputer::evolve_individual_nbody_hard(
         annb,
         creb);
 
+    // std::cout << "\n Cout After First Accumulate Application \n" << Cout.str(true, true) << std::endl;
+
     apply_individual_nbody_accumulate(
         coeff * std::complex<double>(0.0, -1.0) * sinfactor,
         Cin,
@@ -946,13 +944,15 @@ void FCIComputer::evolve_individual_nbody_hard(
         anna,
         creb,
         annb);
+
+    // std::cout << "\n Cout After Second Accumulate Application \n" << Cout.str(true, true) << std::endl;
 }
 
-void FCIComputer::evolve_individual_nbody(
+void FCIComputerGPU::evolve_individual_nbody(
     const std::complex<double> time,
     const SQOperator& sqop,
-    const Tensor& Cin,
-    Tensor& Cout,
+    const TensorGPU& Cin,
+    TensorGPU& Cout,
     const bool antiherm,
     const bool adjoint) 
 {
@@ -978,12 +978,6 @@ void FCIComputer::evolve_individual_nbody(
     if(antiherm){
         std::complex<double> onei(0.0, 1.0);
         std::get<0>(term) *= onei;
-    }
-
-    if(std::get<1>(term).size()==0 && std::get<2>(term).size()==0){
-        std::complex<double> twoi(0.0, -2.0);
-        Cout.scale(std::exp(twoi * time * std::get<0>(term)));
-        return;
     }
 
     std::vector<int> crea;
@@ -1016,11 +1010,9 @@ void FCIComputer::evolve_individual_nbody(
     std::complex<double> parity = std::pow(-1, nswaps);
 
     if (crea == anna && creb == annb) {
-        
-        std::complex<double> factor;
         evolve_individual_nbody_easy(
             time,
-            parity * 2.0 * std::get<0>(term), 
+            parity * std::get<0>(term), 
             Cin,
             Cout,
             crea,
@@ -1039,25 +1031,18 @@ void FCIComputer::evolve_individual_nbody(
             annb);
 
     } else {
-        print_vector(crea, "crea");
-        print_vector(anna, "anna");
-        print_vector(creb, "creb");
-        print_vector(annb, "annb");
-        throw std::invalid_argument(
-            "Evolved state must remain in spin and particle-number symmetry sector, bad op above"
-        );
+        throw std::invalid_argument("Evolved state must remain in spin and particle-number symmetry sector");
     }
 }
 
-void FCIComputer::evolve_op_taylor(
+void FCIComputerGPU::evolve_op_taylor(
       const SQOperator& op,
       const double evolution_time,
       const double convergence_thresh,
-      const int max_taylor_iter,
-      const bool real_evolution)
+      const int max_taylor_iter)
 
 {
-    Tensor Cevol = C_;
+    TensorGPU Cevol = C_;
 
     for (int order = 1; order < max_taylor_iter; ++order) {
 
@@ -1065,14 +1050,8 @@ void FCIComputer::evolve_op_taylor(
 
         // std::cout << "C_: " << C_.str() << std::endl;
         // std::cout << "Cevol: " << Cevol.str() << std::endl;
-        std::complex<double> coeff;
 
-        if (real_evolution) {
-            coeff = std::complex<double>(-evolution_time, 0.0);
-        } else {
-            coeff = std::complex<double>(0.0, -evolution_time);
-        }
-
+        std::complex<double> coeff(0.0, -evolution_time);
         apply_sqop(op);
         scale(coeff);
 
@@ -1089,56 +1068,7 @@ void FCIComputer::evolve_op_taylor(
     C_ = Cevol;
 }
 
-void FCIComputer::evolve_tensor_taylor(
-      const std::complex<double> h0e,
-      const Tensor& h1e, 
-      const Tensor& h2e, 
-      const Tensor& h2e_einsum, 
-      size_t norb,
-      const double evolution_time,
-      const double convergence_thresh,
-      const int max_taylor_iter,
-      const bool real_evolution)
-
-{
-    Tensor Cevol = C_;
-
-    for (int order = 1; order < max_taylor_iter; ++order) {
-
-        // std::cout << "I get here, order: " << order << std::endl;
-
-        // std::cout << "C_: " << C_.str() << std::endl;
-        // std::cout << "Cevol: " << Cevol.str() << std::endl;
-        std::complex<double> coeff;
-
-        if (real_evolution) {
-            coeff = std::complex<double>(-evolution_time, 0.0);
-        } else {
-            coeff = std::complex<double>(0.0, -evolution_time);
-        }
-
-        apply_tensor_spat_012bdy(
-            h0e,
-            h1e,
-            h2e,
-            h2e_einsum,
-            norb);
-        scale(coeff);
-
-        Cevol.zaxpy(
-            C_,
-            1.0 / std::tgamma(order+1),
-            1,
-            1);
-        
-        if (C_.norm() * std::abs(coeff) < convergence_thresh) {
-            break;
-        }
-    }
-    C_ = Cevol;
-}
-
-void FCIComputer::evolve_pool_trotter_basic(
+void FCIComputerGPU::evolve_pool_trotter_basic(
       const SQOpPool& pool,
       const bool antiherm,
       const bool adjoint)
@@ -1163,7 +1093,7 @@ void FCIComputer::evolve_pool_trotter_basic(
     }
 }
 
-void FCIComputer::evolve_pool_trotter(
+void FCIComputerGPU::evolve_pool_trotter(
       const SQOpPool& pool,
       const double evolution_time,
       const int trotter_steps,
@@ -1247,13 +1177,13 @@ void FCIComputer::evolve_pool_trotter(
     }
 }
 
-void FCIComputer::apply_sqop_evolution(
+void FCIComputerGPU::apply_sqop_evolution(
       const std::complex<double> time,
       const SQOperator& sqop,
       const bool antiherm,
       const bool adjoint)
 {
-    Tensor Cin = C_;
+    TensorGPU Cin = C_;
     // NOTE(Nick): needs gpu treatment
     evolve_individual_nbody(
         time,
@@ -1264,146 +1194,10 @@ void FCIComputer::apply_sqop_evolution(
         adjoint); 
 }
 
-// void FCIComputer::apply_individual_nbody1_accumulate_gpu(
-//     const std::complex<double> coeff, 
-//     const Tensor& Cin,
-//     Tensor& Cout,
-//     std::vector<int>& sourcea,
-//     std::vector<int>& targeta,
-//     std::vector<int>& paritya,
-//     std::vector<int>& sourceb,
-//     std::vector<int>& targetb,
-//     std::vector<int>& parityb)
-// {
-    
-//     local_timer my_timer = local_timer();
-//     my_timer.reset();
-//     if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
-//         throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
-//     }
-
-//     if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
-//         throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
-//     }
-//     // only part that has kernel
-
-//     // make device pointers out of all the things coming in - use cuda mem copy to a device pointer
-//     my_timer.record("error checks");
-//     my_timer.reset();
-//     int* d_sourcea;
-//     int* d_sourceb;
-//     int* d_targeta;
-//     int* d_targetb;
-//     int* d_paritya;
-//     int* d_parityb;
-
-//     cuDoubleComplex* d_Cin;
-//     cuDoubleComplex* d_Cout;
-
-//     // cumalloc for these
-
-//     int sourcea_mem = sourcea.size() * sizeof(int);
-//     int sourceb_mem = sourceb.size() * sizeof(int);
-//     int targetb_mem = targetb.size() * sizeof(int);
-//     int targeta_mem = targeta.size() * sizeof(int);
-//     int paritya_mem = paritya.size() * sizeof(int);
-//     int parityb_mem = parityb.size() * sizeof(int);
-
-//     int tensor_mem = Cin.size() * sizeof(std::complex<double>);
-
-//     my_timer.record("making pointers");
-//     my_timer.reset();
-//     cudaMalloc(&d_sourcea, sourcea_mem);
-//     cudaMalloc(&d_sourceb, sourceb_mem);
-//     cudaMalloc(&d_targeta, targeta_mem);
-//     cudaMalloc(&d_targetb, targetb_mem);
-//     cudaMalloc(&d_paritya, paritya_mem);
-//     cudaMalloc(&d_parityb, parityb_mem);
-
-//     cudaMalloc(&d_Cin,  tensor_mem);
-//     cudaMalloc(&d_Cout, tensor_mem);
-
-//     my_timer.record("cudamallocs");
-//     my_timer.reset();
-
-//     cudaMemcpy(d_sourcea, sourcea.data(), sourcea_mem, cudaMemcpyHostToDevice);
-//     cudaMemcpy(d_sourceb, sourceb.data(), sourceb_mem, cudaMemcpyHostToDevice);
-//     cudaMemcpy(d_targeta, targeta.data(), targeta_mem, cudaMemcpyHostToDevice);
-//     cudaMemcpy(d_targetb, targetb.data(), targetb_mem, cudaMemcpyHostToDevice);
-//     cudaMemcpy(d_paritya, paritya.data(), paritya_mem, cudaMemcpyHostToDevice);
-//     cudaMemcpy(d_parityb, parityb.data(), parityb_mem, cudaMemcpyHostToDevice);
-
-//     cudaMemcpy(d_Cin,  Cin.read_data().data(),  tensor_mem, cudaMemcpyHostToDevice);
-//     cudaMemcpy(d_Cout, Cout.read_data().data(), tensor_mem, cudaMemcpyHostToDevice);
-
-//     my_timer.record("cudamemcpy");
-//     my_timer.reset();
-
-//     cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
-
-//     apply_individual_nbody1_accumulate_wrapper(
-//         cu_coeff, 
-//         d_Cin, 
-//         d_Cout, 
-//         d_sourcea,
-//         d_targeta,
-//         d_paritya,
-//         d_sourceb,
-//         d_targetb,
-//         d_parityb,
-//         nbeta_strs_,
-//         targeta.size(),
-//         targetb.size(),
-//         tensor_mem);
-//     my_timer.record("gpu function");
-//     my_timer.reset();
-
-
-//     cudaMemcpy(Cout.data().data(), d_Cout, tensor_mem, cudaMemcpyDeviceToHost);
-
-
-//     cudaFree(d_sourcea);
-//     cudaFree(d_sourceb);
-//     cudaFree(d_targeta);
-//     cudaFree(d_targetb);
-//     cudaFree(d_paritya);
-//     cudaFree(d_parityb);
-//     cudaFree(d_Cin);
-//     cudaFree(d_Cout);
-
-
-//     cudaError_t error = cudaGetLastError();
-//     if (error != cudaSuccess) {
-//         std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
-//         throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
-//     }
-
-//     my_timer.record("cuda free and transfer");
-//     // std::cout << my_timer.str_table() << std::endl;
-
-//     // do same thing for cin cout
-
-//     // call the add wrapper
-//     // do this in cu file with grid stride loop
-//     // for (int i = 0; i < targeta.size(); i++) {
-//     //     int ta_idx = targeta[i] * nbeta_strs_;
-//     //     int sa_idx = sourcea[i] * nbeta_strs_;
-//     //     std::complex<double> pref = coeff * static_cast<std::complex<double>>(paritya[i]);
-//     //     for (int j = 0; j < targetb.size(); j++) {
-//     //         Cout.data()[ta_idx + targetb[j]] += pref * static_cast<std::complex<double>>(parityb[j]) * Cin.read_data()[sa_idx + sourceb[j]];
-//     //     }
-//     // }
-
-
-
-//     // free it
-// }
-
-
-void FCIComputer::apply_individual_nbody1_accumulate_cpu(
+void FCIComputerGPU::apply_individual_nbody1_accumulate(
     const std::complex<double> coeff, 
-    const Tensor& Cin,
-    Tensor& Cout,
+    const TensorGPU& Cin,
+    TensorGPU& Cout,
     std::vector<int>& sourcea,
     std::vector<int>& targeta,
     std::vector<int>& paritya,
@@ -1411,6 +1205,9 @@ void FCIComputer::apply_individual_nbody1_accumulate_cpu(
     std::vector<int>& targetb,
     std::vector<int>& parityb)
 {
+    
+    // local_timer my_timer = local_timer();
+    timer_.reset();
     if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
         throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
     }
@@ -1418,50 +1215,146 @@ void FCIComputer::apply_individual_nbody1_accumulate_cpu(
     if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
         throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
     }
-    // local_timer my_timer = local_timer();
-    timer_.reset();
     // only part that has kernel
-    for (int i = 0; i < targeta.size(); i++) {
-        int ta_idx = targeta[i] * nbeta_strs_;
-        int sa_idx = sourcea[i] * nbeta_strs_;
-        std::complex<double> pref = coeff * static_cast<std::complex<double>>(paritya[i]);
-        for (int j = 0; j < targetb.size(); j++) {
-            Cout.data()[ta_idx + targetb[j]] += pref * static_cast<std::complex<double>>(parityb[j]) * Cin.read_data()[sa_idx + sourceb[j]];
-        }
+
+    std::vector<cuDoubleComplex> paritya_complex(paritya.size());
+    std::vector<cuDoubleComplex> parityb_complex(parityb.size());
+
+    for (size_t i = 0; i < paritya.size(); ++i) {
+        paritya_complex[i] = make_cuDoubleComplex(paritya[i], 0.0);
     }
-    
-    timer_.acc_record("cpu function");
+
+    for (size_t i = 0; i < parityb.size(); ++i) {
+        parityb_complex[i] = make_cuDoubleComplex(parityb[i], 0.0);
+    }
+
+    // make device pointers out of all the things coming in - use cuda mem copy to a device pointer
+    // my_timer.record("error checks");
+    // my_timer.reset();
+    int* d_sourcea;
+    int* d_sourceb;
+    int* d_targeta;
+    int* d_targetb;
+    // int* d_paritya;
+    // int* d_parityb;
+
+    cuDoubleComplex* d_paritya;
+    cuDoubleComplex* d_parityb;
+
+    // cuDoubleComplex* d_Cin;
+    // cuDoubleComplex* d_Cout;
+
+    // cumalloc for these
+
+    int sourcea_mem = sourcea.size() * sizeof(int);
+    int sourceb_mem = sourceb.size() * sizeof(int);
+    int targetb_mem = targetb.size() * sizeof(int);
+    int targeta_mem = targeta.size() * sizeof(int);
+    // int paritya_mem = paritya.size() * sizeof(int);
+    // int parityb_mem = parityb.size() * sizeof(int);
+
+    int paritya_mem = paritya.size() * sizeof(cuDoubleComplex);
+    int parityb_mem = parityb.size() * sizeof(cuDoubleComplex);
+
+    int tensor_mem = Cin.size() * sizeof(cuDoubleComplex);
+
+    timer_.acc_record("initialization in nbody1_acc");
+    timer_.reset();
+
+    // my_timer.record("making pointers");
+    // my_timer.reset();
+    cudaMalloc(&d_sourcea, sourcea_mem);
+    cudaMalloc(&d_sourceb, sourceb_mem);
+    cudaMalloc(&d_targeta, targeta_mem);
+    cudaMalloc(&d_targetb, targetb_mem);
+
+    cudaMalloc(&d_paritya, paritya_mem);
+    cudaMalloc(&d_parityb, parityb_mem);
+
+    timer_.acc_record("cuda malloc in nbody1_acc");
+    timer_.reset();
+
+    // cudaMalloc(&d_Cin,  tensor_mem);
+    // cudaMalloc(&d_Cout, tensor_mem);
+
+    // my_timer.record("cudamallocs");
+    // my_timer.reset();
+
+    cudaMemcpy(d_sourcea, sourcea.data(), sourcea_mem, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_sourceb, sourceb.data(), sourceb_mem, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_targeta, targeta.data(), targeta_mem, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_targetb, targetb.data(), targetb_mem, cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_paritya, paritya.data(), paritya_mem, cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_parityb, parityb.data(), parityb_mem, cudaMemcpyHostToDevice);
+
+    cudaMemcpy(d_paritya, paritya_complex.data(), paritya_mem, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_parityb, parityb_complex.data(), parityb_mem, cudaMemcpyHostToDevice);
+
+    timer_.acc_record("cuda memcpy in nbody1_acc");
+    timer_.reset();
+
+    // cudaMemcpy(d_Cin,  Cin.read_h_data().data(),  tensor_mem, cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_Cout, Cout.read_h_data().data(), tensor_mem, cudaMemcpyHostToDevice);
+
+    // my_timer.record("cudamemcpy");
+    // my_timer.reset();
+
+    cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
+
+    apply_individual_nbody1_accumulate_wrapper(
+        cu_coeff, 
+        Cin.read_d_data(), 
+        Cout.d_data(), 
+        d_sourcea,
+        d_targeta,
+        d_paritya,
+        d_sourceb,
+        d_targetb,
+        d_parityb,
+        nbeta_strs_,
+        targeta.size(),
+        targetb.size(),
+        tensor_mem);
+
+
+    timer_.acc_record("calling gpu function");
+    timer_.reset();
+    // my_timer.record("gpu function");
+    // my_timer.reset();
+
+
+    // cudaMemcpy(Cout.data().data(), d_Cout, tensor_mem, cudaMemcpyDeviceToHost);
+
+
+    cudaFree(d_sourcea);
+    cudaFree(d_sourceb);
+    cudaFree(d_targeta);
+    cudaFree(d_targetb);
+    cudaFree(d_paritya);
+    cudaFree(d_parityb);
+    // cudaFree(d_Cin);
+    // cudaFree(d_Cout);
+
+    timer_.acc_record("cudafree");
+    timer_.reset();
+
+
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
+        throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
+    }
+
+    // my_timer.record("cuda free and transfer");
     // std::cout << my_timer.str_table() << std::endl;
+
 }
 
 
-void FCIComputer::apply_individual_nbody1_accumulate(
-    const std::complex<double> coeff, 
-    const Tensor& Cin,
-    Tensor& Cout,
-    std::vector<int>& sourcea,
-    std::vector<int>& targeta,
-    std::vector<int>& paritya,
-    std::vector<int>& sourceb,
-    std::vector<int>& targetb,
-    std::vector<int>& parityb)
-{
-       apply_individual_nbody1_accumulate_cpu(
-        coeff, 
-        Cin,
-        Cout,
-        sourcea,
-        targeta,
-        paritya,
-        sourceb,
-        targetb,
-        parityb);
-}
-
-void FCIComputer::apply_individual_nbody_accumulate(
+void FCIComputerGPU::apply_individual_nbody_accumulate(
     const std::complex<double> coeff,
-    const Tensor& Cin,
-    Tensor& Cout,
+    const TensorGPU& Cin,
+    TensorGPU& Cout,
     const std::vector<int>& daga,
     const std::vector<int>& undaga, 
     const std::vector<int>& dagb,
@@ -1473,15 +1366,15 @@ void FCIComputer::apply_individual_nbody_accumulate(
     }
 
     local_timer my_timer = local_timer();
-    my_timer.reset();
+    timer_.reset();
 
     std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ualfamap = graph_.make_mapping_each(
         true,
         daga,
         undaga);
 
-    my_timer.record("first 'make_mapping_each' in apply_individual_nbody_accumulate");
-    my_timer.reset();
+    timer_.acc_record("first 'make_mapping_each' in apply_individual_nbody_accumulate");
+    timer_.reset();
 
     if (std::get<0>(ualfamap) == 0) {
         return;
@@ -1492,8 +1385,8 @@ void FCIComputer::apply_individual_nbody_accumulate(
         dagb,
         undagb);
 
-    my_timer.record("second 'make_mapping_each' in apply_individual_nbody_accumulate");
-    my_timer.reset();
+    timer_.acc_record("second 'make_mapping_each' in apply_individual_nbody_accumulate");
+    timer_.reset();
 
     if (std::get<0>(ubetamap) == 0) {
         return;
@@ -1506,8 +1399,8 @@ void FCIComputer::apply_individual_nbody_accumulate(
     std::vector<int> targetb(std::get<0>(ubetamap));
     std::vector<int> parityb(std::get<0>(ubetamap));
 
-    my_timer.record("a lot of initialization in apply_individual_nbody_accumulate");
-    my_timer.reset();
+    timer_.acc_record("a lot of initialization in apply_individual_nbody_accumulate");
+    timer_.reset();
 
     /// NICK: All this can be done in the make_mapping_each fucntion.
     /// Maybe try like a make_abbrev_mapping_each
@@ -1519,8 +1412,8 @@ void FCIComputer::apply_individual_nbody_accumulate(
         paritya[i] = 1.0 - 2.0 * std::get<3>(ualfamap)[i];
     }
 
-    my_timer.record("first for loop in apply_individual_nbody_accumulate");
-    my_timer.reset();
+    timer_.acc_record("first for loop in apply_individual_nbody_accumulate");
+    timer_.reset();
 
     for (int i = 0; i < std::get<0>(ubetamap); i++) {
         sourceb[i] = std::get<1>(ubetamap)[i];
@@ -1528,7 +1421,8 @@ void FCIComputer::apply_individual_nbody_accumulate(
         parityb[i] = 1.0 - 2.0 * std::get<3>(ubetamap)[i];
     }
 
-    my_timer.record("second for loop in apply_individual_nbody_accumulate");
+    timer_.acc_record("second for loop in apply_individual_nbody_accumulate");
+    timer_.reset();
     // std::cout << my_timer.str_table() << std::endl;
     // this is where the if statement goes
     apply_individual_nbody1_accumulate(
@@ -1544,10 +1438,10 @@ void FCIComputer::apply_individual_nbody_accumulate(
 
 }
 
-void FCIComputer::apply_individual_sqop_term(
+void FCIComputerGPU::apply_individual_sqop_term(
     const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
-    const Tensor& Cin,
-    Tensor& Cout)
+    const TensorGPU& Cin,
+    TensorGPU& Cout)
 {
 
     std::vector<int> crea;
@@ -1557,7 +1451,7 @@ void FCIComputer::apply_individual_sqop_term(
     std::vector<int> annb;
 
     local_timer my_timer = local_timer();
-    my_timer.reset();
+    timer_.reset();
 
     for(size_t i = 0; i < std::get<1>(term).size(); i++){
         if(std::get<1>(term)[i]%2 == 0){
@@ -1567,8 +1461,8 @@ void FCIComputer::apply_individual_sqop_term(
         }
     }
 
-    my_timer.record("first loop in apply_individual_sqop_term");
-    my_timer.reset();
+    timer_.acc_record("first loop in apply_individual_sqop_term");
+    timer_.reset();
 
     for(size_t i = 0; i < std::get<2>(term).size(); i++){
         if(std::get<2>(term)[i]%2 == 0){
@@ -1578,8 +1472,8 @@ void FCIComputer::apply_individual_sqop_term(
         }
     }
 
-    my_timer.record("second loop in apply_individual_sqop_term");
-    my_timer.reset();
+    timer_.acc_record("second loop in apply_individual_sqop_term");
+    timer_.reset();
 
     if (std::get<1>(term).size() != std::get<2>(term).size()) {
         throw std::invalid_argument("Each term must have same number of anihilators and creators");
@@ -1590,7 +1484,8 @@ void FCIComputer::apply_individual_sqop_term(
     ops1.insert(ops1.end(), ops2.begin(), ops2.end());
 
     int nswaps = parity_sort(ops1);
-    my_timer.record("some parity things");
+    timer_.acc_record("some parity things");
+    timer_.reset();
     // std::cout << my_timer.str_table() << std::endl;
 
     apply_individual_nbody_accumulate(
@@ -1603,16 +1498,42 @@ void FCIComputer::apply_individual_sqop_term(
         annb);
 }
 
+// do I need to make the C_ variable of this class a TensorGPU object
+// If so, it creates a ton of errors
+// Should I just create a new tensorGPU from the normal C_?
+
+
 /// NICK: Check out  accumulation, don't need to do it this way..
-void FCIComputer::apply_sqop(const SQOperator& sqop){
+void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
+
+    // gpu_error()
+    // assures C_ is on the gpu
+    C_.gpu_error();
+    TensorGPU Cin(C_.shape(), "Cin", true);
+    Cin.copy_in_gpu(C_);
+
+
     
     local_timer my_timer = local_timer();
-    my_timer.reset();
-    Tensor Cin = C_;
-    C_.zero();
+    timer_.reset();
+    
+    // cudaMemcpy(Cin.d_data(), C_.d_data(), Cin.size() * sizeof(cuDoubleComplex))
 
-    my_timer.record("making tensor things");
-    my_timer.reset();
+    C_.zero_gpu();
+
+    // cuDoubleComplex* d_Cin_;
+    // int d_Cin_mem = Cin.size() * sizeof(cuDoubleComplex);
+    // cudaMalloc(&d_Cin_, d_Cin_mem);
+    // cudaMemcpy(d_Cin_, Cin.read_h_data().data(), d_Cin_mem, cudaMemcpyHostToDevice);
+
+    // cuDoubleComplex* d_C_;
+    // int d_C_mem = C_.size() * sizeof(cuDoubleComplex);
+    // cudaMalloc(&d_C_, d_C_mem);
+    // cudaMemcpy(d_C_, C_.read_h_data().data(), d_C_mem, cudaMemcpyHostToDevice);
+
+
+    timer_.acc_record("making tensor things");
+    timer_.reset();
 
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
@@ -1622,13 +1543,18 @@ void FCIComputer::apply_sqop(const SQOperator& sqop){
             C_);
         }
     }
-    my_timer.record("first for loop in apply_sqop");
+
+    // later you have a function C_.get_dptr() that returs the device pointer
+
+    timer_.acc_record("first for loop in apply_sqop");
+    std::cout << timer_.acc_str_table() << std::endl;
     // std::cout << my_timer.str_table() << std::endl;
+
 }
 
 /// diagonal only 
-void FCIComputer::apply_diagonal_of_sqop(const SQOperator& sqop, const bool invert_coeff){
-    Tensor Cin = C_;
+void FCIComputerGPU::apply_diagonal_of_sqop(const SQOperator& sqop, const bool invert_coeff){
+    TensorGPU Cin = C_;
     C_.zero();
 
     for(const auto& term : sqop.terms()){
@@ -1660,8 +1586,8 @@ void FCIComputer::apply_diagonal_of_sqop(const SQOperator& sqop, const bool inve
 }
 
 /// NICK: Check out  accumulation, don't need to do it this way..
-void FCIComputer::apply_sqop_pool(const SQOpPool& sqop_pool){
-    Tensor Cin = C_;
+void FCIComputerGPU::apply_sqop_pool(const SQOpPool& sqop_pool){
+    TensorGPU Cin = C_;
     C_.zero();
 
     for (const auto& sqop : sqop_pool.terms()) {
@@ -1682,8 +1608,8 @@ void FCIComputer::apply_sqop_pool(const SQOpPool& sqop_pool){
 }
 
 /// NICK: Check out  accumulation, don't need to do it this way..
-std::complex<double> FCIComputer::get_exp_val(const SQOperator& sqop) {
-    Tensor Cin = C_;
+std::complex<double> FCIComputerGPU::get_exp_val(const SQOperator& sqop) {
+    TensorGPU Cin = C_;
     C_.zero();
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
@@ -1698,14 +1624,14 @@ std::complex<double> FCIComputer::get_exp_val(const SQOperator& sqop) {
     return val;
 }
 
-std::complex<double> FCIComputer::get_exp_val_tensor(
+std::complex<double> FCIComputerGPU::get_exp_val_tensor(
     const std::complex<double> h0e, 
-    const Tensor& h1e, 
-    const Tensor& h2e, 
-    const Tensor& h2e_einsum, 
+    const TensorGPU& h1e, 
+    const TensorGPU& h2e, 
+    const TensorGPU& h2e_einsum, 
     size_t norb)  
 {
-    Tensor Cin = C_;
+    TensorGPU Cin = C_;
 
     apply_tensor_spat_012bdy(
         h0e,
@@ -1721,455 +1647,41 @@ std::complex<double> FCIComputer::get_exp_val_tensor(
     return val;
 }
 
-// ====> Double Factorization functions and such <=== //
-
-// NOTE(Nick): This funciton may be SLOW, will want to reduce the amount of 
-// tensory copying to accelerate.
-void FCIComputer::apply_df_ham(
-      const DFHamiltonian& df_ham,
-      const double nuc_rep_en)
-{
-    size_t nleaves = df_ham.get_basis_change_matrices().size();
-
-    if (nleaves != df_ham.get_scaled_density_density_matrices().size()){
-        throw std::invalid_argument("Incompatiable array lengths.");
-    }
-
-    Tensor Cin = C_;
-    Tensor Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
-    Tensor H1 = df_ham.get_one_body_ints();
-    H1.add(df_ham.get_one_body_correction());
-
-    // first apply the modified one body term
-    apply_array_1bdy(
-        Cnew,
-        graph_.read_dexca_vec(),
-        nalfa_strs_,
-        nbeta_strs_,
-        graph_.get_ndexca(),
-        H1,
-        norb_,
-        true);
-
-    C_.transpose();
-
-    apply_array_1bdy(
-        Cnew,
-        graph_.read_dexcb_vec(),
-        nbeta_strs_,
-        nalfa_strs_,
-        graph_.get_ndexcb(),
-        H1,
-        norb_,
-        false);
-
-    for (size_t l = 0; l < nleaves; ++l) {
-
-        // reset to the initial state
-        C_ = Cin;
-
-        SQOpPool glpool;
-        SQOpPool dlpool;
-        
-        // get pool for Gl_alfa
-        glpool.append_givens_ops_sector(
-            df_ham.get_basis_change_matrices()[l],
-            1.0,
-            true
-        );
-
-        // get pool for Gl_beta
-        glpool.append_givens_ops_sector(
-            df_ham.get_basis_change_matrices()[l],
-            1.0,
-            false
-        );
-
-        // get pool for dl_beta
-        dlpool.append_diagonal_ops_all(
-            df_ham.get_scaled_density_density_matrices()[l],
-            1.0
-        );
-
-        // apply Gl
-        evolve_pool_trotter_basic(
-            glpool,
-            false,
-            false
-        );
-
-        // NOTE(Nick): SLOW, we want the below funciton for fast diagonal applicaion
-        // apply_diagonal_from_mat(
-        //     df_ham.get_scaled_density_density_matrices()[l]
-        // );
-
-        apply_sqop_pool(dlpool);
-
-        // apply Gl^dag
-        evolve_pool_trotter_basic(
-            glpool,
-            false,
-            true
-        );
-
-        // accumulate
-        Cnew.zaxpy(
-            C_,
-            1.0,
-            1,
-            1
-        );
-    }
-
-    // account for zero body energy
-    Cnew.zaxpy(
-            Cin,
-            nuc_rep_en,
-            1,
-            1
-        );
-
-    C_ = Cnew;
-}
-
-void FCIComputer::evolve_df_ham_trotter(
-      const DFHamiltonian& df_ham,
-      const double evolution_time)
-{
-    size_t nleaves = df_ham.get_trotter_basis_change_matrices().size();
-
-    if (nleaves - 1 != df_ham.get_scaled_density_density_matrices().size()){
-        throw std::invalid_argument("Incompatiable array lengths.");
-    }
-
-
-    evolve_givens(
-        df_ham.get_trotter_basis_change_matrices()[0],
-        true);
-
-    evolve_givens(
-        df_ham.get_trotter_basis_change_matrices()[0],
-        false);
-
-    
-
-    for (size_t l = 1; l < nleaves; ++l) {
-
-        evolve_diagonal_from_mat(
-            df_ham.get_scaled_density_density_matrices()[l - 1],
-            evolution_time
-        );
-        
-        evolve_givens(
-            df_ham.get_trotter_basis_change_matrices()[l],
-            true
-        );
-
-        evolve_givens(
-            df_ham.get_trotter_basis_change_matrices()[l],
-            false
-        );
-    }
-
-}
-
-// NOTE(Nick): If this proves exceedingly slow,
-// it is possible to apply blocks of these givens
-// rotations in parallel, will look into this if
-// it is a probelm.
-void FCIComputer::evolve_givens(
-    const Tensor& U,
-    const bool is_alfa)
-{
-
-    size_t sigma = 0;
-    if (is_alfa){ 
-        sigma = 0; 
-    } else {
-        sigma = 1;
-    }
-
-    U.square_error();
-
-    if (U.shape()[0] != norb_) {
-        throw std::invalid_argument("U must be a square norb x norb matrix.");
-    }
-
-    Tensor U2 = U;
-
-    //NOTE(Nick): May be SLOW, or don't need to compute, could just store rots_and_diag
-    // in DFHamiltonain class pass directly.
-    auto rots_and_diag = DFHamiltonian::givens_decomposition_square(U2);
-
-    auto ivec = std::get<0>(rots_and_diag);
-    auto jvec = std::get<1>(rots_and_diag);
-    auto thts = std::get<2>(rots_and_diag);
-    auto phis = std::get<3>(rots_and_diag);
-
-    auto diags = std::get<4>(rots_and_diag);
-
-    // Iterate through each layer and time evolve by the appropriate
-    // SQOperators
-    for (size_t k = 0; k < ivec.size(); k++){
-        size_t i = ivec[k];
-        size_t j = jvec[k];
-        double tht = thts[k];
-        double phi = phis[k];
-
-        if (std::abs(phi) > compute_threshold_){
-            SQOperator num_op1; 
-            num_op1.add_term(-phi/2.0, {2 * j + sigma}, {2 * j + sigma});
-            num_op1.add_term(-phi/2.0, {2 * j + sigma}, {2 * j + sigma});            
-            apply_sqop_evolution(1.0, num_op1);
-        }
-
-        if (std::abs(tht) > compute_threshold_) {
-            std::complex<double> itheta(0.0, tht);
-            SQOperator single;
-            single.add_term(-itheta, {2 * i + sigma}, {2 * j + sigma});
-            single.add_term(+itheta, {2 * j + sigma}, {2 * i + sigma});
-            apply_sqop_evolution(1.0, single);
-        }
-    }
-        
-    // Evolve the last diagonal phases
-    for (size_t l = 0; l < diags.size(); l++){
-        if (std::abs(diags[l]) > 1.0e-13) {
-            double diag_angle = std::atan2(diags[l].imag(), diags[l].real());
-            SQOperator num_op2;
-            num_op2.add_term(-diag_angle/2.0, {2 * l + sigma}, {2 * l + sigma});
-            num_op2.add_term(-diag_angle/2.0, {2 * l + sigma}, {2 * l + sigma});
-            apply_sqop_evolution(1.0, num_op2);
-        }
-    }
-}
-
-void FCIComputer::evolve_diagonal_from_mat(
-    const Tensor& V,
-    const double evolution_time)
-{
-
-    // NOTE(Nick): time sclae the arrays, maybe make V non const and just scale by 1/t after?
-    Tensor V2 = V;
-    Tensor D({V.shape()[0]}, "D2");
-
-    std::complex<double> idt(0.0, -evolution_time); 
-    V2.scale(idt);
-
-    apply_diagonal_array(
-        C_, 
-        graph_.get_astr(),
-        graph_.get_bstr(),
-        D,
-        V2,
-        nalfa_strs_,
-        nbeta_strs_,
-        nalfa_el_,
-        nbeta_el_,
-        norb_);
-
-}
-
-
-void FCIComputer::apply_diagonal_from_mat(const Tensor& V)
-{
-
-    throw std::invalid_argument("apply_diagonal_from_mat is not yet funcitonal");
-
-    Tensor D({V.shape()[0]}, "D2");
-
-    apply_diagonal_array(
-        C_, 
-        graph_.get_astr(),
-        graph_.get_bstr(),
-        D,
-        V,
-        nalfa_strs_,
-        nbeta_strs_,
-        nalfa_el_,
-        nbeta_el_,
-        norb_,
-        false);
-}
-
-void FCIComputer::apply_diagonal_array(
-        Tensor& C, // Just try in-place for now...
-        const std::vector<uint64_t>& astrs,
-        const std::vector<uint64_t>& bstrs,
-        const Tensor& D,
-        const Tensor& V,
-        const size_t nalfa_strs,
-        const size_t nbeta_strs,
-        const size_t nalfa_el,
-        const size_t nbeta_el,
-        const size_t norb,
-        const bool exponentiate)
-{
-    D.shape_error({norb});
-    V.shape_error({norb, norb});
-
-    std::vector<std::complex<double>> adiag(nalfa_strs);
-    std::vector<std::complex<double>> bdiag(nbeta_strs);
-    std::vector<int> aocc(nalfa_strs * nalfa_el);
-    std::vector<int> bocc(nbeta_strs * nbeta_el);
-
-    for (int as = 0; as < nalfa_strs; ++as) {
-        std::vector<int> astr_occ = graph_.get_positions(astrs[as], nalfa_el);
-        if (astr_occ.size() != nalfa_el) {
-            std::cerr << "Error: astr_occ size mismatch at as=" << as << std::endl;
-            return;
-        }
-        std::copy(astr_occ.begin(), astr_occ.end(), aocc.begin() + nalfa_el * as);
-    }
-
-    for (int bs = 0; bs < nbeta_strs; ++bs) {
-        std::vector<int> bstr_occ = graph_.get_positions(bstrs[bs], nbeta_el);
-        if (bstr_occ.size() != nbeta_el) {
-            std::cerr << "Error: bstr_occ size mismatch at bs=" << bs << std::endl;
-            return;
-        }
-        std::copy(bstr_occ.begin(), bstr_occ.end(), bocc.begin() + nbeta_el * bs);
-    }
-
-    std::vector<std::complex<double>> diagexp(norb);
-    std::vector<std::complex<double>> arrayexp(norb * norb);
-
-
-    // NOTE(Nick), we don't need to do this every time...,
-    // can pre-compute the exponentias and store them
-    // in DFHamiltonian
-
-    // NOTE(Nick): Also, the non exponeintal version of this funciton is not yet working...
-
-    if(exponentiate){
-        for (int i = 0; i < norb; ++i) {
-            diagexp[i] = std::exp(D.read_data()[i]);
-        }
-
-        for (int i = 0; i < norb * norb; ++i) {
-            arrayexp[i] = std::exp(V.read_data()[i]);
-        }
-    } else {
-        for (int i = 0; i < norb; ++i) {
-            diagexp[i] = D.read_data()[i];
-        }
-
-        for (int i = 0; i < norb * norb; ++i) {
-            arrayexp[i] = V.read_data()[i];
-        }
-    }
-    
-
-    apply_diagonal_array_part(
-        adiag, 
-        aocc, 
-        diagexp, 
-        arrayexp, 
-        nalfa_strs, 
-        nalfa_el, 
-        norb);
-
-    apply_diagonal_array_part(
-        bdiag,
-        bocc, 
-        diagexp, 
-        arrayexp, 
-        nbeta_strs, 
-        nbeta_el, 
-        norb);
-
-    std::vector<std::complex<double>> aarrays(norb);
-
-    for (int as = 0; as < nalfa_strs; ++as) {
-        const int* caocc = aocc.data() + (as * nalfa_el);
-        std::fill(aarrays.begin(), aarrays.end(), std::complex<double>(1.0));
-
-        for (int ela = 0; ela < nalfa_el; ++ela) {
-            const std::complex<double>* carray = arrayexp.data() + (caocc[ela] * norb);
-            for (int i = 0; i < norb; ++i) {
-                aarrays[i] *= carray[i];
-            }
-        }
-
-        for (int bs = 0; bs < nbeta_strs; ++bs) {
-            std::complex<double> diag_ele = 1.0;
-            const int* cbocc = bocc.data() + (bs * nbeta_el);
-            for (int elb = 0; elb < nbeta_el; ++elb) {
-                diag_ele *= aarrays[cbocc[elb]];
-            }
-            C.data()[as * nbeta_strs + bs] *= diag_ele * diag_ele * bdiag[bs] * adiag[as];
-        }
-    // }
-    }
-}
-
-void FCIComputer::apply_diagonal_array_part(
-        std::vector<std::complex<double>>& out, // is the output?
-        const std::vector<int>& occ, 
-        const std::vector<std::complex<double>>& diag, 
-        const std::vector<std::complex<double>>& array, 
-        const size_t nstrs, 
-        const size_t nel, 
-        const size_t norb)
-{
-    for (int i = 0; i < nstrs; ++i) {
-        std::complex<double> p_adiag = 1.0;
-        const int *c_occ = occ.data() + (i * nel);
-
-        for (int el = 0; el < nel; ++el) {
-            p_adiag *= diag[c_occ[el]];
-
-            const std::complex<double>* c_array = array.data() + norb * c_occ[el];
-            for (int el2 = 0; el2 < nel; ++el2) {
-                p_adiag *= c_array[c_occ[el2]];
-            }
-        }
-        out[i] = p_adiag;
-    }
-}
-
-// ====> Helper and other basic functions below <=== //
-
 /// apply a constant to the FCI quantum computer.
-void FCIComputer::scale(const std::complex<double> a){
+void FCIComputerGPU::scale(const std::complex<double> a){
     C_.scale(a);
 }
 
 
-// std::vector<std::complex<double>> FCIComputer::direct_expectation_value(const TensorOperator& top){
+// std::vector<std::complex<double>> FCIComputerGPU::direct_expectation_value(const TensorOperator& top){
 //     // Stuff
 // }
 
-void FCIComputer::set_state(const Tensor& other_state) {
+void FCIComputerGPU::set_state(const TensorGPU& other_state) {
+    cpu_error();
+    other_state.cpu_error();
     C_.copy_in(other_state);
 }
 
+void FCIComputerGPU::set_state_gpu(const TensorGPU& other_state) {
+    gpu_error();
+    other_state.gpu_error();
+    C_.copy_in_gpu(other_state);
+}
+
+void FCIComputerGPU::set_state_from_tensor(const Tensor& other_state) {
+    cpu_error();
+    C_.copy_in_from_tensor(other_state);
+}
+
 /// Sets all coefficeints fo the FCI Computer to Zero except the HF Determinant (set to 1).
-void FCIComputer::hartree_fock() {
+void FCIComputerGPU::hartree_fock() {
+    cpu_error();
     C_.zero();
     C_.set({0, 0}, 1.0);
 }
 
-/// return the indexes of non-zero elements
-std::vector<std::vector<size_t>> FCIComputer::get_nonzero_idxs() const 
-{
-    std::vector<std::vector<size_t>> temp;
-
-    // Think about how to add the non-zero indicies to temp by looping over the matrix..
-    // for i, j matrix indicies
-
-    for(size_t i = 0; i < nalfa_strs_; i++) {
-        for (size_t j = 0; j < nbeta_strs_; j++) {
-            if(std::abs(C_.read_data()[i*nbeta_strs_ + j]) > compute_threshold_){
-                std::vector<size_t> idxs = {i, j};
-                temp.push_back(idxs);
-            }
-        }
-    }
-    return temp;
-}
-
-void FCIComputer::print_vector(const std::vector<int>& vec, const std::string& name) {
+void FCIComputerGPU::print_vector(const std::vector<int>& vec, const std::string& name) {
     std::cout << "\n" << name << ": ";
     for (size_t i = 0; i < vec.size(); ++i) {
         std::cout << static_cast<int>(vec[i]);
@@ -2180,18 +1692,7 @@ void FCIComputer::print_vector(const std::vector<int>& vec, const std::string& n
     std::cout << std::endl;
 }
 
-void FCIComputer::print_vector_z(const std::vector<std::complex<double>>& vec, const std::string& name) {
-    std::cout << "\n" << name << ": ";
-    for (size_t i = 0; i < vec.size(); ++i) {
-        std::cout << static_cast<std::complex<double>>(vec[i]);
-        if (i < vec.size() - 1) {
-           std::cout << ", "; 
-        }
-    }
-    std::cout << std::endl;
-}
-
-void FCIComputer::print_vector_uint(const std::vector<uint64_t>& vec, const std::string& name) {
+void FCIComputerGPU::print_vector_uint(const std::vector<uint64_t>& vec, const std::string& name) {
     std::cout << "\n" << name << ": ";
     for (size_t i = 0; i < vec.size(); ++i) {
         std::cout << vec[i];

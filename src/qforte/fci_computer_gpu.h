@@ -1,13 +1,12 @@
-#ifndef _fci_computer_h_
-#define _fci_computer_h_
+#ifndef _fci_computer_gpu_h_
+#define _fci_computer_gpu_h_
 
 #include <string>
 #include <vector>
 
 #include "qforte-def.h" 
 #include "tensor.h" 
-#include "fci_graph.h" 
-#include "df_hamiltonian.h" 
+#include "tensor_gpu.h"
 #include "fci_graph.h"
 #include "timer.h"
 
@@ -19,12 +18,11 @@ class Gate;
 class QubitBasis;
 class SQOperator;
 class TensorOperator;
-class Tensor;
+class TensorGPU;
 class FCIGraph;
 class SQOpPool;
-class DFHamiltonian;
 
-class FCIComputer {
+class FCIComputerGPU {
   public:
     /// default constructor: create a 'FCI' quantum computer 
     /// the computer represends a restricted hilbert space for 'chemistry'
@@ -34,7 +32,7 @@ class FCIComputer {
     /// Implementation will be reminicient of modenrn determinant CI codes
     /// Implementation also borrows HEAVILY from the fermionic quantum emulator wfn class
     /// see (https://quantumai.google/openfermion/fqe) and related article
-    FCIComputer(int nel, int sz, int norb);
+    FCIComputerGPU(int nel, int sz, int norb, bool on_gpu = false);
 
     /// apply a SQOperator to the current state.
     /// (this operation is generally not a physical quantum computing operation).
@@ -42,112 +40,113 @@ class FCIComputer {
     /// TODO(Tyler?): implement this...
     // void apply_sq_operator(const QubitOperator& qo);
 
-    /// Set a particular element of tis Tensor, specified by idxs
+    /// Set a particular element of tis TensorGPU, specified by idxs
     void set_element(const std::vector<size_t>& idxs,
             const std::complex<double> val
             );
 
-    /// Set a particular element of tis Tensor, specified by idxs
+    void cpu_error() const;
+
+    void gpu_error() const;
+
+    void to_gpu();
+
+    void to_cpu();
+
+    /// Set a particular element of tis TensorGPU, specified by idxs
     void add_to_element(const std::vector<size_t>& idxs,
             const std::complex<double> val
             );
 
-    /// apply a TensorOperator to the current state 
+    /// apply a TensorGPUOperator to the current state 
     void apply_tensor_operator(const TensorOperator& top);
-
-    void apply_tensor_spat_1bdy(
-      const Tensor& h1e, 
-      size_t norb);
 
     /// apply a 1-body TensorOperator to the current state 
     // void apply_tensor_spin_1bdy(const TensorOperator& top);
-    
+
     void apply_tensor_spin_1bdy(
-      const Tensor& h1e, 
+      const TensorGPU& h1e, 
       size_t norb);
 
     void apply_tensor_spin_12bdy(
-      const Tensor& h1e, 
-      const Tensor& h2e, 
+      const TensorGPU& h1e, 
+      const TensorGPU& h2e, 
       size_t norb);
 
-    void apply_tensor_spin_012bdy(
-      const Tensor& h0e, 
-      const Tensor& h1e, 
-      const Tensor& h2e, 
-      size_t norb);
+    // void apply_tensor_spin_012bdy(
+    //   const TensorGPU& h0e, 
+    //   const TensorGPU& h1e, 
+    //   const TensorGPU& h2e, 
+    //   size_t norb);
 
     void apply_tensor_spat_12bdy(
-      const Tensor& h1e, 
-      const Tensor& h2e, 
-      const Tensor& h2e_einsum, 
+      const TensorGPU& h1e, 
+      const TensorGPU& h2e, 
+      const TensorGPU& h2e_einsum, 
       size_t norb);
 
     void apply_tensor_spat_012bdy(
       const std::complex<double> h0e,
-      const Tensor& h1e, 
-      const Tensor& h2e, 
-      const Tensor& h2e_einsum, 
+      const TensorGPU& h1e, 
+      const TensorGPU& h2e, 
+      const TensorGPU& h2e_einsum, 
       size_t norb);
 
     void lm_apply_array1(
       // const double complex *coeff, don't need
       // double complex *out,
-      const Tensor& out,
+      const TensorGPU& out,
       // const int *dexc,
       const std::vector<int> dexc,
       const int astates,
       const int bstates,
       const int ndexc,
       // const double complex *h1e,
-      const Tensor& h1e,
+      const TensorGPU& h1e,
       const int norbs,
       const bool is_alpha);
       // const struct blasfunctions * blasfunc);
 
     void apply_array_1bdy(
-      Tensor& out,
+      TensorGPU& out,
       const std::vector<int>& dexc,
       const int astates,
       const int bstates,
       const int ndexc,
-      const Tensor& h1e,
+      const TensorGPU& h1e,
       const int norbs,
       const bool is_alpha);
 
     void lm_apply_array12_same_spin_opt(
       // const double complex *coeff,
-      Tensor& out, // double complex *out,
+      TensorGPU& out, // double complex *out,
       const std::vector<int>& dexc, // const int *dexc,
       const int alpha_states,
       const int beta_states,
       const int ndexc,
-      const Tensor& h1e, // const double complex *h1e,
-      const Tensor& h2e, // const double complex *h2e,
+      const TensorGPU& h1e, // const double complex *h1e,
+      const TensorGPU& h2e, // const double complex *h2e,
       const int norbs,
       const bool is_alpha); 
 
     void lm_apply_array12_diff_spin_opt(
       // const double complex *coeff,
-      Tensor& out,// double complex *out,
+      TensorGPU& out,// double complex *out,
       const std::vector<int>& adexc,// const int *adexc,
       const std::vector<int>& bdexc,// const int *bdexc,
       const int alpha_states,
       const int beta_states,
       const int nadexc,
       const int nbdexc,
-      const Tensor& h2e, //const double complex *h2e,
+      const TensorGPU& h2e, //const double complex *h2e,
       const int norbs); 
 
-    std::pair<Tensor, Tensor> calculate_dvec_spin_with_coeff();
+    std::pair<TensorGPU, TensorGPU> calculate_dvec_spin_with_coeff();
 
-    Tensor calculate_coeff_spin_with_dvec(std::pair<Tensor, Tensor>& dvec);
-
-    /// apply a 1-body and 2-body TensorOperator to the current state 
-    void apply_tensor_spin_12_body(const TensorOperator& top);
+    TensorGPU calculate_coeff_spin_with_dvec(std::pair<TensorGPU, TensorGPU>& dvec);
 
     /// apply a 1-body and 2-body TensorOperator to the current state 
-    void apply_tensor_spat_12_body(const TensorOperator& top);
+    // void apply_tensor_spin_12_body(const TensorOperator& top);
 
     std::pair<std::vector<int>, std::vector<int>> evaluate_map_number(
       const std::vector<int>& numa,
@@ -170,7 +169,7 @@ class FCIComputer {
       const std::vector<int>& anna,
       const std::vector<int>& creb,
       const std::vector<int>& annb,
-      Tensor& Cout);
+      TensorGPU& Cout);
 
     int isolate_number_operators(
       const std::vector<int>& cre,
@@ -180,41 +179,41 @@ class FCIComputer {
       std::vector<int>& number); 
 
     /// A lower-level helper function that applies the exponential of a
-    /// two-term (hermitian) SQOperator to the FCIComputer, only applies number operators.
+    /// two-term (hermitian) SQOperator to the FCIComputerGPU, only applies number operators.
     void evolve_individual_nbody_easy(
       const std::complex<double> time,
       const std::complex<double> coeff,
-      const Tensor& Cin,
-      Tensor& Cout,
+      const TensorGPU& Cin,
+      TensorGPU& Cout,
       const std::vector<int>& crea,
       const std::vector<int>& anna,
       const std::vector<int>& creb,
       const std::vector<int>& annb); 
 
     /// A lower-level helper function that applies the exponential of a
-    /// two-term (hermitian) SQOperator to the FCIComputer.
+    /// two-term (hermitian) SQOperator to the FCIComputerGPU.
     void evolve_individual_nbody_hard(
       const std::complex<double> time,
       const std::complex<double> coeff,
-      const Tensor& Cin,
-      Tensor& Cout,
+      const TensorGPU& Cin,
+      TensorGPU& Cout,
       const std::vector<int>& crea,
       const std::vector<int>& anna,
       const std::vector<int>& creb,
       const std::vector<int>& annb); 
 
     /// An intermediate function that applies the exponential of a
-    /// two-term (hermitian) SQOperator to the FCIComputer.
+    /// two-term (hermitian) SQOperator to the FCIComputerGPU.
     void evolve_individual_nbody(
       const std::complex<double> time,
       const SQOperator& sqop,
-      const Tensor& Cin,
-      Tensor& Cout,
+      const TensorGPU& Cin,
+      TensorGPU& Cout,
       const bool antiherm = false,
       const bool adjoint = false);
 
     /// A function that applies the exponential of a
-    /// two-term (hermitian) SQOperator to the FCIComputer.
+    /// two-term (hermitian) SQOperator to the FCIComputerGPU.
     /// The operator is multipled by by the evolution time
     /// Onus on the user to assure evolution is unitary.
     void apply_sqop_evolution(
@@ -224,7 +223,7 @@ class FCIComputer {
       const bool adjoint = false);
 
     /// A function that applies the exponentials of an ordered list of
-    /// two-term (hermitian) SQOperators to the FCIComputer
+    /// two-term (hermitian) SQOperators to the FCIComputerGPU
     /// The 'basic' implies thet trotterizaiton is 1st order and done in a single step.
     /// The evolution time is assumend to be 1.0,
     /// Onus on the user to assure evolution is unitary.
@@ -235,7 +234,7 @@ class FCIComputer {
       const bool adjoint = false);
 
     /// A more flexable function that applies the exponentials of an ordered list of
-    /// two-term (hermitian) SQOperators to the FCIComputer
+    /// two-term (hermitian) SQOperators to the FCIComputerGPU
     /// Onus on the user to assure evolution is unitary.
     /// Primary use of this funcion is for dUCC ansatz
     void evolve_pool_trotter(
@@ -253,29 +252,14 @@ class FCIComputer {
       const SQOperator& op,
       const double evolution_time,
       const double convergence_thresh,
-      const int max_taylor_iter,
-      const bool real_evolution);
-
-    /// A funciton to apply the exact time evolution of an operator
-    /// usnig a tayler expanson.
-    /// Onus on the user to assure evolution is unitary.
-    void evolve_tensor_taylor(
-      const std::complex<double> h0e,
-      const Tensor& h1e, 
-      const Tensor& h2e, 
-      const Tensor& h2e_einsum, 
-      size_t norb,
-      const double evolution_time,
-      const double convergence_thresh,
-      const int max_taylor_iter,
-      const bool real_evolution);
+      const int max_taylor_iter);
 
     /// A lower-level helper function that applies a SQOperator
-    /// term to the FCIComputer.
+    /// term to the FCIComputerGPU.
     void apply_individual_nbody1_accumulate(
       const std::complex<double> coeff, 
-      const Tensor& Cin,
-      Tensor& Cout,
+      const TensorGPU& Cin,
+      TensorGPU& Cout,
       std::vector<int>& targeta,
       std::vector<int>& sourcea,
       std::vector<int>& paritya,
@@ -283,35 +267,15 @@ class FCIComputer {
       std::vector<int>& sourceb,
       std::vector<int>& parityb);
 
-    // void apply_individual_nbody1_accumulate_gpu(
-    //   const std::complex<double> coeff, 
-    //   const Tensor& Cin,
-    //   Tensor& Cout,
-    //   std::vector<int>& targeta,
-    //   std::vector<int>& sourcea,
-    //   std::vector<int>& paritya,
-    //   std::vector<int>& targetb,
-    //   std::vector<int>& sourceb,
-    //   std::vector<int>& parityb);
 
-    void apply_individual_nbody1_accumulate_cpu(
-      const std::complex<double> coeff, 
-      const Tensor& Cin,
-      Tensor& Cout,
-      std::vector<int>& targeta,
-      std::vector<int>& sourcea,
-      std::vector<int>& paritya,
-      std::vector<int>& targetb,
-      std::vector<int>& sourceb,
-      std::vector<int>& parityb);
 
-    /// Apply a single term of a SQOperator to the FCIComputer after
+    /// Apply a single term of a SQOperator to the FCIComputerGPU after
     /// re-indexing the creators and anihilators. 
     /// NICK: Still need a top level function which takes a sqop term...
     void apply_individual_nbody_accumulate(
       const std::complex<double> coeff,
-      const Tensor& Cin,
-      Tensor& Cout,
+      const TensorGPU& Cin,
+      TensorGPU& Cout,
       const std::vector<int>& daga,
       const std::vector<int>& undaga, 
       const std::vector<int>& dagb,
@@ -320,8 +284,9 @@ class FCIComputer {
     /// Apply individual sqop term
     void apply_individual_sqop_term(
       const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
-      const Tensor& Cin,
-      Tensor& Cout);
+      const TensorGPU& Cin,
+      TensorGPU& Cout);
+
 
     /// apply a second quantized operator, must be number and spin conserving.
     void apply_sqop(const SQOperator& sqop);
@@ -340,60 +305,10 @@ class FCIComputer {
     /// Get expectaion of restricted tensor operator, must be number and spin conserving.
     std::complex<double> get_exp_val_tensor(
       const std::complex<double> h0e, 
-      const Tensor& h1e, 
-      const Tensor& h2e, 
-      const Tensor& h2e_einsum, 
+      const TensorGPU& h1e, 
+      const TensorGPU& h2e, 
+      const TensorGPU& h2e_einsum, 
       size_t norb);  
-
-    /// Applies the double factorized hamiltonian to the current state
-    void apply_df_ham(
-      const DFHamiltonian& df_ham,
-      const double nuc_rep_en);
-
-    /// Applies the trotterized form of a
-    /// double factorized hamiltonain time evolution,
-    /// NOTE: thresholds for the double factorization eigenvalue cutoffs
-    /// are specified before this funciton is called
-    void evolve_df_ham_trotter(
-      const DFHamiltonian& df_ham,
-      const double evolution_time);
-
-    /// Evolve the wave funciton under a givens rotation specified by the matrix U.
-    void evolve_givens(
-      const Tensor& U,
-      const bool is_alfa);
-
-    /// Evolve the wave fuction by a diagonal operator specified by the
-    /// matrix V.
-    void evolve_diagonal_from_mat(
-      const Tensor& V,
-      const double evolution_time);
-
-    /// Apply a diagonal operator defined by V to the wave funciton.
-    void apply_diagonal_from_mat(const Tensor& V);
-
-    void apply_diagonal_array(
-      Tensor& C, // Just try in-place for now...
-      const std::vector<uint64_t>& astrs,
-      const std::vector<uint64_t>& bstrs,
-      const Tensor& D,
-      const Tensor& V,
-      const size_t nalfa_strs,
-      const size_t nbeta_strs,
-      const size_t nalfa_el,
-      const size_t nbeta_el,
-      const size_t norb,
-      const bool exponentiate = true);
-
-    void apply_diagonal_array_part(
-      std::vector<std::complex<double>>& out, 
-      const std::vector<int>& occ, 
-      const std::vector<std::complex<double>>& diag, 
-      const std::vector<std::complex<double>>& array, 
-      const size_t nstrs, 
-      const size_t nel, 
-      const size_t norb);
-
 
     /// apply a constant to the FCI quantum computer.
     void scale(const std::complex<double> a);
@@ -416,6 +331,7 @@ class FCIComputer {
     //     const std::vector<std::complex<double>>& mults);
 
     /// return a string representing the state of the computer
+    /// TODO(Nick) Implement (this will be a pain :/)
     std::string str(
       bool print_data,
       bool print_complex
@@ -425,16 +341,18 @@ class FCIComputer {
     }
 
     /// return a tensor of the coeficients
-    Tensor get_state() const { return C_; }
+    TensorGPU get_state() const { return C_; }
 
     /// return a tensor of the coeficients
-    Tensor get_state_deep() const { 
-      Tensor Cprime = C_; 
+    TensorGPU get_state_deep() const { 
+      TensorGPU Cprime = C_; 
       return Cprime; 
     }
 
-    /// return the dot product of the current FCIComputer state (as the ket) and the HF state (i.e. <HF|C_>)
-    std::complex<double> get_hf_dot() const { return C_.get({0,0}); }
+    /// return the dot product of the current FCIComputerGPU state (as the ket) and the HF state (i.e. <HF|C_>)
+    std::complex<double> get_hf_dot() const {
+      cpu_error(); 
+      return C_.get({0,0}); }
 
     /// return the coefficient corresponding to a alpha-basis / beta-basis 
     std::complex<double> coeff(const QubitBasis& abasis, const QubitBasis& bbasis);
@@ -448,16 +366,17 @@ class FCIComputer {
     /// return the number of spatial orbitals
     size_t none_ops() const { return norb_; }
 
-    /// return the indexes of non-zero elements
-    std::vector<std::vector<size_t>> get_nonzero_idxs() const;
-
     /// return the number of two-qubit operations
     /// NOTE(Nick) Maybe try to keep (or some proxy at least)?
     // size_t ntwo_ops() const { return ntwo_ops_; }
 
     /// set the coefficient tensor directly from another coefficient tensor
     /// checks the shape, throws if incompatable
-    void set_state(const Tensor& other_state);
+    void set_state(const TensorGPU& other_state);
+
+    void set_state_gpu(const TensorGPU& other_state);
+
+    void set_state_from_tensor(const Tensor& other_state);
 
     /// set the quantum computer to the state
     /// basis_1 * c_1 + basis_2 * c_2 + ...
@@ -473,24 +392,20 @@ class FCIComputer {
 
     void print_vector(const std::vector<int>& vec, const std::string& name);
 
-    void print_vector_z(const std::vector<std::complex<double>>& vec, const std::string& name);
-
     void print_vector_uint(const std::vector<uint64_t>& vec, const std::string& name);
 
     /// get timings
     std::vector<std::pair<std::string, double>> get_timings() { return timings_; }
 
-    local_timer get_acc_timer() { return timer_; }
-
     /// clear the timings
     void clear_timings() { timings_.clear(); }
 
-    void do_on_gpu();
-    void do_on_cpu();
+    local_timer get_acc_timer() { return timer_; }
+
 
   private:
 
-    bool use_gpu_operations_ = false;
+    bool on_gpu_;
 
     /// the number of electrons
     size_t nel_;
@@ -524,10 +439,10 @@ class FCIComputer {
     // std::vector<QubitBasis> basis_;
 
     // The name of the FCI Shape;
-    const std::string name_ = "FCIComputer State";
+    const std::string name_ = "FCIComputerGPU State";
 
     /// The coefficients of the starting state in the tensor product basis
-    Tensor C_;
+    TensorGPU C_;
 
     /// The corresponding FCIGraph for this computer
     FCIGraph graph_;
