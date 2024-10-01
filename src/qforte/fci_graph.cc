@@ -80,6 +80,27 @@ std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> FCIGraph:
     return std::make_pair(string_list, index_list);
 }
 
+
+/**
+ * @brief Builds a mapping from spin orbital pairs to possible state transitions for single-electron excitations.
+ *
+ * This function constructs a `Spinmap`, which is an unordered map that associates each pair of orbitals `(iorb, jorb)`
+ * with a vector of tuples. Each tuple represents a possible transition between quantum states due to an electron
+ * being excited from orbital `jorb` to orbital `iorb`. The tuples contain:
+ * - The index of the source state (`index.at(string)`).
+ * - The index of the target state after the excitation (`index.at(unset_bit(set_bit(string, iorb), jorb))`).
+ * - The sign (`+1` or `-1`) determined by the parity of the number of electrons between `iorb` and `jorb`.
+ *
+ * The function iterates over all possible pairs of orbitals and all provided occupation bitstrings (`strings`),
+ * identifying valid excitations where orbital `jorb` is occupied and orbital `iorb` is unoccupied.
+ * It calculates the parity to account for the antisymmetric nature of fermionic wavefunctions.
+ *
+ * @param strings A vector of 64-bit integers representing the occupation number bitstrings of spin configurations.
+ * @param nele The number of electrons (not directly used in this function but may provide contextual relevance).
+ * @param index An unordered map that maps each bitstring to its corresponding index in the list of configurations.
+ * @return A `Spinmap` mapping each orbital pair `(iorb, jorb)` to a vector of tuples `(source_index, target_index, sign)`,
+ *         representing all valid single-electron excitations between the orbitals with the associated parity.
+ */
 Spinmap FCIGraph::build_mapping(
     const std::vector<uint64_t>& strings, 
     int nele, 
@@ -128,6 +149,31 @@ Spinmap FCIGraph::build_mapping(
     return result;
 }
 
+
+/**
+ * @brief Constructs a mapping from target states to possible de-excitations leading to them.
+ *
+ * This function processes the provided `Spinmap`, which contains possible single-electron excitations
+ * represented as transitions from source states to target states along with parity signs.
+ *
+ * It creates a nested vector `dexc` where each element corresponds to a target state and contains
+ * a list of de-excitation transitions that result in that target state. Each de-excitation is represented
+ * by a vector of three integers:
+ * - The index of the source state (`state`).
+ * - The combined orbital index (`idx`), computed as `i * norbs + j`, representing an electron
+ *   being annihilated in orbital `j` and created in orbital `i`.
+ * - The parity (`parity`), accounting for the fermionic antisymmetry sign.
+ *
+ * The structure `dexc` is organized for efficient access, enabling quick lookup of all transitions
+ * leading to each target state during computations such as applying the Hamiltonian in FCI simulations.
+ *
+ * @param mappings A `Spinmap` mapping orbital pairs `(i, j)` to vectors of transitions `(source, target, parity)`.
+ * @param states The total number of states (configurations).
+ * @param norbs The total number of orbitals.
+ * @param nele The number of electrons.
+ * @return A nested vector `dexc` of size `states`, where `dexc[target]` contains a list of de-excitation transitions
+ *         leading to the target state, with each transition represented by `[source_state, orbital_index, parity]`.
+ */
 std::vector<std::vector<std::vector<int>>> FCIGraph::map_to_deexc(
     const Spinmap& mappings, 
     int states, 
@@ -142,6 +188,9 @@ std::vector<std::vector<std::vector<int>>> FCIGraph::map_to_deexc(
 
     std::vector<int> index(states, 0);
     
+    // Spinmap key -> std::pair<int, int> => (creator_idx, anihilator_idx)?
+    // Spinmap val -> std::vector<std::tuple<int, int, int>> => (source, target, pairity)
+
     for (const auto& entry : mappings) {
         const auto& key = entry.first;
         const auto& values = entry.second;
@@ -154,9 +203,9 @@ std::vector<std::vector<std::vector<int>>> FCIGraph::map_to_deexc(
             int target = std::get<1>(value);
             int parity = std::get<2>(value);
             
-            dexc[target][index[target]][0] = state;
-            dexc[target][index[target]][1] = idx;
-            dexc[target][index[target]][2] = parity;
+            dexc[target][index[target]][0] = state;   // state index
+            dexc[target][index[target]][1] = idx;     // ij shift (matrix index)
+            dexc[target][index[target]][2] = parity;  // pairity for i->j transition
             index[target]++;
         }
     }
@@ -238,22 +287,35 @@ std::vector<uint64_t> FCIGraph::get_lex_bitstrings(int nele, int norb) {
         
     std::vector<uint64_t> bitstrings;
 
+    // vector of [0,1,2,3,...]
     std::vector<uint64_t> indices(norb);
     for (int i = 0; i < norb; ++i)
         indices[i] = i;
 
+    // vector that is a bitstring of zeros [0,0,0,....]
     std::vector<bool> bitstring(norb, false);
+
+    // make hf bitsring [1,1,1,1,0,0,....]
+    // esentially state is a bitstring (as a uint_64 for all possible permutations)
     for (int i = 0; i < nele; ++i)
         bitstring[i] = true;
 
     do {
         uint64_t state = 0;
+        // loop over orbital states in bitstring, if there is a particle in that postiong
+        // modify state
         for (int i = 0; i < norb; ++i) {
             if (bitstring[i]) { state |= (static_cast<uint64_t>(1) << i);}
         }
+        
         bitstrings.push_back(state);
+    // use std::prev_permutation to rearrange bitstring into the previous lexicographically ordered permutation.
+    /// NICK: std::prev_permutation rearranges the elements in the range [first, last) into the previous lexicographical permutation.
+    // It returns true if such a permutation exists (i.e., the sequence was not already in the smallest possible order).
+    // It returns false when the sequence reaches its first permutation, and no further previous permutation exists.
     } while (std::prev_permutation(bitstring.begin(), bitstring.end()));
 
+    // sort the bitstrings 
     std::sort(bitstrings.begin(), bitstrings.end());
 
     return bitstrings;

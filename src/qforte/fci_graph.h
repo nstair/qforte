@@ -78,6 +78,16 @@ public:
         return dp[n][m];
     }
 
+    /**
+     * @brief Flattens a 3D vector of integers into a 1D vector.
+     *
+     * This function takes a three-dimensional vector (`std::vector<std::vector<std::vector<int>>>`)
+     * and unrolls it into a one-dimensional vector (`std::vector<int>`),
+     * preserving the order of elements as they appear in the nested vectors.
+     *
+     * @param input A 3D vector of integers to be flattened.
+     * @return A 1D vector containing all the integers from the input, in order.
+     */
     std::vector<int> unroll_from_3d(
         const std::vector<std::vector<std::vector<int>>>& input) 
     {

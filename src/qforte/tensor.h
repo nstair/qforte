@@ -12,9 +12,7 @@
 #include "qforte-def.h"
 #include "tensor_gpu.h"
 
-class TensorGPU;
-
-// namespace lightspeed { 
+class TensorGPU; 
 
 /**
  * Class Tensor contains a simple tensor class with core-only capabilities.
