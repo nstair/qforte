@@ -86,19 +86,14 @@ class FCIComputer {
       size_t norb);
 
     void lm_apply_array1(
-      // const double complex *coeff, don't need
-      // double complex *out,
       const Tensor& out,
-      // const int *dexc,
       const std::vector<int> dexc,
       const int astates,
       const int bstates,
       const int ndexc,
-      // const double complex *h1e,
       const Tensor& h1e,
       const int norbs,
       const bool is_alpha);
-      // const struct blasfunctions * blasfunc);
 
     void apply_array_1bdy(
       Tensor& out,
@@ -110,28 +105,72 @@ class FCIComputer {
       const int norbs,
       const bool is_alpha);
 
+
+    /**
+     * @brief Applies the Hamiltonian operator to the state vector for same-spin electrons in an optimized manner.
+     *
+     * This function computes the contributions of one-electron (`h1e`) and two-electron (`h2e`) integrals to the Hamiltonian
+     * matrix for same-spin electrons (either alpha or beta, determined by `is_alpha`), and applies it to the output tensor `out`.
+     * It uses precomputed de-excitation mappings (`dexc`) to efficiently perform the calculations, accounting for the parity due to
+     * the antisymmetric nature of fermionic wavefunctions.
+     *
+     * @param out          Reference to the output `Tensor` where the result will be stored.
+     * @param dexc         Flattened vector of de-excitation mappings for the spin states. Each group of three integers represents:
+     *                     - `[0]`: Source state index (`s2`).
+     *                     - `[1]`: Combined orbital index (`ijshift`), used to access integrals.
+     *                     - `[2]`: Parity (`parity1`), accounting for fermionic antisymmetry.
+     * @param alpha_states Number of alpha spin states.
+     * @param beta_states  Number of beta spin states.
+     * @param ndexc        Number of de-excitations per state.
+     * @param h1e          One-electron integral tensor.
+     * @param h2e          Two-electron integral tensor.
+     * @param norbs        Total number of orbitals.
+     * @param is_alpha     Boolean flag indicating whether to operate on alpha (`true`) or beta (`false`) spin states.
+     */
     void lm_apply_array12_same_spin_opt(
-      // const double complex *coeff,
-      Tensor& out, // double complex *out,
-      const std::vector<int>& dexc, // const int *dexc,
+      Tensor& out, 
+      const std::vector<int>& dexc, 
       const int alpha_states,
       const int beta_states,
       const int ndexc,
-      const Tensor& h1e, // const double complex *h1e,
-      const Tensor& h2e, // const double complex *h2e,
+      const Tensor& h1e, 
+      const Tensor& h2e, 
       const int norbs,
       const bool is_alpha); 
 
+    /**
+     * @brief Applies the Hamiltonian operator for interactions between different-spin electrons in an optimized way.
+     *
+     * This function computes and applies the contributions of two-electron integrals (`h2e`) to the state vector `out`
+     * for interactions between alpha and beta spin electrons. It uses precomputed de-excitation mappings (`adexc` for
+     * alpha spins and `bdexc` for beta spins) to efficiently perform the calculations, taking into account the parity
+     * signs due to the antisymmetric nature of fermionic wavefunctions.
+     *
+     * The function iterates over all combinations of orbitals and spin states, accumulating the results into the output
+     * tensor `out`. It optimizes the computation by grouping terms and minimizing redundant calculations.
+     *
+     * @param out          Reference to the output `Tensor` where the results will be accumulated.
+     * @param adexc        Flattened vector of de-excitation mappings for alpha spin states. Each group of three integers represents:
+     *                     - `[0]`: Source state index (offset in the state vector).
+     *                     - `[1]`: Combined orbital index (`orbij`), used to access two-electron integrals.
+     *                     - `[2]`: Parity sign (`±1`), accounting for fermionic antisymmetry.
+     * @param bdexc        Flattened vector of de-excitation mappings for beta spin states, structured similarly to `adexc`.
+     * @param alpha_states Number of alpha spin states.
+     * @param beta_states  Number of beta spin states.
+     * @param nadexc       Number of de-excitations per alpha spin state.
+     * @param nbdexc       Number of de-excitations per beta spin state.
+     * @param h2e          Two-electron integral tensor containing the electron repulsion integrals.
+     * @param norbs        Total number of orbitals.
+     */
     void lm_apply_array12_diff_spin_opt(
-      // const double complex *coeff,
-      Tensor& out,// double complex *out,
-      const std::vector<int>& adexc,// const int *adexc,
-      const std::vector<int>& bdexc,// const int *bdexc,
+      Tensor& out,
+      const std::vector<int>& adexc,
+      const std::vector<int>& bdexc,
       const int alpha_states,
       const int beta_states,
       const int nadexc,
       const int nbdexc,
-      const Tensor& h2e, //const double complex *h2e,
+      const Tensor& h2e, 
       const int norbs); 
 
     std::pair<Tensor, Tensor> calculate_dvec_spin_with_coeff();
@@ -176,6 +215,27 @@ class FCIComputer {
 
     /// A lower-level helper function that applies the exponential of a
     /// two-term (hermitian) SQOperator to the FCIComputer, only applies number operators.
+    /**
+     * @brief Evolves the quantum state for operators with matching creation and annihilation operators in an optimized manner.
+     *
+     * This function applies a simplified evolution to the output tensor `Cout` for cases where the creation and annihilation
+     * operators match for both alpha and beta spins (`crea == anna` and `creb == annb`). It calculates a prefactor based on
+     * the operator coefficient and the number of electrons involved, then computes an overall phase factor using the complex
+     * time parameter. The function then updates the relevant elements of `Cout` by multiplying them with this phase factor,
+     * based on the mappings obtained from `evaluate_map_number`, which identifies the states that remain within the same
+     * particle-number and spin symmetry sectors.
+     * 
+     * Esentially this is a diagonal operaton. 
+     *
+     * @param time  The complex time parameter over which to evolve the state.
+     * @param coeff The coefficient associated with the operator being applied.
+     * @param Cin   The input tensor representing the initial quantum state (not directly used in this function).
+     * @param Cout  The output tensor where the evolved state will be updated; modified in place.
+     * @param crea  Vector of indices for alpha spin creation operators.
+     * @param anna  Vector of indices for alpha spin annihilation operators.
+     * @param creb  Vector of indices for beta spin creation operators.
+     * @param annb  Vector of indices for beta spin annihilation operators.
+     */
     void evolve_individual_nbody_easy(
       const std::complex<double> time,
       const std::complex<double> coeff,
@@ -188,6 +248,25 @@ class FCIComputer {
 
     /// A lower-level helper function that applies the exponential of a
     /// two-term (hermitian) SQOperator to the FCIComputer.
+    /**
+     * @brief Evolves the quantum state for operators with differing creation and annihilation operators in a complex scenario.
+     *
+     * This function applies the evolution to the output tensor `Cout` for cases where the creation and annihilation
+     * operators differ for both alpha and beta spins, handling the "hard" cases. It isolates number operators and computes
+     * the necessary parity factors to account for fermionic antisymmetry. The function calculates sine and cosine factors
+     * based on the operator coefficient and time parameter, then applies these factors using `apply_cos_inplace` and
+     * `apply_individual_nbody_accumulate` functions. It updates `Cout` in place, properly accounting for the interactions
+     * and phases introduced by the differing operators.
+     *
+     * @param time  The complex time parameter over which to evolve the state.
+     * @param coeff The coefficient associated with the operator being applied.
+     * @param Cin   The input tensor representing the initial quantum state.
+     * @param Cout  The output tensor where the evolved state will be updated; modified in place.
+     * @param crea  Vector of indices for alpha spin creation operators.
+     * @param anna  Vector of indices for alpha spin annihilation operators.
+     * @param creb  Vector of indices for beta spin creation operators.
+     * @param annb  Vector of indices for beta spin annihilation operators.
+     */
     void evolve_individual_nbody_hard(
       const std::complex<double> time,
       const std::complex<double> coeff,
@@ -200,6 +279,29 @@ class FCIComputer {
 
     /// An intermediate function that applies the exponential of a
     /// two-term (hermitian) SQOperator to the FCIComputer.
+    /**
+     * @brief Evolves a quantum state using an individual n-body operator, updating the output tensor.
+     *
+     * This function evolves a quantum state represented by the input tensor `Cin` by applying a specified
+     * second quantized operator `sqop` over a given complex `time`. It supports operators with a single term
+     * (consisting of creation and annihilation operators [subtracted by their adjoints]) 
+     * and ensures that the evolution preserves spin and particle-number symmetries.
+     * The function handles both "easy" cases, where the creation and annihilation
+     * operators match, and "hard" cases, invoking appropriate sub-functions for each scenario.
+     *
+     * Optional flags `antiherm` and `adjoint` control whether the operator is treated as anti-Hermitian or if
+     * its adjoint is applied, respectively.
+     *
+     * @param time     Complex time parameter over which to evolve the state.
+     * @param sqop     Second quantized operator representing the n-body operator to apply; must contain exactly one term.
+     * @param Cin      Input tensor representing the initial quantum state.
+     * @param Cout     Output tensor where the evolved state will be stored; modified in place.
+     * @param antiherm Boolean flag indicating whether to treat the operator as anti-Hermitian (applies a factor of `i`).
+     * @param adjoint  Boolean flag indicating whether to apply the adjoint (Hermitian conjugate) of the operator.
+     *
+     * @throws std::invalid_argument If the operator has multiple terms or if the evolved state does not remain within
+     *                               the same spin and particle-number symmetry sector.
+     */
     void evolve_individual_nbody(
       const std::complex<double> time,
       const SQOperator& sqop,
