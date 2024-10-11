@@ -1616,10 +1616,10 @@ void FCIComputerGPU::apply_sqop_gpu(const SQOperator& sqop){
            std::vector<int>* d_dagb;
            std::vector<int>* d_undagb;
 
-           std::vector<int> daga;
-           std::vector<int> undaga;
-           std::vector<int> dagb;
-           std::vector<int> undagb;
+           std::vector<int> h_daga;
+           std::vector<int> h_undaga;
+           std::vector<int> h_dagb;
+           std::vector<int> h_undagb;
 
 
            // "Just use memcpy"?
@@ -1629,9 +1629,9 @@ void FCIComputerGPU::apply_sqop_gpu(const SQOperator& sqop){
             for (size_t i = 0; i < std::get<1>(term).size(); i++) {
 
                 if (std::get<1>(term)[i] % 2 == 0) {
-                    daga.push_back(std::floor(std::get<1>(term)[i] / 2));
+                    h_daga.push_back(std::floor(std::get<1>(term)[i] / 2));
                 } else {
-                    dagb.push_back(std::floor(std::get<1>(term)[i] / 2));
+                    h_dagb.push_back(std::floor(std::get<1>(term)[i] / 2));
                 }
 
             }
@@ -1640,9 +1640,9 @@ void FCIComputerGPU::apply_sqop_gpu(const SQOperator& sqop){
             for (size_t i = 0; i < std::get<2>(term).size(); i++) {
 
                 if (std::get<2>(term)[i] % 2 == 0) {
-                    undaga.push_back(std::floor(std::get<2>(term)[i] / 2));
+                    h_undaga.push_back(std::floor(std::get<2>(term)[i] / 2));
                 } else {
-                    undagb.push_back(std::floor(std::get<2>(term)[i] / 2));
+                    h_undagb.push_back(std::floor(std::get<2>(term)[i] / 2));
                 }
 
             }
@@ -1663,10 +1663,10 @@ void FCIComputerGPU::apply_sqop_gpu(const SQOperator& sqop){
                 pow(-1, nswaps) * std::get<0>(term),
                 Cin,
                 C_,
-                daga,
-                undaga,
-                dagb,
-                undagb
+                h_daga,
+                h_undaga,
+                h_dagb,
+                h_undagb
             );
 
        }
