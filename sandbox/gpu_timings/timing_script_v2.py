@@ -47,6 +47,22 @@ H2_geom = [
     ('H', (0., 0., 2.0)),
 
     ]
+
+Ethylyne_geom = [
+
+    # ('H', (0., 0., 1.0)),
+
+    ('H', (0., 0., 2.0)),
+
+    ('C', (0., 0., 3.0)),
+
+    ('C', (0., 0., 4.0)),
+
+    ('H', (0., 0., 5.0)),
+
+    # ('H', (0., 0., 6.0)),
+
+]
  
 H4_geom = [
 
@@ -182,25 +198,25 @@ H14_geom = [
 
 geom_list = [
 
-    H2_geom,
+    Ethylyne_geom,
 
-    H4_geom,
+    # H4_geom,
 
-    H6_geom,
+    # H6_geom,
 
-    H8_geom,
+    # H8_geom,
 
-    BeH2_geom,
+    # BeH2_geom,
 
-    LiH_geom,
+    # LiH_geom,
 
-    N2_geom,
+    # N2_geom,
 
-    H20_geom,
+    # H20_geom,
 
-    H10_geom,
+    # H10_geom,
 
-    H12_geom,
+    # H12_geom,
 
     # H14_geom
 
@@ -208,25 +224,25 @@ geom_list = [
 
 name_list = [
 
-    'H2',
+    'Ethylyne',
 
-    'H4',
+    # 'H4',
 
-    'H6',
+    # 'H6',
 
-    'H8',
+    # 'H8',
 
-    'BeH2',
+    # 'BeH2',
 
-    'LiH',
+    # 'LiH',
 
-    'N2',
+    # 'N2',
 
-    'H2O',
+    # 'H2O',
 
-    'H10',
+    # 'H10',
 
-    'H12',
+    # 'H12',
 
     # 'H14'
 

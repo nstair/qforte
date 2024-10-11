@@ -1,0 +1,59 @@
+
+  Memory set to   1.863 GiB by Python driver.
+ ==> Psi4 geometry <==
+-------------------------
+0  1
+H  0.0  0.0  1.0
+H  0.0  0.0  2.0
+symmetry c1
+units angstrom
+
+ Initial FCIcomp Stuff
+===========================
+ nqbit:     4
+ nel:       2
+
+ Final FCIcomp Stuff
+===========================
+	
+	
+
+ Timing
+======================================================
+           Process name               Time (s)                Percent
+          =============          =============          =============
+Run Psi4 and Initialize                 0.1540                  98.46
+                 normal                 0.0000                   0.03
+                    gpu                 0.0024                   1.51
+
+             Total Time                 0.1564                 100.00
+
+
+ Energetics
+======================================================
+ Efci:               -1.1011503301329566
+ Ehf:                -1.0661086491853156
+ Enr:                0.52917721067
+ Eelec:              -1.5952858598553155
+ E1 (from cpu):   (-1.0661086491853156+0j)
+ E2 (from gpu):   (-1.0661086491853156+0j)
+Tensor: FCI Computer
+  Ndim  = 2
+  Size  = 4
+  Shape = (2,2)
+
+  Data:
+
+                   0            1
+      0   -1.0661086    0.0000000
+      1    0.0000000    0.1967906
+TensorGPU: FCI Computer
+  Ndim  = 2
+  Size  = 4
+  Shape = (2,2)
+
+  Data:
+
+                   0            1
+      0   -1.0661086    0.0000000
+      1    0.0000000    0.1967906

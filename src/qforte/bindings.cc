@@ -11,6 +11,7 @@
 #include "fci_computer_gpu.h"
 #include "fci_computer.h"
 #include "fci_graph.h"
+#include "fci_graph_gpu.h"
 #include "qubit_operator.h"
 #include "sq_operator.h"
 #include "sq_op_pool.h"
@@ -331,6 +332,24 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_dexcb", &FCIGraph::get_dexcb)
         .def("get_dexca_vec", &FCIGraph::get_dexca_vec)
         .def("get_dexcb_vec", &FCIGraph::get_dexcb_vec);
+
+    py::class_<FCIGraphGPU>(m, "FCIGraphGPU")
+        .def(py::init<int, int, int>(), "nalfa"_a, "nbeta"_a, "norb"_a, "Make a FCIGraphGPU")
+        .def("make_mapping_each", &FCIGraphGPU::make_mapping_each)
+        .def("get_nalfa", &FCIGraphGPU::get_nalfa)
+        .def("get_nbeta", &FCIGraphGPU::get_nbeta)
+        .def("get_lena", &FCIGraphGPU::get_lena)
+        .def("get_lenb", &FCIGraphGPU::get_lenb)
+        .def("get_astr", &FCIGraphGPU::get_astr)
+        .def("get_bstr", &FCIGraphGPU::get_bstr)
+        .def("get_aind", &FCIGraphGPU::get_aind)
+        .def("get_bind", &FCIGraphGPU::get_bind)
+        .def("get_alfa_map", &FCIGraphGPU::get_alfa_map)
+        .def("get_beta_map", &FCIGraphGPU::get_beta_map)
+        .def("get_dexca", &FCIGraphGPU::get_dexca)
+        .def("get_dexcb", &FCIGraphGPU::get_dexcb)
+        .def("get_dexca_vec", &FCIGraphGPU::get_dexca_vec)
+        .def("get_dexcb_vec", &FCIGraphGPU::get_dexcb_vec);
 
 
     py::class_<Tensor>(m, "Tensor")

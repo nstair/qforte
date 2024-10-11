@@ -1,4 +1,4 @@
-#include "fci_graph.h"
+#include "fci_graph_gpu.h"
 #include <stdexcept>
 #include <algorithm>
 #include <cstdint>
@@ -8,7 +8,7 @@
 #include <bitset>
 
 /// Custom construcotr
-FCIGraph::FCIGraph(int nalfa, int nbeta, int norb) 
+FCIGraphGPU::FCIGraphGPU(int nalfa, int nbeta, int norb) 
 {
     if (norb < 0)
         throw std::invalid_argument("norb needs to be >= 0");
@@ -41,9 +41,9 @@ FCIGraph::FCIGraph(int nalfa, int nbeta, int norb)
     dexcb_vec_ = unroll_from_3d(dexcb_);
 }
 
-FCIGraph::FCIGraph() : FCIGraph(0, 0, 0) {}
+FCIGraphGPU::FCIGraphGPU() : FCIGraphGPU(0, 0, 0) {}
 
-std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> FCIGraph::build_strings(
+std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> FCIGraphGPU::build_strings(
     int nele, 
     size_t length) 
 {
@@ -80,13 +80,13 @@ std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> FCIGraph:
     return std::make_pair(string_list, index_list);
 }
 
-Spinmap FCIGraph::build_mapping(
+SpinmapGPU FCIGraphGPU::build_mapping(
     const std::vector<uint64_t>& strings, 
     int nele, 
     const std::unordered_map<uint64_t, size_t>& index) 
 {
     int norb = norb_;
-    Spinmap out;
+    SpinmapGPU out;
 
     for (int iorb = 0; iorb < norb; ++iorb) {
         for (int jorb = 0; jorb < norb; ++jorb) {
@@ -110,7 +110,7 @@ Spinmap FCIGraph::build_mapping(
         }
     }
 
-    Spinmap result;
+    SpinmapGPU result;
     for (const auto& entry : out) {
         const auto& key = entry.first;
         const auto& value = entry.second;
@@ -128,8 +128,8 @@ Spinmap FCIGraph::build_mapping(
     return result;
 }
 
-std::vector<std::vector<std::vector<int>>> FCIGraph::map_to_deexc(
-    const Spinmap& mappings, 
+std::vector<std::vector<std::vector<int>>> FCIGraphGPU::map_to_deexc(
+    const SpinmapGPU& mappings, 
     int states, 
     int norbs,
     int nele) 
@@ -170,7 +170,7 @@ std::vector<std::vector<std::vector<int>>> FCIGraph::map_to_deexc(
 // need a kernel, pass in worker arrays and make it so that it doesnt return anything
 // this function will take the three existing arguments but also a device integer and then device pointers to pre-allocated arrays 
 // corresponding to what the host function would return
-std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::make_mapping_each(
+std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraphGPU::make_mapping_each(
     bool alpha, 
     const std::vector<int>& dag, 
     const std::vector<int>& undag) 
@@ -234,7 +234,7 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::
 }
 
 /// NICK: 1. Consider a faster blas veriosn, 2. consider using qubit basis, 3. rename (too long)
-std::vector<uint64_t> FCIGraph::get_lex_bitstrings(int nele, int norb) {
+std::vector<uint64_t> FCIGraphGPU::get_lex_bitstrings(int nele, int norb) {
 
     if (nele > norb) {
         throw std::invalid_argument("can't have more electorns that orbitals");
@@ -265,7 +265,7 @@ std::vector<uint64_t> FCIGraph::get_lex_bitstrings(int nele, int norb) {
 }
 
 /// NICK: Seems slow..., may want to use qubit basis, convert to size_t maybe??
-uint64_t FCIGraph::build_string_address(
+uint64_t FCIGraphGPU::build_string_address(
     int nele, 
     int norb, 
     uint64_t occ,
@@ -287,7 +287,7 @@ uint64_t FCIGraph::build_string_address(
 }
 
 /// NICK: May want to make faster using blas calls if it becomes a bottleneck
-std::vector<std::vector<uint64_t>> FCIGraph::get_z_matrix(int norb, int nele) {
+std::vector<std::vector<uint64_t>> FCIGraphGPU::get_z_matrix(int norb, int nele) {
     // Initialize Z matrix with zeros
     std::vector<std::vector<uint64_t>> Z(nele, std::vector<uint64_t>(norb, 0)); 
 

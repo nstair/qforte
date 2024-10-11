@@ -1,0 +1,298 @@
+
+  Memory set to   1.863 GiB by Python driver.
+                                                   Process name                                                       Time (s)                                                        Percent
+                                                  =============                                                  =============                                                  =============
+                                   first for loop in apply_sqop                                                         0.0000                                                           0.03
+                                                       cudafree                                                         0.0002                                                          13.75
+                       first loop in apply_individual_sqop_term                                                         0.0000                                                           1.53
+                                      cuda memcpy in nbody1_acc                                                         0.0005                                                          49.68
+                                             some parity things                                                         0.0000                                                           0.39
+ first 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0000                                                           0.65
+second 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0000                                                           0.27
+                      second loop in apply_individual_sqop_term                                                         0.0000                                                           0.24
+   a lot of initialization in apply_individual_nbody_accumulate                                                         0.0000                                                           0.21
+                                      cuda malloc in nbody1_acc                                                         0.0002                                                          14.01
+            first for loop in apply_individual_nbody_accumulate                                                         0.0000                                                           0.08
+           second for loop in apply_individual_nbody_accumulate                                                         0.0000                                                           0.07
+                                           making tensor things                                                         0.0000                                                           0.23
+                                   initialization in nbody1_acc                                                         0.0000                                                           0.06
+                                           calling gpu function                                                         0.0002                                                          18.80
+
+                                                     Total Time                                                         0.0011                                                         100.00
+
+                                                   Process name                                                       Time (s)                                                        Percent
+                                                  =============                                                  =============                                                  =============
+                                   first for loop in apply_sqop                                                         0.0000                                                           0.00
+                                                       cudafree                                                         0.0025                                                           3.38
+                       first loop in apply_individual_sqop_term                                                         0.0000                                                           0.06
+                                      cuda memcpy in nbody1_acc                                                         0.0583                                                          77.66
+                                             some parity things                                                         0.0001                                                           0.08
+ first 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0001                                                           0.14
+second 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0001                                                           0.07
+                      second loop in apply_individual_sqop_term                                                         0.0000                                                           0.03
+   a lot of initialization in apply_individual_nbody_accumulate                                                         0.0001                                                           0.08
+                                      cuda malloc in nbody1_acc                                                         0.0029                                                           3.83
+            first for loop in apply_individual_nbody_accumulate                                                         0.0000                                                           0.03
+           second for loop in apply_individual_nbody_accumulate                                                         0.0000                                                           0.03
+                                           making tensor things                                                         0.0000                                                           0.00
+                                   initialization in nbody1_acc                                                         0.0000                                                           0.02
+                                           calling gpu function                                                         0.0110                                                          14.58
+
+                                                     Total Time                                                         0.0751                                                         100.00
+
+                                                   Process name                                                       Time (s)                                                        Percent
+                                                  =============                                                  =============                                                  =============
+                                   first for loop in apply_sqop                                                         0.0000                                                           0.00
+                                                       cudafree                                                         0.0403                                                           9.49
+                       first loop in apply_individual_sqop_term                                                         0.0007                                                           0.16
+                                      cuda memcpy in nbody1_acc                                                         0.2024                                                          47.62
+                                             some parity things                                                         0.0008                                                           0.19
+ first 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0023                                                           0.53
+second 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0029                                                           0.67
+                      second loop in apply_individual_sqop_term                                                         0.0004                                                           0.09
+   a lot of initialization in apply_individual_nbody_accumulate                                                         0.0006                                                           0.14
+                                      cuda malloc in nbody1_acc                                                         0.0463                                                          10.89
+            first for loop in apply_individual_nbody_accumulate                                                         0.0011                                                           0.26
+           second for loop in apply_individual_nbody_accumulate                                                         0.0011                                                           0.25
+                                           making tensor things                                                         0.0000                                                           0.00
+                                   initialization in nbody1_acc                                                         0.0002                                                           0.04
+                                           calling gpu function                                                         0.1261                                                          29.68
+
+                                                     Total Time                                                         0.4250                                                         100.00
+
+                                                   Process name                                                       Time (s)                                                        Percent
+                                                  =============                                                  =============                                                  =============
+                                   first for loop in apply_sqop                                                         0.0000                                                           0.00
+                                                       cudafree                                                         0.0080                                                          11.30
+                       first loop in apply_individual_sqop_term                                                         0.0001                                                           0.18
+                                      cuda memcpy in nbody1_acc                                                         0.0403                                                          57.15
+                                             some parity things                                                         0.0002                                                           0.25
+ first 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0002                                                           0.35
+second 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0003                                                           0.49
+                      second loop in apply_individual_sqop_term                                                         0.0001                                                           0.11
+   a lot of initialization in apply_individual_nbody_accumulate                                                         0.0002                                                           0.25
+                                      cuda malloc in nbody1_acc                                                         0.0093                                                          13.19
+            first for loop in apply_individual_nbody_accumulate                                                         0.0001                                                           0.11
+           second for loop in apply_individual_nbody_accumulate                                                         0.0001                                                           0.11
+                                           making tensor things                                                         0.0000                                                           0.00
+                                   initialization in nbody1_acc                                                         0.0000                                                           0.05
+                                           calling gpu function                                                         0.0116                                                          16.47
+
+                                                     Total Time                                                         0.0705                                                         100.00
+
+                                                   Process name                                                       Time (s)                                                        Percent
+                                                  =============                                                  =============                                                  =============
+                                   first for loop in apply_sqop                                                         0.0000                                                           0.00
+                                                       cudafree                                                         0.0315                                                           9.02
+                       first loop in apply_individual_sqop_term                                                         0.0005                                                           0.15
+                                      cuda memcpy in nbody1_acc                                                         0.1372                                                          39.29
+                                             some parity things                                                         0.0006                                                           0.17
+ first 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0025                                                           0.73
+second 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0031                                                           0.90
+                      second loop in apply_individual_sqop_term                                                         0.0003                                                           0.09
+   a lot of initialization in apply_individual_nbody_accumulate                                                         0.0005                                                           0.14
+                                      cuda malloc in nbody1_acc                                                         0.0362                                                          10.37
+            first for loop in apply_individual_nbody_accumulate                                                         0.0018                                                           0.51
+           second for loop in apply_individual_nbody_accumulate                                                         0.0017                                                           0.50
+                                           making tensor things                                                         0.0000                                                           0.00
+                                   initialization in nbody1_acc                                                         0.0001                                                           0.04
+                                           calling gpu function                                                         0.1331                                                          38.10
+
+                                                     Total Time                                                         0.3493                                                         100.00
+
+                                                   Process name                                                       Time (s)                                                        Percent
+                                                  =============                                                  =============                                                  =============
+                                   first for loop in apply_sqop                                                         0.0000                                                           0.00
+                                                       cudafree                                                         0.0083                                                          12.65
+                       first loop in apply_individual_sqop_term                                                         0.0001                                                           0.18
+                                      cuda memcpy in nbody1_acc                                                         0.0329                                                          50.18
+                                             some parity things                                                         0.0002                                                           0.28
+ first 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0003                                                           0.50
+second 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0004                                                           0.62
+                      second loop in apply_individual_sqop_term                                                         0.0001                                                           0.12
+   a lot of initialization in apply_individual_nbody_accumulate                                                         0.0002                                                           0.28
+                                      cuda malloc in nbody1_acc                                                         0.0102                                                          15.64
+            first for loop in apply_individual_nbody_accumulate                                                         0.0001                                                           0.17
+           second for loop in apply_individual_nbody_accumulate                                                         0.0001                                                           0.20
+                                           making tensor things                                                         0.0000                                                           0.00
+                                   initialization in nbody1_acc                                                         0.0000                                                           0.06
+                                           calling gpu function                                                         0.0125                                                          19.13
+
+                                                     Total Time                                                         0.0655                                                         100.00
+
+                                                   Process name                                                       Time (s)                                                        Percent
+                                                  =============                                                  =============                                                  =============
+                                   first for loop in apply_sqop                                                         0.0000                                                           0.00
+                                                       cudafree                                                         0.1010                                                           6.83
+                       first loop in apply_individual_sqop_term                                                         0.0014                                                           0.10
+                                      cuda memcpy in nbody1_acc                                                         0.3943                                                          26.69
+                                             some parity things                                                         0.0019                                                           0.13
+ first 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0155                                                           1.05
+second 'make_mapping_each' in apply_individual_nbody_accumulate                                                         0.0111                                                           0.75
+                      second loop in apply_individual_sqop_term                                                         0.0009                                                           0.06
+   a lot of initialization in apply_individual_nbody_accumulate                                                         0.0018                                                           0.12
+                                      cuda malloc in nbody1_acc                                                         0.1113                                                           7.53
+            first for loop in apply_individual_nbody_accumulate                                                         0.0072                                                           0.49
+           second for loop in apply_individual_nbody_accumulate                                                         0.0070                                                           0.48
+                                           making tensor things                                                         0.0000                                                           0.00
+                                   initialization in nbody1_acc                                                         0.0005                                                           0.03
+                                           calling gpu function                                                         0.8238                                                          55.75
+
+                                                     Total Time                                                         1.4777                                                         100.00
+
+ ==> Psi4 geometry <==
+-------------------------
+0  1
+H  0.0  0.0  1.0
+H  0.0  0.0  2.0
+symmetry c1
+units angstrom
+
+
+ Timing
+======================================================
+H2        1.189628e-03   3.752300e-05  3.170397e+01       4
+
+
+ ==> Psi4 geometry <==
+-------------------------
+0  1
+H  0.0  0.0  1.0
+H  0.0  0.0  2.0
+H  0.0  0.0  3.0
+H  0.0  0.0  4.0
+symmetry c1
+units angstrom
+
+
+ Timing
+======================================================
+H2        1.189628e-03   3.752300e-05  3.170397e+01       4
+H4        7.577655e-02   5.985410e-04  1.266021e+02       8
+
+
+ ==> Psi4 geometry <==
+-------------------------
+0  1
+H  0.0  0.0  1.0
+H  0.0  0.0  2.0
+H  0.0  0.0  3.0
+H  0.0  0.0  4.0
+H  0.0  0.0  5.0
+H  0.0  0.0  6.0
+H  0.0  0.0  7.0
+H  0.0  0.0  8.0
+symmetry c1
+units angstrom
+
+
+ Timing
+======================================================
+H2        1.189628e-03   3.752300e-05  3.170397e+01       4
+H4        7.577655e-02   5.985410e-04  1.266021e+02       8
+H8        4.330149e-01   3.559774e-02  1.216411e+01      16
+
+
+ ==> Psi4 geometry <==
+-------------------------
+0  1
+Li  0.0  0.0  1.0
+H  0.0  0.0  2.0
+symmetry c1
+units angstrom
+
+
+ Timing
+======================================================
+H2        1.189628e-03   3.752300e-05  3.170397e+01       4
+H4        7.577655e-02   5.985410e-04  1.266021e+02       8
+H8        4.330149e-01   3.559774e-02  1.216411e+01      16
+LiH       7.223735e-02   2.030508e-03  3.557600e+01      12
+
+
+ ==> Psi4 geometry <==
+-------------------------
+0  1
+N  0.0  0.0  1.0
+N  0.0  0.0  2.0
+symmetry c1
+units angstrom
+
+
+ Timing
+======================================================
+H2        1.189628e-03   3.752300e-05  3.170397e+01       4
+H4        7.577655e-02   5.985410e-04  1.266021e+02       8
+H8        4.330149e-01   3.559774e-02  1.216411e+01      16
+LiH       7.223735e-02   2.030508e-03  3.557600e+01      12
+N2        3.554524e-01   7.846533e-02  4.530057e+00      20
+
+
+ ==> Psi4 geometry <==
+-------------------------
+0  1
+H  0.0  0.0  1.0
+O  0.0  0.0  2.0
+H  0.0  0.0  3.0
+symmetry c1
+units angstrom
+
+
+ Timing
+======================================================
+H2        1.189628e-03   3.752300e-05  3.170397e+01       4
+H4        7.577655e-02   5.985410e-04  1.266021e+02       8
+H8        4.330149e-01   3.559774e-02  1.216411e+01      16
+LiH       7.223735e-02   2.030508e-03  3.557600e+01      12
+N2        3.554524e-01   7.846533e-02  4.530057e+00      20
+H2O       6.724598e-02   2.964066e-03  2.268707e+01      14
+
+
+ ==> Psi4 geometry <==
+-------------------------
+0  1
+H  0.0  0.0  1.0
+H  0.0  0.0  2.0
+H  0.0  0.0  3.0
+H  0.0  0.0  4.0
+H  0.0  0.0  5.0
+H  0.0  0.0  6.0
+H  0.0  0.0  7.0
+H  0.0  0.0  8.0
+H  0.0  0.0  9.0
+H  0.0  0.0  10.0
+symmetry c1
+units angstrom
+
+
+ Timing
+======================================================
+H2        1.189628e-03   3.752300e-05  3.170397e+01       4
+H4        7.577655e-02   5.985410e-04  1.266021e+02       8
+H8        4.330149e-01   3.559774e-02  1.216411e+01      16
+LiH       7.223735e-02   2.030508e-03  3.557600e+01      12
+N2        3.554524e-01   7.846533e-02  4.530057e+00      20
+H2O       6.724598e-02   2.964066e-03  2.268707e+01      14
+H10       1.497479e+00   7.800900e-01  1.919623e+00      20
+
+
+
+       Process name           Time (s)            Percent
+      =============      =============      =============
+   fci  computer H2             0.0000               0.00
+ fcigpu computer H2             0.0012               0.03
+   fci  computer H4             0.0006               0.02
+ fcigpu computer H4             0.0758               2.23
+   fci  computer H8             0.0356               1.05
+ fcigpu computer H8             0.4330              12.73
+  fci  computer LiH             0.0020               0.06
+fcigpu computer LiH             0.0722               2.12
+   fci  computer N2             0.0785               2.31
+ fcigpu computer N2             0.3555              10.45
+  fci  computer H2O             0.0030               0.09
+fcigpu computer H2O             0.0672               1.98
+  fci  computer H10             0.7801              22.93
+fcigpu computer H10             1.4975              44.02
+
+         Total Time             3.4022             100.00
+

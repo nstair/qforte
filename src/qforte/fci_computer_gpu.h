@@ -8,6 +8,7 @@
 #include "tensor.h" 
 #include "tensor_gpu.h"
 #include "fci_graph.h"
+#include "fci_graph_gpu.h"
 #include "timer.h"
 
 #include <cuda_runtime.h>
@@ -20,6 +21,7 @@ class SQOperator;
 class TensorOperator;
 class TensorGPU;
 class FCIGraph;
+class FCIGraphGPU;
 class SQOpPool;
 
 class FCIComputerGPU {
@@ -281,6 +283,15 @@ class FCIComputerGPU {
       const std::vector<int>& dagb,
       const std::vector<int>& undagb);
 
+    void apply_individual_nbody_accumulate_gpu(
+        const std::complex<double> coeff,
+        const TensorGPU& Cin,
+        TensorGPU& Cout,
+        const std::vector<int>& daga,
+        const std::vector<int>& undaga,
+        const std::vector<int>& dagb,
+        const std::vector<int>& undagb);
+
     /// Apply individual sqop term
     void apply_individual_sqop_term(
       const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
@@ -290,6 +301,8 @@ class FCIComputerGPU {
 
     /// apply a second quantized operator, must be number and spin conserving.
     void apply_sqop(const SQOperator& sqop);
+
+    void apply_sqop_gpu(const SQOperator& sqop);
 
     /// apply the diagonal of a second quantized operator, must be number and spin conserving.
     void apply_diagonal_of_sqop(
@@ -446,6 +459,10 @@ class FCIComputerGPU {
 
     /// The corresponding FCIGraph for this computer
     FCIGraph graph_;
+
+    FCIGraphGPU graph_gpu_;
+
+    // raplce FCIGraph with FCIGraphGPU 
 
     local_timer timer_;
 

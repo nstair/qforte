@@ -1194,6 +1194,10 @@ void FCIComputerGPU::apply_sqop_evolution(
         adjoint); 
 }
 
+// write a version of this function and the function that calls this (apple_individual_nbody_accumulate) 
+// i want to make it so that the sourcea, targeta, etc are being passed as device pointers already
+
+
 void FCIComputerGPU::apply_individual_nbody1_accumulate(
     const std::complex<double> coeff, 
     const TensorGPU& Cin,
@@ -1368,6 +1372,9 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
     local_timer my_timer = local_timer();
     timer_.reset();
 
+
+    /// In the gpu version the call to this (done in the for loop in apply_sqop)
+
     std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ualfamap = graph_.make_mapping_each(
         true,
         daga,
@@ -1392,6 +1399,7 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
         return;
     }
 
+    // dont need this
     std::vector<int> sourcea(std::get<0>(ualfamap));
     std::vector<int> targeta(std::get<0>(ualfamap));
     std::vector<int> paritya(std::get<0>(ualfamap));
@@ -1435,6 +1443,21 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
         sourceb,
         targetb,
         parityb);
+
+}
+
+void FCIComputerGPU::apply_individual_nbody_accumulate_gpu(
+    const std::complex<double> coeff,
+    const TensorGPU& Cin,
+    TensorGPU& Cout,
+    const std::vector<int>& daga,
+    const std::vector<int>& undaga,
+    const std::vector<int>& dagb,
+    const std::vector<int>& undagb)
+{
+
+    int helo = 4;
+    
 
 }
 
@@ -1492,10 +1515,10 @@ void FCIComputerGPU::apply_individual_sqop_term(
         pow(-1, nswaps) * std::get<0>(term),
         Cin,
         Cout,
-        crea,
-        anna, 
-        creb,
-        annb);
+        crea, // same as dag_a
+        anna, // same as undag_a 
+        creb, // same as dag_b
+        annb); // same as undag b
 }
 
 // do I need to make the C_ variable of this class a TensorGPU object
@@ -1503,8 +1526,13 @@ void FCIComputerGPU::apply_individual_sqop_term(
 // Should I just create a new tensorGPU from the normal C_?
 
 
+
+
+/// allocate the 6 pointers and 2 counts here
+
 /// NICK: Check out  accumulation, don't need to do it this way..
 void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
+
 
     // gpu_error()
     // assures C_ is on the gpu
@@ -1512,7 +1540,7 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
     TensorGPU Cin(C_.shape(), "Cin", true);
     Cin.copy_in_gpu(C_);
 
-
+    // array length of alfa and beta strings
     
     local_timer my_timer = local_timer();
     timer_.reset();
@@ -1537,6 +1565,9 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
 
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
+
+
+
         apply_individual_sqop_term(
             term,
             Cin,
@@ -1549,6 +1580,98 @@ void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
     timer_.acc_record("first for loop in apply_sqop");
     std::cout << timer_.acc_str_table() << std::endl;
     // std::cout << my_timer.str_table() << std::endl;
+
+}
+
+void FCIComputerGPU::apply_sqop_gpu(const SQOperator& sqop){
+
+    // Allocating the 6 device pointers and 
+    std::vector<int>* d_sourcea;
+    std::vector<int>* d_sourceb;
+    std::vector<int>* d_targeta;
+    std::vector<int>* d_targetb;
+    std::vector<int>* d_paritya;
+    std::vector<int>* d_parityb;
+
+    /*
+
+    C_.gpu_error();
+    TensorGPU Cin(C_.shape(), "Cin", true);
+    Cin.copy_in_gpu(C_);
+
+    C_.zero_gpu();
+
+    */
+
+   TensorGPU Cin(C_.shape(), "Cin", true);
+
+   for (const auto& term : sqop.terms()) {
+       if (std::abs(std::get<0>(term)) > compute_threshold_) {
+
+
+
+           bool alpha;
+           std::vector<int>* d_daga;
+           std::vector<int>* d_undaga;
+           std::vector<int>* d_dagb;
+           std::vector<int>* d_undagb;
+
+           std::vector<int> daga;
+           std::vector<int> undaga;
+           std::vector<int> dagb;
+           std::vector<int> undagb;
+
+
+           // "Just use memcpy"?
+
+
+            // making the daga and dagb array stuff for each term
+            for (size_t i = 0; i < std::get<1>(term).size(); i++) {
+
+                if (std::get<1>(term)[i] % 2 == 0) {
+                    daga.push_back(std::floor(std::get<1>(term)[i] / 2));
+                } else {
+                    dagb.push_back(std::floor(std::get<1>(term)[i] / 2));
+                }
+
+            }
+
+            // making the undaga and undagb array stuff for each term
+            for (size_t i = 0; i < std::get<2>(term).size(); i++) {
+
+                if (std::get<2>(term)[i] % 2 == 0) {
+                    undaga.push_back(std::floor(std::get<2>(term)[i] / 2));
+                } else {
+                    undagb.push_back(std::floor(std::get<2>(term)[i] / 2));
+                }
+
+            }
+
+            // error checking
+            if (std::get<1>(term).size() != std::get<2>(term).size()) {
+                throw std::invalid_argument("Each term must have same number of anihilators and creators");
+            }    
+
+            // I could not figure out what this is or what it is doing
+            std::vector<size_t> ops1(std::get<1>(term));
+            std::vector<size_t> ops2(std::get<2>(term));
+            ops1.insert(ops1.end(), ops2.begin(), ops2.end());
+            int nswaps = parity_sort(ops1);            
+
+            // confused on what to do for cin and c_
+            apply_individual_nbody_accumulate_gpu(
+                pow(-1, nswaps) * std::get<0>(term),
+                Cin,
+                C_,
+                daga,
+                undaga,
+                dagb,
+                undagb
+            );
+
+       }
+   }
+
 
 }
 
