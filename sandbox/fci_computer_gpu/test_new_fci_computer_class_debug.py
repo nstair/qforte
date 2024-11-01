@@ -32,28 +32,32 @@ elif(reference == 'random'):
     fci_comp.set_state_from_tensor(Crand)
     fci_comp2.set_state_from_tensor(Crand)
 
+print("i get here")
 fci_comp.to_gpu()
+print("i get here 2")
 fci_comp2.to_gpu()
 
 print("\n SQOP Stuff")
 print("===========================")
 sqop = qf.SQOperator()
 sqop.add_term(3.0, [5], [1])
-sqop.add_term(3.0, [1], [5])
+# sqop.add_term(3.0, [1], [5])
 
-sqop.add_term(2.0, [4], [0])
-sqop.add_term(2.0, [0], [4])
+# sqop.add_term(2.0, [4], [0])
+# sqop.add_term(2.0, [0], [4])
 print(sqop)
 
-
+fci_comp.to_cpu()
+fci_comp2.to_cpu()
 
 
 print("\n Initial FCIcomp Stuff")
 print("===========================")
-# print(fci_comp)
-# print(fci_comp2)
+print(fci_comp.str(print_complex=True))
+print(fci_comp2.str(print_complex=True))
 
-
+fci_comp.to_gpu()
+fci_comp2.to_gpu()
 fci_comp.apply_sqop(sqop)
 fci_comp2.apply_sqop_gpu(sqop)
 
@@ -62,5 +66,5 @@ fci_comp2.to_cpu()
 
 print("\n Final FCIcomp Stuff")
 print("===========================")
-print(fci_comp)
-print(fci_comp2)
+# print(fci_comp)
+# print(fci_comp2)

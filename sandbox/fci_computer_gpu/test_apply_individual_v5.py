@@ -15,8 +15,8 @@ geom = [
     ('H', (0., 0., 8.0)),
     ('H', (0., 0., 9.0)), 
     ('H', (0., 0.,10.0)),
-    ('H', (0., 0.,11.0)), 
-    ('H', (0., 0.,12.0))
+    # ('H', (0., 0.,11.0)), 
+    # ('H', (0., 0.,12.0))
     ]
 
 
@@ -49,7 +49,7 @@ fci_comp = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 fci_comp_gpu = qf.FCIComputerGPU(nel=nel, sz=sz, norb=norb)
 
 
-reference = 'random'
+reference = 'hf'
 # reference = 'hf'
 
 if(reference == 'hf'):
@@ -79,6 +79,7 @@ E1 = fci_comp.get_hf_dot()
 fci_comp_gpu.to_gpu()
 timer.reset()
 
+# changed this call
 fci_comp_gpu.apply_sqop(mol.sq_hamiltonian)
 timer.record('gpu')
 fci_comp_gpu.to_cpu()

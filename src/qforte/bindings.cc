@@ -220,6 +220,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("apply_tensor_spat_012bdy", &FCIComputerGPU::apply_tensor_spat_012bdy)
         .def("apply_individual_sqop_term", &FCIComputerGPU::apply_individual_sqop_term)
         .def("apply_sqop", &FCIComputerGPU::apply_sqop)
+        .def("apply_sqop_gpu", &FCIComputerGPU::apply_sqop_gpu)
         .def("apply_diagonal_of_sqop", &FCIComputerGPU::apply_diagonal_of_sqop, 
             py::arg("sqop"),
             py::arg("invert_coeff") = true

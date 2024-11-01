@@ -73,6 +73,8 @@ FCIComputerGPU::FCIComputerGPU(int nel, int sz, int norb, bool on_gpu) :
 
     graph_ = FCIGraph(nalfa_el_, nbeta_el_, norb_);
 
+    graph_gpu_ = FCIGraphGPU(nalfa_el_, nbeta_el_, norb_);
+
     timer_ = local_timer();
 }
 
@@ -1210,8 +1212,6 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     std::vector<int>& parityb)
 {
     
-    // local_timer my_timer = local_timer();
-    timer_.reset();
     if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
         throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
     }
@@ -1219,7 +1219,6 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
         throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
     }
-    // only part that has kernel
 
     std::vector<cuDoubleComplex> paritya_complex(paritya.size());
     std::vector<cuDoubleComplex> parityb_complex(parityb.size());
@@ -1232,41 +1231,24 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
         parityb_complex[i] = make_cuDoubleComplex(parityb[i], 0.0);
     }
 
-    // make device pointers out of all the things coming in - use cuda mem copy to a device pointer
-    // my_timer.record("error checks");
-    // my_timer.reset();
     int* d_sourcea;
     int* d_sourceb;
     int* d_targeta;
     int* d_targetb;
-    // int* d_paritya;
-    // int* d_parityb;
 
     cuDoubleComplex* d_paritya;
     cuDoubleComplex* d_parityb;
-
-    // cuDoubleComplex* d_Cin;
-    // cuDoubleComplex* d_Cout;
-
-    // cumalloc for these
 
     int sourcea_mem = sourcea.size() * sizeof(int);
     int sourceb_mem = sourceb.size() * sizeof(int);
     int targetb_mem = targetb.size() * sizeof(int);
     int targeta_mem = targeta.size() * sizeof(int);
-    // int paritya_mem = paritya.size() * sizeof(int);
-    // int parityb_mem = parityb.size() * sizeof(int);
 
     int paritya_mem = paritya.size() * sizeof(cuDoubleComplex);
     int parityb_mem = parityb.size() * sizeof(cuDoubleComplex);
 
     int tensor_mem = Cin.size() * sizeof(cuDoubleComplex);
 
-    timer_.acc_record("initialization in nbody1_acc");
-    timer_.reset();
-
-    // my_timer.record("making pointers");
-    // my_timer.reset();
     cudaMalloc(&d_sourcea, sourcea_mem);
     cudaMalloc(&d_sourceb, sourceb_mem);
     cudaMalloc(&d_targeta, targeta_mem);
@@ -1275,33 +1257,13 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     cudaMalloc(&d_paritya, paritya_mem);
     cudaMalloc(&d_parityb, parityb_mem);
 
-    timer_.acc_record("cuda malloc in nbody1_acc");
-    timer_.reset();
-
-    // cudaMalloc(&d_Cin,  tensor_mem);
-    // cudaMalloc(&d_Cout, tensor_mem);
-
-    // my_timer.record("cudamallocs");
-    // my_timer.reset();
-
     cudaMemcpy(d_sourcea, sourcea.data(), sourcea_mem, cudaMemcpyHostToDevice);
     cudaMemcpy(d_sourceb, sourceb.data(), sourceb_mem, cudaMemcpyHostToDevice);
     cudaMemcpy(d_targeta, targeta.data(), targeta_mem, cudaMemcpyHostToDevice);
     cudaMemcpy(d_targetb, targetb.data(), targetb_mem, cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_paritya, paritya.data(), paritya_mem, cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_parityb, parityb.data(), parityb_mem, cudaMemcpyHostToDevice);
 
     cudaMemcpy(d_paritya, paritya_complex.data(), paritya_mem, cudaMemcpyHostToDevice);
     cudaMemcpy(d_parityb, parityb_complex.data(), parityb_mem, cudaMemcpyHostToDevice);
-
-    timer_.acc_record("cuda memcpy in nbody1_acc");
-    timer_.reset();
-
-    // cudaMemcpy(d_Cin,  Cin.read_h_data().data(),  tensor_mem, cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_Cout, Cout.read_h_data().data(), tensor_mem, cudaMemcpyHostToDevice);
-
-    // my_timer.record("cudamemcpy");
-    // my_timer.reset();
 
     cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
 
@@ -1320,38 +1282,18 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
         targetb.size(),
         tensor_mem);
 
-
-    timer_.acc_record("calling gpu function");
-    timer_.reset();
-    // my_timer.record("gpu function");
-    // my_timer.reset();
-
-
-    // cudaMemcpy(Cout.data().data(), d_Cout, tensor_mem, cudaMemcpyDeviceToHost);
-
-
     cudaFree(d_sourcea);
     cudaFree(d_sourceb);
     cudaFree(d_targeta);
     cudaFree(d_targetb);
     cudaFree(d_paritya);
     cudaFree(d_parityb);
-    // cudaFree(d_Cin);
-    // cudaFree(d_Cout);
-
-    timer_.acc_record("cudafree");
-    timer_.reset();
-
 
     cudaError_t error = cudaGetLastError();
     if (error != cudaSuccess) {
         std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
         throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
     }
-
-    // my_timer.record("cuda free and transfer");
-    // std::cout << my_timer.str_table() << std::endl;
-
 }
 
 
@@ -1369,19 +1311,10 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
         throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
     }
 
-    local_timer my_timer = local_timer();
-    timer_.reset();
-
-
-    /// In the gpu version the call to this (done in the for loop in apply_sqop)
-
     std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ualfamap = graph_.make_mapping_each(
         true,
         daga,
         undaga);
-
-    timer_.acc_record("first 'make_mapping_each' in apply_individual_nbody_accumulate");
-    timer_.reset();
 
     if (std::get<0>(ualfamap) == 0) {
         return;
@@ -1392,14 +1325,10 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
         dagb,
         undagb);
 
-    timer_.acc_record("second 'make_mapping_each' in apply_individual_nbody_accumulate");
-    timer_.reset();
-
     if (std::get<0>(ubetamap) == 0) {
         return;
     }
 
-    // dont need this
     std::vector<int> sourcea(std::get<0>(ualfamap));
     std::vector<int> targeta(std::get<0>(ualfamap));
     std::vector<int> paritya(std::get<0>(ualfamap));
@@ -1407,21 +1336,11 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
     std::vector<int> targetb(std::get<0>(ubetamap));
     std::vector<int> parityb(std::get<0>(ubetamap));
 
-    timer_.acc_record("a lot of initialization in apply_individual_nbody_accumulate");
-    timer_.reset();
-
-    /// NICK: All this can be done in the make_mapping_each fucntion.
-    /// Maybe try like a make_abbrev_mapping_each
-
-    /// NICK: Might be slow, check this out...
     for (int i = 0; i < std::get<0>(ualfamap); i++) {
         sourcea[i] = std::get<1>(ualfamap)[i];
         targeta[i] = graph_.get_aind_for_str(std::get<2>(ualfamap)[i]);
         paritya[i] = 1.0 - 2.0 * std::get<3>(ualfamap)[i];
     }
-
-    timer_.acc_record("first for loop in apply_individual_nbody_accumulate");
-    timer_.reset();
 
     for (int i = 0; i < std::get<0>(ubetamap); i++) {
         sourceb[i] = std::get<1>(ubetamap)[i];
@@ -1429,10 +1348,6 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
         parityb[i] = 1.0 - 2.0 * std::get<3>(ubetamap)[i];
     }
 
-    timer_.acc_record("second for loop in apply_individual_nbody_accumulate");
-    timer_.reset();
-    // std::cout << my_timer.str_table() << std::endl;
-    // this is where the if statement goes
     apply_individual_nbody1_accumulate(
         coeff, 
         Cin,
@@ -1473,9 +1388,6 @@ void FCIComputerGPU::apply_individual_sqop_term(
     std::vector<int> creb;
     std::vector<int> annb;
 
-    local_timer my_timer = local_timer();
-    timer_.reset();
-
     for(size_t i = 0; i < std::get<1>(term).size(); i++){
         if(std::get<1>(term)[i]%2 == 0){
             crea.push_back(std::floor(std::get<1>(term)[i] / 2));
@@ -1484,9 +1396,6 @@ void FCIComputerGPU::apply_individual_sqop_term(
         }
     }
 
-    timer_.acc_record("first loop in apply_individual_sqop_term");
-    timer_.reset();
-
     for(size_t i = 0; i < std::get<2>(term).size(); i++){
         if(std::get<2>(term)[i]%2 == 0){
             anna.push_back(std::floor(std::get<2>(term)[i] / 2));
@@ -1494,9 +1403,6 @@ void FCIComputerGPU::apply_individual_sqop_term(
             annb.push_back(std::floor(std::get<2>(term)[i] / 2));
         }
     }
-
-    timer_.acc_record("second loop in apply_individual_sqop_term");
-    timer_.reset();
 
     if (std::get<1>(term).size() != std::get<2>(term).size()) {
         throw std::invalid_argument("Each term must have same number of anihilators and creators");
@@ -1507,25 +1413,16 @@ void FCIComputerGPU::apply_individual_sqop_term(
     ops1.insert(ops1.end(), ops2.begin(), ops2.end());
 
     int nswaps = parity_sort(ops1);
-    timer_.acc_record("some parity things");
-    timer_.reset();
-    // std::cout << my_timer.str_table() << std::endl;
 
     apply_individual_nbody_accumulate(
         pow(-1, nswaps) * std::get<0>(term),
         Cin,
         Cout,
-        crea, // same as dag_a
-        anna, // same as undag_a 
-        creb, // same as dag_b
-        annb); // same as undag b
+        crea, 
+        anna, 
+        creb, 
+        annb); 
 }
-
-// do I need to make the C_ variable of this class a TensorGPU object
-// If so, it creates a ton of errors
-// Should I just create a new tensorGPU from the normal C_?
-
-
 
 
 /// allocate the 6 pointers and 2 counts here
@@ -1533,99 +1430,72 @@ void FCIComputerGPU::apply_individual_sqop_term(
 /// NICK: Check out  accumulation, don't need to do it this way..
 void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
 
-
-    // gpu_error()
-    // assures C_ is on the gpu
     C_.gpu_error();
     TensorGPU Cin(C_.shape(), "Cin", true);
     Cin.copy_in_gpu(C_);
 
-    // array length of alfa and beta strings
-    
-    local_timer my_timer = local_timer();
-    timer_.reset();
-    
-    // cudaMemcpy(Cin.d_data(), C_.d_data(), Cin.size() * sizeof(cuDoubleComplex))
-
     C_.zero_gpu();
-
-    // cuDoubleComplex* d_Cin_;
-    // int d_Cin_mem = Cin.size() * sizeof(cuDoubleComplex);
-    // cudaMalloc(&d_Cin_, d_Cin_mem);
-    // cudaMemcpy(d_Cin_, Cin.read_h_data().data(), d_Cin_mem, cudaMemcpyHostToDevice);
-
-    // cuDoubleComplex* d_C_;
-    // int d_C_mem = C_.size() * sizeof(cuDoubleComplex);
-    // cudaMalloc(&d_C_, d_C_mem);
-    // cudaMemcpy(d_C_, C_.read_h_data().data(), d_C_mem, cudaMemcpyHostToDevice);
-
-
-    timer_.acc_record("making tensor things");
-    timer_.reset();
 
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
-
-
-
-        apply_individual_sqop_term(
-            term,
-            Cin,
-            C_);
+            apply_individual_sqop_term(
+                term,
+                Cin,
+                C_);
         }
     }
-
-    // later you have a function C_.get_dptr() that returs the device pointer
-
-    timer_.acc_record("first for loop in apply_sqop");
-    std::cout << timer_.acc_str_table() << std::endl;
-    // std::cout << my_timer.str_table() << std::endl;
 
 }
 
 void FCIComputerGPU::apply_sqop_gpu(const SQOperator& sqop){
 
-    // Allocating the 6 device pointers and 
-    std::vector<int>* d_sourcea;
-    std::vector<int>* d_sourceb;
-    std::vector<int>* d_targeta;
-    std::vector<int>* d_targetb;
-    std::vector<int>* d_paritya;
-    std::vector<int>* d_parityb;
-
-    /*
+    // Allocating the 6 device pointers
+    std::vector<int> h_sourcea(graph_gpu_.get_lena());
+    std::vector<int> h_sourceb(graph_gpu_.get_lenb());
+    std::vector<int> h_targeta(graph_gpu_.get_lena());
+    std::vector<int> h_targetb(graph_gpu_.get_lenb());
+    std::vector<int> h_paritya(graph_gpu_.get_lena());
+    std::vector<int> h_parityb(graph_gpu_.get_lenb());
 
     C_.gpu_error();
     TensorGPU Cin(C_.shape(), "Cin", true);
     Cin.copy_in_gpu(C_);
-
     C_.zero_gpu();
 
-    */
+    int* d_sourcea;
+    int* d_sourceb;
+    int* d_targeta;
+    int* d_targetb;
 
-   TensorGPU Cin(C_.shape(), "Cin", true);
+    cuDoubleComplex* d_paritya;
+    cuDoubleComplex* d_parityb; 
+
+    int sourcea_mem = h_sourcea.size() * sizeof(int);
+    int sourceb_mem = h_sourceb.size() * sizeof(int);
+    int targetb_mem = h_targetb.size() * sizeof(int);
+    int targeta_mem = h_targeta.size() * sizeof(int);
+    int paritya_mem = h_paritya.size() * sizeof(cuDoubleComplex);
+    int parityb_mem = h_parityb.size() * sizeof(cuDoubleComplex);
+
+    int tensor_mem = Cin.size() * sizeof(cuDoubleComplex);
+
+    cudaMalloc(&d_sourcea, sourcea_mem);    
+    cudaMalloc(&d_sourceb, sourceb_mem);
+    cudaMalloc(&d_targeta, targeta_mem);
+    cudaMalloc(&d_targetb, targetb_mem);
+    cudaMalloc(&d_paritya, paritya_mem);
+    cudaMalloc(&d_parityb, parityb_mem);
 
    for (const auto& term : sqop.terms()) {
        if (std::abs(std::get<0>(term)) > compute_threshold_) {
 
-
-
            bool alpha;
-           std::vector<int>* d_daga;
-           std::vector<int>* d_undaga;
-           std::vector<int>* d_dagb;
-           std::vector<int>* d_undagb;
 
            std::vector<int> h_daga;
            std::vector<int> h_undaga;
            std::vector<int> h_dagb;
            std::vector<int> h_undagb;
 
-
-           // "Just use memcpy"?
-
-
-            // making the daga and dagb array stuff for each term
             for (size_t i = 0; i < std::get<1>(term).size(); i++) {
 
                 if (std::get<1>(term)[i] % 2 == 0) {
@@ -1636,7 +1506,6 @@ void FCIComputerGPU::apply_sqop_gpu(const SQOperator& sqop){
 
             }
 
-            // making the undaga and undagb array stuff for each term
             for (size_t i = 0; i < std::get<2>(term).size(); i++) {
 
                 if (std::get<2>(term)[i] % 2 == 0) {
@@ -1652,26 +1521,96 @@ void FCIComputerGPU::apply_sqop_gpu(const SQOperator& sqop){
                 throw std::invalid_argument("Each term must have same number of anihilators and creators");
             }    
 
-            // I could not figure out what this is or what it is doing
             std::vector<size_t> ops1(std::get<1>(term));
             std::vector<size_t> ops2(std::get<2>(term));
             ops1.insert(ops1.end(), ops2.begin(), ops2.end());
             int nswaps = parity_sort(ops1);            
 
-            // confused on what to do for cin and c_
-            apply_individual_nbody_accumulate_gpu(
-                pow(-1, nswaps) * std::get<0>(term),
-                Cin,
-                C_,
+            int counta;
+            int countb;
+
+            graph_gpu_.make_mapping_each_gpu(
+                true, 
                 h_daga,
                 h_undaga,
-                h_dagb,
-                h_undagb
+                graph_gpu_.get_aind(),
+                h_sourcea,
+                h_targeta,
+                h_paritya,
+                counta
             );
 
+
+            graph_gpu_.make_mapping_each_gpu(
+                false,
+                h_dagb,
+                h_undagb,
+                graph_gpu_.get_bind(),
+                h_sourceb,
+                h_targetb,
+                h_parityb,
+                countb
+            );
+
+            if ((h_targetb.size() != h_sourceb.size()) or (h_sourceb.size() != h_parityb.size())) {
+                throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
+            }
+
+            if ((h_targeta.size() != h_sourcea.size()) or (h_sourcea.size() != h_paritya.size())) {
+                throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
+            }
+
+            std::vector<cuDoubleComplex> paritya_complex(h_paritya.size());
+            std::vector<cuDoubleComplex> parityb_complex(h_parityb.size());
+
+            for (size_t i = 0; i < h_paritya.size(); ++i) {
+                paritya_complex[i] = make_cuDoubleComplex(h_paritya[i], 0.0);
+            }
+
+            for (size_t i = 0; i < h_parityb.size(); ++i) {
+                parityb_complex[i] = make_cuDoubleComplex(h_parityb[i], 0.0);
+            }
+
+            cudaMemcpy(d_sourcea, h_sourcea.data(), sourcea_mem, cudaMemcpyHostToDevice);
+            cudaMemcpy(d_sourceb, h_sourceb.data(), sourceb_mem, cudaMemcpyHostToDevice);
+            cudaMemcpy(d_targeta, h_targeta.data(), targeta_mem, cudaMemcpyHostToDevice);
+            cudaMemcpy(d_targetb, h_targetb.data(), targetb_mem, cudaMemcpyHostToDevice);
+            cudaMemcpy(d_paritya, paritya_complex.data(), paritya_mem, cudaMemcpyHostToDevice);
+            cudaMemcpy(d_parityb, parityb_complex.data(), parityb_mem, cudaMemcpyHostToDevice);
+
+            std::complex<double> coeff = pow(-1, nswaps) * std::get<0>(term);
+
+            cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
+
+            apply_individual_nbody1_accumulate_wrapper(
+                cu_coeff, 
+                Cin.read_d_data(), 
+                C_.d_data(), 
+                d_sourcea,
+                d_targeta,
+                d_paritya,
+                d_sourceb,
+                d_targetb,
+                d_parityb,
+                nbeta_strs_,
+                counta,
+                countb,
+                tensor_mem);
+
+            cudaError_t error = cudaGetLastError();
+            if (error != cudaSuccess) {
+                std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
+                throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
+            }
        }
    }
 
+    cudaFree(d_sourcea);
+    cudaFree(d_sourceb);
+    cudaFree(d_targeta);
+    cudaFree(d_targetb);
+    cudaFree(d_paritya);
+    cudaFree(d_parityb);
 
 }
 

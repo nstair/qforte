@@ -175,6 +175,7 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraphGP
     const std::vector<int>& dag, 
     const std::vector<int>& undag) 
 {
+    // 1417 - 1430 PUT THAT STUFF IN HERE
     std::vector<uint64_t> strings;
     int length;
     
@@ -231,6 +232,73 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraphGP
                     source,
                     target,
                     parity);
+}
+
+void FCIGraphGPU::make_mapping_each_gpu(
+    const bool alpha,
+    const std::vector<int>& d_dag,
+    const std::vector<int>& d_undag,
+    const std::unordered_map<uint64_t, size_t>& d_ind,
+    std::vector<int>& d_source,
+    std::vector<int>& d_target,
+    std::vector<int>& d_parity,
+    int& count_ref
+)
+{
+
+    std::vector<uint64_t> strings;
+    int length;
+    
+    if (alpha) {
+        strings = get_astr();
+        length = lena_;
+    } else {
+        strings = get_bstr();
+        length = lenb_;
+    }
+
+    uint64_t dag_mask = 0;
+    uint64_t undag_mask = 0;
+    int count = 0;
+
+
+    for (uint64_t i : d_dag) {
+        if (std::find(d_undag.begin(), d_undag.end(), i) == d_undag.end()) {
+            dag_mask = set_bit(dag_mask, i);
+        }
+    }
+
+    for (uint64_t i : d_undag) { undag_mask = set_bit(undag_mask, i); }
+
+    for (uint64_t index = 0; index < length; index++) {
+        uint64_t current = strings[index];
+        bool check = ((current & dag_mask) == 0) && ((current & undag_mask ^ undag_mask) == 0);
+
+        if (check) {
+            uint64_t tmp = current;
+            uint64_t parity_value = 0;
+            for (size_t i = d_undag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, d_undag[i - 1]);
+                current = unset_bit(current, d_undag[i - 1]);
+            }
+
+            for (size_t i = d_dag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, d_dag[i - 1]);
+                current = set_bit(current, d_dag[i - 1]);
+            }
+
+            d_source[count] = static_cast<int>(index);
+            d_target[count] = d_ind.at(static_cast<int>(current));
+            d_parity[count] = 1.0 - 2.0 * static_cast<int>(parity_value % 2);
+
+            count++;
+
+        }
+    }
+
+
+    count_ref = count;
+
 }
 
 /// NICK: 1. Consider a faster blas veriosn, 2. consider using qubit basis, 3. rename (too long)

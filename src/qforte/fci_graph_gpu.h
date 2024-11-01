@@ -58,6 +58,17 @@ public:
         const std::vector<int>& dag, 
         const std::vector<int>& undag); 
 
+    void make_mapping_each_gpu(
+        const bool alpha,
+        const std::vector<int>& d_daga,
+        const std::vector<int>& d_undaga,
+        const std::unordered_map<uint64_t, size_t>& d_ind,
+        std::vector<int>& d_sourcea,
+        std::vector<int>& d_targeta,
+        std::vector<int>& d_paritya,
+        int& count_ref
+    );
+
     /// ==> Utility Functions for Bit Math (may need to move) <== ///
 
     /// Combinutorics helper funciton for binomial coefficients

@@ -83,7 +83,7 @@ void TensorGPU::to_gpu()
 
     on_gpu_ = 1;
 
-    cudaError_t error_status = cudaMemcpy(d_data_, h_data_.data(), size_ * sizeof(std::complex<double>), cudaMemcpyHostToDevice);
+    cudaError_t error_status = cudaMemcpy(d_data_, h_data_.data(), size_ * sizeof(cuDoubleComplex), cudaMemcpyHostToDevice);
 
     if (error_status != cudaSuccess) {
         std::cerr << "Failed to transfer data to GPU. Error msg: " << cudaGetErrorString(error_status) << std::endl;
@@ -514,7 +514,7 @@ void TensorGPU::copy_in_from_tensor(const Tensor& other)
 {
     cpu_error();
     shape_error(other.shape());
-    std::memcpy(h_data_.data(), other.read_data().data(), sizeof(std::complex<double>)*size_);    
+    std::memcpy(h_data_.data(), other.read_data().data(), sizeof(cuDoubleComplex)*size_);    
 }
 
 void TensorGPU::subtract(const TensorGPU& other){
