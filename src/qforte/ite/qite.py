@@ -124,6 +124,7 @@ class QITE(Algorithm):
     def run(self,
             beta=1.0,
             db=0.2,
+            dt=0.01,
             use_exact_evolution=False,
             expansion_type='SD',
             evolve_dfham=False,
@@ -133,8 +134,10 @@ class QITE(Algorithm):
             second_order=False,
             selected_pool=False,
             t_thresh=1.0e-6,
+            cumulative_t=False,
             b_thresh=1.0e-6,
             x_thresh=1.0e-10,
+            physical_r = False,
             do_lanczos=False,
             lanczos_gap=2,
             realistic_lanczos=True,
@@ -143,6 +146,7 @@ class QITE(Algorithm):
 
         self._beta = beta
         self._db = db
+        self._dt = dt
         self._use_exact_evolution = use_exact_evolution
         self._nbeta = int(beta/db)+1
         self._expansion_type = expansion_type
@@ -153,10 +157,12 @@ class QITE(Algorithm):
         self._second_order = second_order
         self._selected_pool = selected_pool
         self._t_thresh = t_thresh
+        self._cumulative_t = cumulative_t
         self._total_phase = 1.0 + 0.0j
         self._Uqite = qf.Circuit()
         self._b_thresh = b_thresh
         self._x_thresh = x_thresh
+        self._physical_r = physical_r
 
         self._n_classical_params = 0
         self._n_cnot = self._Uprep.get_num_cnots()
@@ -823,16 +829,37 @@ class QITE(Algorithm):
                         1,
                         0)
 
+                    if(self._physical_r):
+                        if(self._apply_ham_as_tensor):
+                            qc_res.evolve_tensor_taylor(
+                                self._nuclear_repulsion_energy, 
+                                self._mo_oeis, 
+                                self._mo_teis, 
+                                self._mo_teis_einsum, 
+                                self._norb,
+                                self._dt,
+                                1.0e-15,
+                                30,
+                                False)
+                        else:
+                            qc_res.evolve_op_taylor(
+                                self._sq_ham,
+                                self._dt,
+                                1.0e-15,
+                                30,
+                                False)
+
                     # unphysical for QC!
-                    if(self._apply_ham_as_tensor):
-                        qc_res.apply_tensor_spat_012bdy(
-                            self._nuclear_repulsion_energy, 
-                            self._mo_oeis, 
-                            self._mo_teis, 
-                            self._mo_teis_einsum, 
-                            self._norb)
                     else:
-                        qc_res.apply_sqop(self._sq_ham)
+                        if(self._apply_ham_as_tensor):
+                            qc_res.apply_tensor_spat_012bdy(
+                                self._nuclear_repulsion_energy, 
+                                self._mo_oeis, 
+                                self._mo_teis, 
+                                self._mo_teis_einsum, 
+                                self._norb)
+                        else:
+                            qc_res.apply_sqop(self._sq_ham)
 
                     qc_res.evolve_pool_trotter_basic(
                         self._total_pool,
@@ -848,9 +875,14 @@ class QITE(Algorithm):
                         state_idx = self._pool_idx_to_state_idx[i]
                         self._R_sq_lst[i] += res_coeffs.get([state_idx[0],state_idx[1]])**2
                         self._idx_lst[i] = i
+
                         if(i>0):
-                            if(np.real(res_coeffs.get([state_idx[0],state_idx[1]])**2) > self._t_thresh):
-                                self._sig.add_term(1.0, self._full_pool.terms()[i][1])
+                            if(self._cumulative_t):
+                                if(self._R_sq_lst[i] > self._t_thresh):
+                                    self._sig.add_term(1.0, self._full_pool.terms()[i][1])
+                            else:
+                                if(np.real(res_coeffs.get([state_idx[0],state_idx[1]])**2) > self._t_thresh):
+                                    self._sig.add_term(1.0, self._full_pool.terms()[i][1])
 
                     # for i in range(res_coeffs.shape()[0]):
                     #     for j in range(res_coeffs.shape()[1]):
