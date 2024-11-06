@@ -58,15 +58,18 @@ alg = QITE(mol,
         print_summary_file=0)
 
 alg.run(beta=3.4, 
-        db = 0.1, 
-        sparseSb=0, 
+        db=0.1,
+        dt=0.1,
+        sparseSb=0,
         expansion_type='All', 
-        low_memorySb=0, 
+        low_memorySb=0,
         second_order=1, 
         print_pool=1, 
         evolve_dfham=0, 
         random_state=0, 
-        selected_pool=1, 
+        selected_pool=1,
+        physical_r=1,
+        cumulative_t=0,
         t_thresh=1.0e-4,)
 
 Egs_FCI = alg.get_gs_energy()
