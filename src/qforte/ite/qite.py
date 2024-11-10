@@ -360,6 +360,9 @@ class QITE(Algorithm):
                 self._idx_lst = np.zeros(self._NI)
                 self._R_sq_lst = np.zeros(self._NI)
 
+                self._R = [None] * self._NI
+                # self._idx = np.zeros(self._NI)
+
             else:
                 self._sig = qf.SQOpPool() # changed this from QubitOpPool
                 self._sig.set_orb_spaces(self._ref) # is this ok for starting from a random state?
@@ -870,17 +873,31 @@ class QITE(Algorithm):
                     # print(res_coeffs)
 
                     self._sig = qf.SQOpPool()
-                    
-                    for i in range(len(self._full_pool.terms())):
-                        state_idx = self._pool_idx_to_state_idx[i]
-                        self._R_sq_lst[i] += res_coeffs.get([state_idx[0],state_idx[1]])**2
-                        self._idx_lst[i] = i
 
-                        if(i>0):
-                            if(self._cumulative_t):
-                                if(self._R_sq_lst[i] > self._t_thresh):
-                                    self._sig.add_term(1.0, self._full_pool.terms()[i][1])
-                            else:
+                    if(self._cumulative_t):
+                        for i in range(len(self._full_pool.terms())):
+                            state_idx = self._pool_idx_to_state_idx[i]
+                            self._R[i] = (np.real(res_coeffs.get([state_idx[0],state_idx[1]])**2), i)
+
+                        R_sorted = sorted(self._R, key=lambda x: x[0])
+                        R_magnitude = 0.0
+                        self._sig_ind = []
+
+                        for i in range(len(R_sorted)):
+                            R_magnitude += R_sorted[i][0]
+                            j = R_sorted[i][1]
+
+                            if(R_magnitude>self._t_thresh):
+                                self._sig_ind.append(j)
+                                self._sig.add_term(1.0, self._full_pool.terms()[j][1])
+
+                    else:
+                        for i in range(len(self._full_pool.terms())):
+                            state_idx = self._pool_idx_to_state_idx[i]
+                            self._R_sq_lst[i] += res_coeffs.get([state_idx[0],state_idx[1]])**2
+                            self._idx_lst[i] = i
+
+                            if(i>0):
                                 if(np.real(res_coeffs.get([state_idx[0],state_idx[1]])**2) > self._t_thresh):
                                     self._sig.add_term(1.0, self._full_pool.terms()[i][1])
 
