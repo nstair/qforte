@@ -877,7 +877,11 @@ class QITE(Algorithm):
                     if(self._cumulative_t):
                         for i in range(len(self._full_pool.terms())):
                             state_idx = self._pool_idx_to_state_idx[i]
-                            self._R[i] = (np.real(res_coeffs.get([state_idx[0],state_idx[1]])**2), i)
+
+                            if(self._physical_r):
+                                self._R[i] = (np.real(res_coeffs.get([state_idx[0],state_idx[1]])*np.conj(res_coeffs.get([state_idx[0],state_idx[1]])))/self._dt**2, i)
+                            else:
+                                self._R[i] = (np.real(res_coeffs.get([state_idx[0],state_idx[1]])*np.conj(res_coeffs.get([state_idx[0],state_idx[1]]))), i)
 
                         R_sorted = sorted(self._R, key=lambda x: x[0])
                         R_magnitude = 0.0

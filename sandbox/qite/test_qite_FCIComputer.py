@@ -11,8 +11,8 @@ geom = [('H', (0., 0., 0.)),
         ('H', (0., 0., 1.00)),
         ('H', (0., 0., 2.00)), 
         ('H', (0., 0., 3.00)),
-        ('H', (0., 0., 4.00)),
-        ('H', (0., 0., 5.00)),
+        # ('H', (0., 0., 4.00)),
+        # ('H', (0., 0., 5.00)),
         # ('H', (0., 0., 3.00)), 
         ]
         # ('H', (0., 0., 3.50))]
@@ -56,11 +56,12 @@ alg = QITE(mol,
         reference=mol.hf_reference, 
         computer_type='fci', 
         verbose=0, 
-        print_summary_file=0)
+        print_summary_file=0,
+        apply_ham_as_tensor=True)
 
-alg.run(beta=3.4, 
+alg.run(beta=5.0, 
         db=0.1,
-        dt=0.1,
+        dt=0.001,
         sparseSb=0,
         expansion_type='All', 
         low_memorySb=0,
@@ -69,9 +70,9 @@ alg.run(beta=3.4,
         evolve_dfham=0, 
         random_state=0, 
         selected_pool=1,
-        physical_r=1,
-        cumulative_t=0,
-        t_thresh=1.0e-4,)
+        physical_r=0,
+        cumulative_t=1,
+        t_thresh=1e-3)
 
 Egs_FCI = alg.get_gs_energy()
 
