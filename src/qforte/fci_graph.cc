@@ -238,22 +238,35 @@ std::vector<uint64_t> FCIGraph::get_lex_bitstrings(int nele, int norb) {
         
     std::vector<uint64_t> bitstrings;
 
+    // vector of [0,1,2,3,...]
     std::vector<uint64_t> indices(norb);
     for (int i = 0; i < norb; ++i)
         indices[i] = i;
 
+    // vector that is a bitstring of zeros [0,0,0,....]
     std::vector<bool> bitstring(norb, false);
+    
+    // make hf bitsring [1,1,1,1,0,0,....]
+    // esentially state is a bitstring (as a uint_64 for all possible permutations)
     for (int i = 0; i < nele; ++i)
         bitstring[i] = true;
 
     do {
         uint64_t state = 0;
+        // loop over orbital states in bitstring, if there is a particle in that postiong
+        // modify state
         for (int i = 0; i < norb; ++i) {
             if (bitstring[i]) { state |= (static_cast<uint64_t>(1) << i);}
         }
+        
         bitstrings.push_back(state);
+    // use std::prev_permutation to rearrange bitstring into the previous lexicographically ordered permutation.
+    /// NICK: std::prev_permutation rearranges the elements in the range [first, last) into the previous lexicographical permutation.
+    // It returns true if such a permutation exists (i.e., the sequence was not already in the smallest possible order).
+    // It returns false when the sequence reaches its first permutation, and no further previous permutation exists.
     } while (std::prev_permutation(bitstring.begin(), bitstring.end()));
 
+    // sort the bitstrings 
     std::sort(bitstrings.begin(), bitstrings.end());
 
     return bitstrings;
