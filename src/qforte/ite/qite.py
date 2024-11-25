@@ -12,6 +12,7 @@ from qforte.utils.transforms import (get_jw_organizer,
 from qforte.utils.state_prep import *
 from qforte.utils.trotterization import trotterize
 from qforte.helper.printing import *
+from qforte.helper.df_ham_helper import *
 import copy
 import numpy as np
 from scipy.linalg import lstsq
@@ -123,30 +124,45 @@ class QITE(Algorithm):
     def run(self,
             beta=1.0,
             db=0.2,
+            dt=0.01,
             use_exact_evolution=False,
             expansion_type='SD',
+            evolve_dfham=False,
+            random_state=False,
             sparseSb=True,
             low_memorySb=False,
             second_order=False,
+            selected_pool=False,
+            t_thresh=1.0e-6,
+            cumulative_t=False,
             b_thresh=1.0e-6,
             x_thresh=1.0e-10,
+            physical_r = False,
             do_lanczos=False,
             lanczos_gap=2,
             realistic_lanczos=True,
-            fname=None):
+            fname=None,
+            print_pool=False):
 
         self._beta = beta
         self._db = db
+        self._dt = dt
         self._use_exact_evolution = use_exact_evolution
         self._nbeta = int(beta/db)+1
         self._expansion_type = expansion_type
+        self._evolve_dfham = evolve_dfham
+        self._random_state = random_state
         self._sparseSb = sparseSb
         self._low_memorySb = low_memorySb
         self._second_order = second_order
+        self._selected_pool = selected_pool
+        self._t_thresh = t_thresh
+        self._cumulative_t = cumulative_t
         self._total_phase = 1.0 + 0.0j
         self._Uqite = qf.Circuit()
         self._b_thresh = b_thresh
         self._x_thresh = x_thresh
+        self._physical_r = physical_r
 
         self._n_classical_params = 0
         self._n_cnot = self._Uprep.get_num_cnots()
@@ -156,30 +172,76 @@ class QITE(Algorithm):
         self._lanczos_gap = lanczos_gap
         self._realistic_lanczos = realistic_lanczos
         self._fname = fname
+        self._print_pool = print_pool
 
         if(self._fname is None):
             if(self._use_exact_evolution):
                 self._fname = f'beta_{self._beta}_db_{self._db}_EXACT_EVOLUTION'
             else:
-                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}'
+                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_selected_pool_{self._selected_pool}_t_{self._t_thresh}'
 
         self._sz = 0
 
         if(self._computer_type=='fci'):
             qc_ref = qf.FCIComputer(self._nel, self._sz, self._norb)
-            qc_ref.hartree_fock()
 
-            if(self._apply_ham_as_tensor):
+            if(self._random_state):
+                comp_shape = qc_ref.get_state_deep().shape()
+                rand_arr = np.random.rand(*comp_shape)
+                norm = np.linalg.norm(rand_arr)
+                normalized_coeffs = rand_arr / norm
 
-                self._Ekb = [np.real(qc_ref.get_exp_val_tensor(
-                        self._nuclear_repulsion_energy, 
-                        self._mo_oeis, 
-                        self._mo_teis, 
-                        self._mo_teis_einsum, 
-                        self._norb))]
+                # nc = normalized_coeffs.tolist()
+                self._rand_tensor = qf.Tensor(shape=comp_shape, name='random')
+                for i in range(comp_shape[0]):
+                    for j in range(comp_shape[1]):
+                        self._rand_tensor.set([i,j], normalized_coeffs[i,j])
+
+                qc_ref.set_state(self._rand_tensor)
 
             else:
-                self._Ekb = [np.real(qc_ref.get_exp_val(self._sq_ham))]
+                qc_ref.hartree_fock()
+
+            if(self._evolve_dfham):
+                dfh = self._sys.df_ham
+                time_scale_first_leaf(dfh, self._db)
+                v_lst = dfh.get_scaled_density_density_matrices()
+                g_lst = dfh.get_trotter_basis_change_matrices()
+
+                self._ga0 = qf.SQOpPool()
+                self._ga0.append_givens_ops_sector(
+                    g_lst[0], 
+                    1.0/self._db,
+                    True)
+
+                self._gb0 = qf.SQOpPool()
+                self._gb0.append_givens_ops_sector(
+                    g_lst[0], 
+                    1.0/self._db,
+                    False)
+
+                self._d0 = qf.SQOpPool()
+                self._d0.append_diagonal_ops_all(
+                    v_lst[0], 
+                    1.0)
+
+                exp1 = qc_ref.get_state_deep()
+                qc_ref.apply_sqop_pool(self._d0)
+
+                self._Ekb = [np.real(exp1.vector_dot(qc_ref.get_state_deep()))]
+            
+            else:
+                if(self._apply_ham_as_tensor):
+
+                    self._Ekb = [np.real(qc_ref.get_exp_val_tensor(
+                            self._nuclear_repulsion_energy, 
+                            self._mo_oeis, 
+                            self._mo_teis, 
+                            self._mo_teis_einsum, 
+                            self._norb))]
+
+                else:
+                    self._Ekb = [np.real(qc_ref.get_exp_val(self._sq_ham))]
             
         if(self._computer_type=='fock'):
             qc_ref = qf.Computer(self._nqb)
@@ -264,16 +326,58 @@ class QITE(Algorithm):
         print('\n==> Building expansion pool <==')
 
         if(self._computer_type=='fci'):
-            self._sig = qf.SQOpPool() # changed this from QubitOpPool
-            self._sig.set_orb_spaces(self._ref)
+            if(self._selected_pool):
+                self._full_pool = qf.SQOpPool()
+                self._full_pool.set_orb_spaces(self._ref)
 
-            if(self._expansion_type in {'SD', 'GSD', 'SDT', 'SDTQ', 'SDTQP', 'SDTQPH'}):
-                self._sig.fill_pool(self._expansion_type) # This automatically filters non-particle conserving terms
+                self._total_pool = qf.SQOpPool()
+
+                if(self._expansion_type in {'All'}):
+                    self._full_pool.fill_pool(self._expansion_type) # This automatically filters non-particle conserving terms
+
+                else:
+                    raise ValueError('Selected QITE only implemented for full expansion pool.')
+
+                self._pool_idx_to_state_idx = {}
+                self._state_idx_to_pool_idx = {}
+
+                my_fci_comp = qforte.FCIComputer(
+                                self._nel, 
+                                self._sz, 
+                                self._norb)
+
+                for mu, term in enumerate(self._full_pool.terms()):
+                    my_fci_comp.hartree_fock()
+                    my_fci_comp.apply_sqop(term[1])
+                    ij = my_fci_comp.get_nonzero_idxs()
+                    # print(tuple(ij[0]))
+
+                    self._pool_idx_to_state_idx[mu] = tuple(ij[0])
+                    self._state_idx_to_pool_idx[tuple(ij[0])] = mu
+
+                self._NI = len(self._full_pool.terms())
+                # print(f'# of pool terms: {self._NI}')
+                self._idx_lst = np.zeros(self._NI)
+                self._R_sq_lst = np.zeros(self._NI)
+
+                self._R = [None] * self._NI
+                # self._idx = np.zeros(self._NI)
 
             else:
-                raise ValueError('Invalid expansion type specified.')
+                self._sig = qf.SQOpPool() # changed this from QubitOpPool
+                self._sig.set_orb_spaces(self._ref) # is this ok for starting from a random state?
 
-            self._NI = len(self._sig.terms())
+                if(self._expansion_type in {'SD', 'GSD', 'SDT', 'SDTQ', 'SDTQP', 'SDTQPH', 'All'}):
+                    self._sig.fill_pool(self._expansion_type) # This automatically filters non-particle conserving terms
+
+                elif(self._expansion_type[0].isdigit() and self._expansion_type[1:] == '-UpCCGSD'):
+                    self._sig.fill_pool_kUpCCGSD(int(self._expansion_type[0]))
+
+                else:
+                    raise ValueError('Invalid expansion type specified.')
+
+                self._NI = len(self._sig.terms())
+                self._O_sq_lst = np.zeros(self._NI)
 
         if(self._computer_type=='fock'):
             self._sig = qf.QubitOpPool()
@@ -339,16 +443,20 @@ class QITE(Algorithm):
         Ipsi_qc = qf.FCIComputer(self._nel, self._sz, self._norb)
         Hpsi_qc = qf.FCIComputer(self._nel, self._sz, self._norb)
         Hpsi_qc.set_state(self._qc.get_state_deep())
- 
-        if(self._apply_ham_as_tensor):
-            Hpsi_qc.apply_tensor_spat_012bdy(
-                    self._nuclear_repulsion_energy, 
-                    self._mo_oeis, 
-                    self._mo_teis, 
-                    self._mo_teis_einsum, 
-                    self._norb)
+
+        if(self._evolve_dfham):
+            Hpsi_qc.apply_sqop_pool(self._d0)
+
         else:
-            Hpsi_qc.apply_sqop(self._sq_ham)
+            if(self._apply_ham_as_tensor):
+                Hpsi_qc.apply_tensor_spat_012bdy(
+                        self._nuclear_repulsion_energy, 
+                        self._mo_oeis, 
+                        self._mo_teis, 
+                        self._mo_teis_einsum, 
+                        self._norb)
+            else:
+                Hpsi_qc.apply_sqop(self._sq_ham)
 
         if(self._low_memorySb):
             for i in range(Idim):
@@ -508,6 +616,9 @@ class QITE(Algorithm):
         x = lstsq(S, btot)[0]
         x = np.real(x)
         x_list = x.tolist()
+
+        self._n_classical_params += len(x_list)
+
         # this is only for UCC!
         x_list_fci = [x*self._db for x in x_list]
 
@@ -542,18 +653,46 @@ class QITE(Algorithm):
             self._n_cnot += eiA_kb.get_num_cnots()
 
         if(self._computer_type=='fci'):
-            self._sig.set_coeffs(x_list_fci)
-            self._qc.evolve_pool_trotter_basic(self._sig, True, False)
+            if(self._evolve_dfham):
+                self._qc.evolve_pool_trotter(
+                    self._ga0,
+                    self._db,
+                    1,
+                    1)
 
-            if(self._apply_ham_as_tensor):
-                self._Ekb.append(np.real(self._qc.get_exp_val_tensor(
-                        self._nuclear_repulsion_energy, 
-                        self._mo_oeis, 
-                        self._mo_teis, 
-                        self._mo_teis_einsum, 
-                        self._norb)))
+                self._sig.set_coeffs(x_list_fci)
+                self._qc.evolve_pool_trotter_basic(
+                    self._sig, 
+                    1, 
+                    0)
+
+                self._qc.evolve_pool_trotter(
+                    self._gb0,
+                    self._db,
+                    1,
+                    1)
+                
+                exp1 = self._qc.get_state_deep()
+                self._qc.apply_sqop_pool(self._d0)
+                self._Ekb.append(np.real(exp1.vector_dot(self._qc.get_state_deep())))
+                self._qc.set_state(exp1)
+
             else:
-                self._Ekb.append(np.real(self._qc.get_exp_val(self._sq_ham)))
+                self._sig.set_coeffs(x_list_fci)
+                self._qc.evolve_pool_trotter_basic(
+                    self._sig, 
+                    1, 
+                    0)
+
+                if(self._apply_ham_as_tensor):
+                    self._Ekb.append(np.real(self._qc.get_exp_val_tensor(
+                            self._nuclear_repulsion_energy, 
+                            self._mo_oeis, 
+                            self._mo_teis, 
+                            self._mo_teis_einsum, 
+                            self._norb)))
+                else:
+                    self._Ekb.append(np.real(self._qc.get_exp_val(self._sq_ham)))
 
 
         if(self._verbose):
@@ -570,7 +709,11 @@ class QITE(Algorithm):
 
         if(self._computer_type=='fci'):
             self._qc = qf.FCIComputer(self._nel, self._sz, self._norb)
-            self._qc.hartree_fock()
+            
+            if(self._random_state):
+                self._qc.set_state(self._rand_tensor)
+            else:
+                self._qc.hartree_fock()
 
             if(not self._use_exact_evolution):
                 qc_size = self._qc.get_state().size()
@@ -624,6 +767,11 @@ class QITE(Algorithm):
             f.write('#-------------------------------------------------------------------------------\n')
             f.write(f'  {0.0:7.3f}    {self._Ekb[0]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}\n')
 
+            if(self._print_pool):
+                f_pool = open(f"pool_qite_{self._fname}_summary.dat", "w+", buffering=1)
+                if(not self._selected_pool):
+                    f_pool.write(f'Initial SQOP Pool:\n{self._sig}\n')
+
         for kb in range(1, self._nbeta):
             if(self._use_exact_evolution):
                 if(self._apply_ham_as_tensor):
@@ -669,6 +817,107 @@ class QITE(Algorithm):
                     self._Ekb.append(np.real(self._qc.get_exp_val(self._sq_ham)))
 
             else:
+                if(self._selected_pool):
+
+                    if(kb>=2):
+                        for term in self._sig.terms():
+                            self._total_pool.add_term(term[0], term[1])
+
+
+                    qc_res = qf.FCIComputer(self._nel, self._sz, self._norb)
+                    qc_res.hartree_fock()
+
+                    qc_res.evolve_pool_trotter_basic(
+                        self._total_pool,
+                        1,
+                        0)
+
+                    if(self._physical_r):
+                        if(self._apply_ham_as_tensor):
+                            qc_res.evolve_tensor_taylor(
+                                self._nuclear_repulsion_energy, 
+                                self._mo_oeis, 
+                                self._mo_teis, 
+                                self._mo_teis_einsum, 
+                                self._norb,
+                                self._dt,
+                                1.0e-15,
+                                30,
+                                False)
+                        else:
+                            qc_res.evolve_op_taylor(
+                                self._sq_ham,
+                                self._dt,
+                                1.0e-15,
+                                30,
+                                False)
+
+                    # unphysical for QC!
+                    else:
+                        if(self._apply_ham_as_tensor):
+                            qc_res.apply_tensor_spat_012bdy(
+                                self._nuclear_repulsion_energy, 
+                                self._mo_oeis, 
+                                self._mo_teis, 
+                                self._mo_teis_einsum, 
+                                self._norb)
+                        else:
+                            qc_res.apply_sqop(self._sq_ham)
+
+                    qc_res.evolve_pool_trotter_basic(
+                        self._total_pool,
+                        1,
+                        1)
+
+                    res_coeffs = qc_res.get_state_deep()
+                    # print(res_coeffs)
+
+                    self._sig = qf.SQOpPool()
+
+                    if(self._cumulative_t):
+                        for i in range(len(self._full_pool.terms())):
+                            state_idx = self._pool_idx_to_state_idx[i]
+
+                            if(self._physical_r):
+                                self._R[i] = (np.real(res_coeffs.get([state_idx[0],state_idx[1]])*np.conj(res_coeffs.get([state_idx[0],state_idx[1]])))/self._dt**2, i)
+                            else:
+                                self._R[i] = (np.real(res_coeffs.get([state_idx[0],state_idx[1]])*np.conj(res_coeffs.get([state_idx[0],state_idx[1]]))), i)
+
+                        R_sorted = sorted(self._R, key=lambda x: x[0])
+                        R_magnitude = 0.0
+                        self._sig_ind = []
+
+                        for i in range(len(R_sorted)):
+                            R_magnitude += R_sorted[i][0]
+                            j = R_sorted[i][1]
+
+                            if(R_magnitude>self._t_thresh):
+                                self._sig_ind.append(j)
+                                self._sig.add_term(1.0, self._full_pool.terms()[j][1])
+
+                    else:
+                        for i in range(len(self._full_pool.terms())):
+                            state_idx = self._pool_idx_to_state_idx[i]
+                            self._R_sq_lst[i] += res_coeffs.get([state_idx[0],state_idx[1]])**2
+                            self._idx_lst[i] = i
+
+                            if(i>0):
+                                if(np.real(res_coeffs.get([state_idx[0],state_idx[1]])**2) > self._t_thresh):
+                                    self._sig.add_term(1.0, self._full_pool.terms()[i][1])
+
+                    # for i in range(res_coeffs.shape()[0]):
+                    #     for j in range(res_coeffs.shape()[1]):
+
+                    #         if((i,j) == (0,0)):
+                    #             continue
+
+                    #         if(np.real(res_coeffs.get([i,j])**2) > self._t_thresh):
+                    #             state_idx = (i, j)
+                    #             mu = self._state_idx_to_pool_idx[state_idx]
+                    #             self._sig.add_term(1.0, self._full_pool.terms()[mu][1])
+
+                    self._NI = len(self._sig.terms())
+
                 self.do_qite_step()
 
                 if(self._do_lanczos):
@@ -697,10 +946,24 @@ class QITE(Algorithm):
             print(f' {kb*self._db:7.3f}    {self._Ekb[kb]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}')
             if (self._print_summary_file):
                 f.write(f'  {kb*self._db:7.3f}    {self._Ekb[kb]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}\n')
+                
+                if(self._print_pool):
+                    if(not self._selected_pool):
+                        sorted_pool = self._sig.terms()
+                        # sorted_pool = sorted(self._sig.terms(), key=lambda t: (len(t[1].terms()[0][2]), t[1].terms()[0][2]))
+                        f_pool.write(f'iteration {kb} pool coeffs: {[term[0] for term in sorted_pool]}\n')
+
         self._Egs = self._Ekb[-1]
 
         if (self._print_summary_file):
+            if(self._print_pool):
+                if(self._selected_pool):
+                    f_pool.write(f'\n{self._idx_lst}')
+                    f_pool.write(f'\n{self._R_sq_lst}')
+
             f.close()
+            if(self._print_pool):
+                f_pool.close()
 
     def print_expansion_ops(self):
         print('\nQITE expansion operators:')
