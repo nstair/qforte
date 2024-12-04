@@ -72,6 +72,8 @@ class SRQD(Algorithm):
 
         self._fname = fname
 
+        raise NotImplementedError("SRQD is currently broken")
+
         if(self._fname is None):
             self._fname = f'fix_me'
 
