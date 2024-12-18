@@ -26,7 +26,8 @@ except:
 
 try:
     import pyscf
-    from pyscf import gto, scf, mp, fci, ao2mo, symm
+    from pyscf import gto, scf, mp, fci, ao2mo, symm, mcscf
+    from pyscf.mcscf import avas
     use_pyscf = True
 except:
     use_pyscf = False
@@ -167,7 +168,8 @@ def create_psi_mol(**kwargs):
             for j in range(frozen_core):
                 frozen_core_energy += 2 * mo_teis[i, i, j, j] - mo_teis[i, j, j, i]
 
-        # Incorporate in the one-electron integrals the two-electron integrals involving both frozen and non-frozen orbitals.
+        # Incorporate in the one-electron integrals the two-electron integrals 
+        # involving both frozen and non-frozen orbitals.
         # This also ensures that the correct orbital energies will be obtained.
 
         for p in range(frozen_core, nmo - frozen_virtual):
@@ -181,6 +183,8 @@ def create_psi_mol(**kwargs):
     # Build second quantized Hamiltonian
     Hsq = qforte.SQOperator()
     Hsq.add(p4_Enuc_ref + frozen_core_energy, [], [])
+
+    # Note index is over active space orbitals if frozen occ or unocc
     for i in range(frozen_core, nmo - frozen_virtual):
         ia = (i - frozen_core)*2
         ib = (i - frozen_core)*2 + 1
@@ -217,7 +221,7 @@ def create_psi_mol(**kwargs):
         qforte_mol.hamiltonian = Hsq.jw_transform()
     else:
         Hsq.simplify()
-        qforte_mol.hamiltonian = None
+        qforte_mol.hamiltonian = qforte.QubitOperator()
 
     qforte_mol.point_group = [point_group, irreps]
     qforte_mol.orb_irreps = orb_irreps
@@ -235,6 +239,14 @@ def create_psi_mol(**kwargs):
             p4_mo_teis = copy.deepcopy(mo_teis)
 
     if kwargs['store_mo_ints']:
+
+        # Resize mo_oeis and mo_teis if there are frozen orbitals...
+        if(frozen_core or frozen_virtual):
+            # raise ValueError("This doesn't work..")
+            start = frozen_core
+            end = nmo - frozen_virtual
+            mo_oeis = copy.deepcopy(mo_oeis[start:end, start:end])
+            mo_teis = copy.deepcopy(mo_teis[start:end, start:end, start:end, start:end])
 
         # keep ordering consistant with openfermion eri tensors
         mo_teis = np.asarray(mo_teis.transpose(0, 2, 3, 1), order='C')
@@ -489,7 +501,7 @@ def create_pyscf_mol(**kwargs):
     pyscf_geom_str = ""
 
     for geom_line in mol_geometry:
-        pyscf_geom_str += f"\n{geom_line[0]}  {geom_line[1][0]}  {geom_line[1][1]}  {geom_line[1][2]}"
+        pyscf_geom_str += f"\n{geom_line[0]}  {geom_line[1][0]:+12.12f}  {geom_line[1][1]:+12.12f}  {geom_line[1][2]:+12.12f}"
 
     print(' ==> PySCF geometry <==')
     print('-------------------------')
@@ -517,17 +529,26 @@ def create_pyscf_mol(**kwargs):
     mf = scf.RHF(pyscf_mol)
 
     # Set convergence options
-    mf.conv_tol = 1e-8          # Energy convergence criterion
-    mf.conv_tol_grad = 1e-8     # Density convergence criterion
+    mf.conv_tol = 1e-8          
+    mf.conv_tol_grad = 1e-8     
 
     # Perform the SCF calculation
     pyscf_Escf = mf.kernel()
-    # pyscf_wfn = mf  # Wavefunction object analogous to Psi4's wfn
+
+    num_frozen_docc = kwargs.get('num_frozen_docc', 0)
+    num_frozen_uocc = kwargs.get('num_frozen_uocc', 0)
+
+    if (kwargs.get('use_avas', False)):
+        if(num_frozen_docc != 0 or num_frozen_uocc != 0):
+            raise ValueError(f"Presently can't use avas and freeze orbitals simultaniously.")
+        if not kwargs.get('run_fci', False):
+            raise ValueError(f"Presently must run casci to use avas.")
+        if kwargs.get('symmetry', 'c1') != 'c1':
+            raise ValueError(f"Presently use c1 symmetry with avas.")
 
     # Perform additional computations if requested
     if kwargs.get('run_mp2', False):
-        num_frozen_docc = kwargs.get('num_frozen_docc', 0)
-        num_frozen_uocc = kwargs.get('num_frozen_uocc', 0)
+        
         nmo = mf.mo_coeff.shape[1]
         nocc = mol.nelectron // 2
 
@@ -549,129 +570,265 @@ def create_pyscf_mol(**kwargs):
         qforte_mol.mp2_energy = mp2_energy
 
     if kwargs.get('run_fci', False):
-        if kwargs.get('num_frozen_uocc', 0) == 0:
+        if(num_frozen_docc or num_frozen_uocc):
+            # Total number of orbitals
+            nmo = mf.mo_coeff.shape[1]
+
+            # Total number of electrons
+            nelec = mf.mol.nelectron
+
+            # Number of active orbitals
+            ncas = nmo - num_frozen_docc - num_frozen_uocc
+
+            # Number of active electrons (assuming a closed-shell system)
+            nelecas = nelec - 2 * num_frozen_docc
+
+            if nelecas < 0 or ncas <= 0:
+                raise ValueError("Invalid number of frozen orbitals .")
+
+            # Initialize the CASCI object
+            casci = mcscf.CASCI(mf, ncas, nelecas)
+
+            # Freeze the core orbitals
+            casci.frozen = num_frozen_docc  
+
+            # Run the CASCI calculation
+            casci_output = casci.kernel()
+
+            # Store the FCI energy
+            qforte_mol.fci_energy = casci_output[0]
+
+        elif (kwargs.get('use_avas', False)):
+            # **Second Conditional**: Run CASCI using AVAS to select active space
+            # Define the list of atoms or atomic orbitals to include in the active space
+            avas_atoms_or_orbitals = kwargs.get('avas_atoms_or_orbitals', [])
+            avas_threshold = kwargs.get('avas_threshold', 0.2)  # Default threshold
+
+            if not avas_atoms_or_orbitals:
+                raise ValueError("AVAS is enabled, but no atoms or orbitals are specified for the active space.")
+
+            # Run AVAS to obtain the active space
+            avas_obj = avas.AVAS(mf, avas_atoms_or_orbitals, avas_threshold)
+
+            avas_obj.kernel()
+
+            # Number of active orbitals
+            ncas = avas_obj.ncas  
+
+            # Number of active electrons
+            nelecas = avas_obj.nelecas  
+
+            # Reordered MO coefficients with AVAS active space
+            C_avas = avas_obj.mo_coeff  
+            nmo = C_avas.shape[0]
+
+            if nelecas is None:
+                raise ValueError("AVAS couldn't find any active space electrons with avas_atoms_or_orbitals provided")
+
+            F = mf.get_fock()
+
+            # Transform the Fock matrix into the AVAS MO basis
+            F_avas = C_avas.T @ F @ C_avas
+
+            # Get number of core orbitals
+            ncore = nmo - ncas
+
+            # Extract just the active block of the Fock matrix
+            F_active = F_avas[ncore:ncore+ncas, ncore:ncore+ncas]
+
+            # Diagonalize the active-space Fock submatrix
+            mo_energy_active, _ = np.linalg.eigh(F_active)
+            
+            print('\n\n')
+            print("------------------------------------")
+            print("       ==> AVAS Settings <=== ")
+            print("------------------------------------")
+            print(f"  Basis set:               {kwargs['basis']}")
+            print(f"  n electrons:             {mol.nelectron}")
+            print(f"  n molecular orbs:        {nmo}")
+            print(f"  AVAS atoms and orbs:     {avas_atoms_or_orbitals}")
+            print(f"  ncas electrons:          {nelecas}")
+            print(f"  ncas orbitals:           {ncas}")
+            print('\n\n')
+            
+            # Set up CASCI with the AVAS active space
+            casci = mcscf.CASCI(mf, ncas, nelecas)
+            casci.mo_coeff = C_avas
+
+            # Run the CASCI calculation
+            result = casci.kernel()
+
+            #NOTE(Nick): result stores five elements, including the FCI vector
+            casci_total_energy = result[0]
+
+            # Store the CASCI total energy
+            qforte_mol.fci_energy = casci_total_energy
+
+            # ==> Obtain the one- and two-electron integrals in the active space <==
+
+            # Get the effective one-electron integrals in the active space, including core contributions
+            h1eff, ecore = casci.get_h1eff()
+
+            frozen_core_energy = ecore - mol.energy_nuc()
+
+            # Get the active MO coefficients
+            ncore = casci.ncore  # Number of core orbitals (integer)
+            C_cas = casci.mo_coeff[:, ncore:ncore + ncas]
+
+            # Transform the AO integrals to the active MO basis
+            eri_cas = ao2mo.kernel(mf.mol, C_cas, compact=False)
+            eri_cas = eri_cas.reshape(ncas, ncas, ncas, ncas)
+
+            mo_oeis = h1eff
+            mo_teis = eri_cas
+
+        else:
             cisolver = fci.FCI(mf)
             fci_energy, _ = cisolver.kernel()
             qforte_mol.fci_energy = fci_energy
-        else:
-            print('\nWARNING: Skipping FCI computation due to frozen virtual orbitals not being supported in PySCF FCI.\n')
 
-    # Get the MO coefficients
-    C = mf.mo_coeff
-
-    # Get the scalar variables (nuclear repulsion energy)
-    pyscf_Enuc_ref = mol.energy_nuc()
-
-    # Get one-electron integrals and transform to MO basis
-    h_core = mf.get_hcore()
-    mo_oeis = C.T @ h_core @ C  # Transformed one-electron integrals
-
-    # Get two-electron integrals and transform to MO basis
-    nmo = C.shape[1]
-    # AO to MO transformation of two-electron integrals
-    mo_teis = ao2mo.kernel(mol, C, compact=False).reshape(nmo, nmo, nmo, nmo)
-
-    # Get the number of alpha and beta electrons
-    nalpha, nbeta = mol.nelec
-    nel = nalpha + nbeta
-
-    # ===> Run PySCF End <=== #
-
-    # ===> Get more PySCF info <=== #
 
     # Retrieve the number of frozen core and virtual orbitals
+    pyscf_Enuc_ref = mol.energy_nuc()
     frozen_core = kwargs.get('num_frozen_docc', 0)
     frozen_virtual = kwargs.get('num_frozen_uocc', 0)
 
-    # Get symmetry information
-    point_group = mol.groupname.lower()
-    S = mol.intor('int1e_ovlp')
-    irreps_pyscf = symm.label_orb_symm(mol, mol.irrep_name, mol.symm_orb, C, S)
-    irreps_qforte = qforte.irreps_of_point_groups(point_group)
-    irrep_to_index = {irrep : idx for idx, irrep in enumerate(irreps_qforte)}
+    if kwargs.get('use_avas', False):
 
-    # Build the list of orbitals with their energies and irrep indices
-    orbitals = []
-    for i in range(len(mf.mo_energy)):
-        orbital_energy = mf.mo_energy[i]
-        irrep_name = irreps_pyscf[i]
-        irrep_idx = irrep_to_index[irrep_name]
-        orbitals.append([orbital_energy, irrep_idx])
+        # Get symmetry information, should only be c1 if using avas
+        point_group = mol.groupname.lower()
+        S = mol.intor('int1e_ovlp')
+        irreps_pyscf = symm.label_orb_symm(mol, mol.irrep_name, mol.symm_orb, C_cas, S)
+        irreps_qforte = qforte.irreps_of_point_groups(point_group)
+        irrep_to_index = {irrep : idx for idx, irrep in enumerate(irreps_qforte)}
 
-    # Sort orbitals by energy
-    orbitals.sort()
+        # Build the list of orbitals with their energies and irrep indices
+        # print(f"Pyscf irreps   {irreps_pyscf}")
+        # print(f"mo_energy_avas {mo_energy_active}")
 
-    # Extract orbital energies and irrep indices
-    hf_orbital_energies = []
-    orb_irreps_to_int = []
-    for row in orbitals:
-        hf_orbital_energies.append(row[0])
-        orb_irreps_to_int.append(row[1])
+        orbitals = []
+        for i in range(len(mo_energy_active)):
+            orbital_energy = mo_energy_active[i]
+            irrep_name = irreps_pyscf[i]
+            irrep_idx = irrep_to_index[irrep_name]
+            orbitals.append([orbital_energy, irrep_idx])
 
-    # print('\n\n')
-    # print(f"Pyscf orbitals {orbitals}")
-    # print(f"Pyscf point_group {point_group}")
-    # print(f"Pyscf orb_irreps_to_int {orb_irreps_to_int}")
-    # print(f"Pyscf irreps {irreps_qforte}")
-    # print('\n\n')
+        # Don't sort with avas
+        # orbitals.sort()
 
-    orb_irreps = [irreps_qforte[i] for i in orb_irreps_to_int]
+        # Extract orbital energies and irrep indices
+        hf_orbital_energies = []
+        orb_irreps_to_int = []
+        for row in orbitals:
+            hf_orbital_energies.append(row[0])
+            orb_irreps_to_int.append(row[1])
+
+        orb_irreps = [irreps_qforte[i] for i in orb_irreps_to_int]
 
 
-    # Compute the frozen core energy
-    frozen_core_energy = 0.0
+    else:
+        # Get the MO coefficients
+        C = mf.mo_coeff
 
-    if frozen_core > 0:
-        # Sum over frozen core orbitals
-        for i in range(frozen_core):
-            frozen_core_energy += 2 * mo_oeis[i, i]
+        # Get the scalar variables (nuclear repulsion energy)
+        pyscf_Enuc_ref = mol.energy_nuc()
 
-        for i in range(frozen_core):
-            for j in range(frozen_core):
-                frozen_core_energy += 2 * mo_teis[i, i, j, j] - mo_teis[i, j, j, i]
+        # Get one-electron integrals and transform to MO basis
+        h_core = mf.get_hcore()
+        mo_oeis = C.T @ h_core @ C  # Transformed one-electron integrals
 
-        # Adjust the one-electron integrals to account for frozen core orbitals
-        for p in range(frozen_core, nmo - frozen_virtual):
-            for q in range(frozen_core, nmo - frozen_virtual):
-                for i in range(frozen_core):
-                    mo_oeis[p, q] += 2 * mo_teis[p, q, i, i] - mo_teis[p, i, i, q]
+        # Get two-electron integrals and transform to MO basis
+        nmo = C.shape[1]
+        # AO to MO transformation of two-electron integrals
+        mo_teis = ao2mo.kernel(mol, C, compact=False).reshape(nmo, nmo, nmo, nmo)
 
-    # Build the Hartree-Fock reference configuration
-    num_active_orbitals = nmo - frozen_core - frozen_virtual
-    num_active_electrons = nel - 2 * frozen_core
+        # Get the number of alpha and beta electrons
+        nalpha, nbeta = mol.nelec
+        nel = nalpha + nbeta
+
+        # Retrieve the number of frozen core and virtual orbitals
+        frozen_core = kwargs.get('num_frozen_docc', 0)
+        frozen_virtual = kwargs.get('num_frozen_uocc', 0)
+
+        # Get symmetry information
+        point_group = mol.groupname.lower()
+        S = mol.intor('int1e_ovlp')
+        irreps_pyscf = symm.label_orb_symm(mol, mol.irrep_name, mol.symm_orb, C, S)
+        irreps_qforte = qforte.irreps_of_point_groups(point_group)
+        irrep_to_index = {irrep : idx for idx, irrep in enumerate(irreps_qforte)}
+
+        # Build the list of orbitals with their energies and irrep indices
+        orbitals = []
+        for i in range(len(mf.mo_energy)):
+            orbital_energy = mf.mo_energy[i]
+            irrep_name = irreps_pyscf[i]
+            irrep_idx = irrep_to_index[irrep_name]
+            orbitals.append([orbital_energy, irrep_idx])
+
+        # Sort orbitals by energy
+        orbitals.sort()
+
+        # Extract orbital energies and irrep indices
+        hf_orbital_energies = []
+        orb_irreps_to_int = []
+        for row in orbitals:
+            hf_orbital_energies.append(row[0])
+            orb_irreps_to_int.append(row[1])
+
+        # print('\n\n')
+        # print(f"Pyscf orbitals {orbitals}")
+        # print(f"Pyscf point_group {point_group}")
+        # print(f"Pyscf orb_irreps_to_int {orb_irreps_to_int}")
+        # print(f"Pyscf irreps {irreps_qforte}")
+        # print('\n\n')
+
+        orb_irreps = [irreps_qforte[i] for i in orb_irreps_to_int]
+
+    # need a conditioanl for using avas
+    if (kwargs.get('use_avas', False)):
+        num_active_orbitals = ncas
+        num_active_electrons = nelecas
+        Hsq = build_sq_hamiltonian(
+            pyscf_Enuc_ref + frozen_core_energy, 
+            mo_oeis, 
+            mo_teis,
+            ncas,
+            0,
+            0
+            )
+    else:
+        num_active_orbitals = nmo - frozen_core - frozen_virtual
+        num_active_electrons = nel - 2 * frozen_core
+
+        # Compute the frozen core energy
+        frozen_core_energy = 0.0
+        if frozen_core > 0:
+            
+            # Sum over frozen core orbitals
+            for i in range(frozen_core):
+                frozen_core_energy += 2 * mo_oeis[i, i]
+
+            for i in range(frozen_core):
+                for j in range(frozen_core):
+                    frozen_core_energy += 2 * mo_teis[i, i, j, j] - mo_teis[i, j, j, i]
+
+            # Adjust the one-electron integrals to account for frozen core orbitals
+            for p in range(frozen_core, nmo - frozen_virtual):
+                for q in range(frozen_core, nmo - frozen_virtual):
+                    for i in range(frozen_core):
+                        mo_oeis[p, q] += 2 * mo_teis[p, q, i, i] - mo_teis[p, i, i, q]
+
+        Hsq = build_sq_hamiltonian(
+            pyscf_Enuc_ref + frozen_core_energy, 
+            mo_oeis, 
+            mo_teis,
+            nmo,
+            frozen_core,
+            frozen_virtual
+            )
+        
+
     hf_reference = [1] * num_active_electrons + [0] * (2 * num_active_orbitals - num_active_electrons)
-
-    # Build second quantized Hamiltonian
-    Hsq = qforte.SQOperator()
-    Hsq.add(pyscf_Enuc_ref + frozen_core_energy, [], [])
-    for i in range(frozen_core, nmo - frozen_virtual):
-        ia = (i - frozen_core)*2
-        ib = (i - frozen_core)*2 + 1
-        for j in range(frozen_core, nmo - frozen_virtual):
-            ja = (j - frozen_core)*2
-            jb = (j - frozen_core)*2 + 1
-
-            Hsq.add(mo_oeis[i,j], [ia], [ja])
-            Hsq.add(mo_oeis[i,j], [ib], [jb])
-
-            for k in range(frozen_core, nmo - frozen_virtual):
-                ka = (k - frozen_core)*2
-                kb = (k - frozen_core)*2 + 1
-                for l in range(frozen_core, nmo - frozen_virtual):
-                    la = (l - frozen_core)*2
-                    lb = (l - frozen_core)*2 + 1
-
-                    if(ia!=jb and kb != la):
-                        Hsq.add( mo_teis[i,l,k,j]/2, [ia, jb], [kb, la] ) # abba
-                    if(ib!=ja and ka!=lb):
-                        Hsq.add( mo_teis[i,l,k,j]/2, [ib, ja], [ka, lb] ) # baab
-
-                    if(ia!=ja and ka!=la):
-                        Hsq.add( mo_teis[i,l,k,j]/2, [ia, ja], [ka, la] ) # aaaa
-                    if(ib!=jb and kb!=lb):
-                        Hsq.add( mo_teis[i,l,k,j]/2, [ib, jb], [kb, lb] ) # bbbb
-
-    # ===> Get More PySCF Attributes END <=== #
 
     # Set attributes
     qforte_mol.nuclear_repulsion_energy = pyscf_Enuc_ref
@@ -682,7 +839,8 @@ def create_pyscf_mol(**kwargs):
         qforte_mol.hamiltonian = Hsq.jw_transform()
     else:
         Hsq.simplify()
-        qforte_mol.hamiltonian = None
+        # qforte_mol.hamiltonian = None
+        qforte_mol.hamiltonian = qforte.QubitOperator()
 
     qforte_mol.point_group = [point_group, irreps_qforte]
     qforte_mol.orb_irreps = orb_irreps
@@ -700,6 +858,13 @@ def create_pyscf_mol(**kwargs):
             pyscf_mo_teis = copy.deepcopy(mo_teis)
 
     if kwargs['store_mo_ints']:
+        # Resize mo_oeis and mo_teis if there are frozen orbitals...
+        if(frozen_core or frozen_virtual):
+            # raise ValueError("This doesn't work..")
+            start = frozen_core
+            end = nmo - frozen_virtual
+            mo_oeis = copy.deepcopy(mo_oeis[start:end, start:end])
+            mo_teis = copy.deepcopy(mo_teis[start:end, start:end, start:end, start:end])
 
         # keep ordering consistant with openfermion eri tensors
         mo_teis = np.asarray(mo_teis.transpose(0, 2, 3, 1), order='C')
@@ -904,3 +1069,44 @@ def create_external_mol(**kwargs):
     qforte_mol.hamiltonian = qforte_sq_hamiltonian.jw_transform()
 
     return qforte_mol
+
+def build_sq_hamiltonian(
+        zero_body_energy, 
+        mo_oeis, 
+        mo_teis,
+        nmo,
+        frozen_core,
+        frozen_virtual
+        ):
+    
+    # Build second quantized Hamiltonian
+    Hsq = qforte.SQOperator()
+    Hsq.add(zero_body_energy, [], [])
+    for i in range(frozen_core, nmo - frozen_virtual):
+        ia = (i - frozen_core)*2
+        ib = (i - frozen_core)*2 + 1
+        for j in range(frozen_core, nmo - frozen_virtual):
+            ja = (j - frozen_core)*2
+            jb = (j - frozen_core)*2 + 1
+
+            Hsq.add(mo_oeis[i,j], [ia], [ja])
+            Hsq.add(mo_oeis[i,j], [ib], [jb])
+
+            for k in range(frozen_core, nmo - frozen_virtual):
+                ka = (k - frozen_core)*2
+                kb = (k - frozen_core)*2 + 1
+                for l in range(frozen_core, nmo - frozen_virtual):
+                    la = (l - frozen_core)*2
+                    lb = (l - frozen_core)*2 + 1
+
+                    if(ia!=jb and kb != la):
+                        Hsq.add( mo_teis[i,l,k,j]/2, [ia, jb], [kb, la] ) # abba
+                    if(ib!=ja and ka!=lb):
+                        Hsq.add( mo_teis[i,l,k,j]/2, [ib, ja], [ka, lb] ) # baab
+
+                    if(ia!=ja and ka!=la):
+                        Hsq.add( mo_teis[i,l,k,j]/2, [ia, ja], [ka, la] ) # aaaa
+                    if(ib!=jb and kb!=lb):
+                        Hsq.add( mo_teis[i,l,k,j]/2, [ib, jb], [kb, lb] ) # bbbb
+
+    return Hsq

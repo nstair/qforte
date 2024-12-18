@@ -234,7 +234,7 @@ class QITE(Algorithm):
                 if(self._apply_ham_as_tensor):
 
                     self._Ekb = [np.real(qc_ref.get_exp_val_tensor(
-                            self._nuclear_repulsion_energy, 
+                            self._zero_body_energy, 
                             self._mo_oeis, 
                             self._mo_teis, 
                             self._mo_teis_einsum, 
@@ -262,7 +262,7 @@ class QITE(Algorithm):
         self.evolve()
 
         timer.record('Total evolution time')
-        print(timer)
+        print(f"\n\n{timer}\n\n")
 
         # Print summary banner (should done for all algorithms).
         self.print_summary_banner()
@@ -450,7 +450,7 @@ class QITE(Algorithm):
         else:
             if(self._apply_ham_as_tensor):
                 Hpsi_qc.apply_tensor_spat_012bdy(
-                        self._nuclear_repulsion_energy, 
+                        self._zero_body_energy, 
                         self._mo_oeis, 
                         self._mo_teis, 
                         self._mo_teis_einsum, 
@@ -686,7 +686,7 @@ class QITE(Algorithm):
 
                 if(self._apply_ham_as_tensor):
                     self._Ekb.append(np.real(self._qc.get_exp_val_tensor(
-                            self._nuclear_repulsion_energy, 
+                            self._zero_body_energy, 
                             self._mo_oeis, 
                             self._mo_teis, 
                             self._mo_teis_einsum, 
@@ -746,7 +746,7 @@ class QITE(Algorithm):
 
                 if(self._apply_ham_as_tensor):
                     qcSig_temp.apply_tensor_spat_012bdy(
-                            self._nuclear_repulsion_energy, 
+                            self._zero_body_energy, 
                             self._mo_oeis, 
                             self._mo_teis, 
                             self._mo_teis_einsum, 
@@ -776,7 +776,7 @@ class QITE(Algorithm):
             if(self._use_exact_evolution):
                 if(self._apply_ham_as_tensor):
                     self._qc.evolve_tensor_taylor(
-                            self._nuclear_repulsion_energy, 
+                            self._zero_body_energy, 
                             self._mo_oeis, 
                             self._mo_teis, 
                             self._mo_teis_einsum, 
@@ -794,7 +794,7 @@ class QITE(Algorithm):
                     # print(f'norm after scaling: {self._qc.get_state().norm()}')
 
                     self._Ekb.append(np.real(self._qc.get_exp_val_tensor(
-                            self._nuclear_repulsion_energy, 
+                            self._zero_body_energy, 
                             self._mo_oeis, 
                             self._mo_teis, 
                             self._mo_teis_einsum, 
@@ -835,7 +835,7 @@ class QITE(Algorithm):
                     if(self._physical_r):
                         if(self._apply_ham_as_tensor):
                             qc_res.evolve_tensor_taylor(
-                                self._nuclear_repulsion_energy, 
+                                self._zero_body_energy, 
                                 self._mo_oeis, 
                                 self._mo_teis, 
                                 self._mo_teis_einsum, 
@@ -856,7 +856,7 @@ class QITE(Algorithm):
                     else:
                         if(self._apply_ham_as_tensor):
                             qc_res.apply_tensor_spat_012bdy(
-                                self._nuclear_repulsion_energy, 
+                                self._zero_body_energy, 
                                 self._mo_oeis, 
                                 self._mo_teis, 
                                 self._mo_teis_einsum, 
@@ -933,7 +933,7 @@ class QITE(Algorithm):
 
                             if(self._apply_ham_as_tensor):
                                 qcSig_temp.apply_tensor_spat_012bdy(
-                                    self._nuclear_repulsion_energy, 
+                                    self._zero_body_energy, 
                                     self._mo_oeis, 
                                     self._mo_teis, 
                                     self._mo_teis_einsum, 

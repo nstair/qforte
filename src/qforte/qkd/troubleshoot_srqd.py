@@ -142,7 +142,7 @@ class SRQD(Algorithm):
 
                 if(self._apply_ham_as_tensor):
                     self._qc.apply_tensor_spat_012bdy(
-                        self._nuclear_repulsion_energy, 
+                        self._zero_body_energy, 
                         self._mo_oeis, 
                         self._mo_teis, 
                         self._mo_teis_einsum, 

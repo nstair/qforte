@@ -135,11 +135,21 @@ class Algorithm(ABC):
         self._qb_ham = system.hamiltonian
         self._sq_ham = system.sq_hamiltonian
 
+        self._zero_body_energy = 0.0
+
         if(hasattr(system, 'nuclear_repulsion_energy')):
             self._nuclear_repulsion_energy = system.nuclear_repulsion_energy
+            self._zero_body_energy += system.nuclear_repulsion_energy
         else:
             print("NOTE: No nuclear repulsion enerly set! Using only provided Hamiltonain.")
             self._nuclear_repulsion_energy = 0.0
+
+        if(hasattr(system, 'frozen_core_energy')):
+            self._frozen_core_energy = system.frozen_core_energy
+            self._zero_body_energy += system.frozen_core_energy
+        else:
+            print("NOTE: No frozen core energy repulsion enerly set! Using only provided Hamiltonain.")
+            self._frozen_core_energy= 0.0
 
         if(computer_type=='fci'):
             if(apply_ham_as_tensor):
@@ -148,7 +158,7 @@ class Algorithm(ABC):
                 self._mo_teis_einsum = system.mo_teis_einsum
                 
 
-        if self._qb_ham.num_qubits() != self._nqb:
+        if len(self._qb_ham.terms()) > 0 and self._qb_ham.num_qubits() != self._nqb:
             raise ValueError(f"The reference has {self._nqb} qubits, but the Hamiltonian has {self._qb_ham.num_qubits()}. This is inconsistent.")
         try:
             self._hf_energy = system.hf_energy
@@ -495,7 +505,7 @@ class AnsatzAlgorithm(Algorithm):
             
             self._curr_energy = np.real(
                 qc.get_exp_val_tensor(
-                    self._nuclear_repulsion_energy, 
+                    self._zero_body_energy, 
                     self._mo_oeis, 
                     self._mo_teis, 
                     self._mo_teis_einsum, 
