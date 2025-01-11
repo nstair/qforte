@@ -25,7 +25,8 @@ def system_factory(system_type = 'molecule', build_type = 'psi4', **kwargs):
 
     molecule_adapters = {
         "external": MA.create_external_mol,
-        "psi4": MA.create_psi_mol
+        "psi4": MA.create_psi_mol,
+        "pyscf": MA.create_pyscf_mol
     }
 
     model_adapters = {

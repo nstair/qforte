@@ -125,6 +125,8 @@ class QITE(Algorithm):
             beta=1.0,
             db=0.2,
             dt=0.01,
+            use_diis=False,
+            max_diis_size=False,
             use_exact_evolution=False,
             expansion_type='SD',
             evolve_dfham=False,
@@ -165,6 +167,10 @@ class QITE(Algorithm):
         self._b_thresh = b_thresh
         self._x_thresh = x_thresh
         self._physical_r = physical_r
+
+        # DIIS options
+        self._use_diis = use_diis
+        self._qite_diis_max = max_diis_size
 
         self._folded_spectrum = folded_spectrum # for the excited determinant stuff, you need to find lowest alpha/beta excitation indic in FCI graph
         self._e_shift = e_shift
@@ -247,7 +253,7 @@ class QITE(Algorithm):
                 if(self._apply_ham_as_tensor):
 
                     self._Ekb = [np.real(qc_ref.get_exp_val_tensor(
-                            self._nuclear_repulsion_energy, 
+                            self._zero_body_energy, 
                             self._mo_oeis, 
                             self._mo_teis, 
                             self._mo_teis_einsum, 
@@ -264,9 +270,16 @@ class QITE(Algorithm):
         # Print options banner (should done for all algorithms).
         self.print_options_banner()
 
+        # NOTE(Nick): temporary, just want diis to work as expected.
+        self._tamps = []
+
         # Build expansion pool.
         if(not self._use_exact_evolution):
             self.build_expansion_pool()
+
+        self._t_diis = [copy.deepcopy(self._tamps)]
+        self._e_diis = []
+        
 
         # Do the imaginary time evolution.
         timer = qf.local_timer()
@@ -275,7 +288,7 @@ class QITE(Algorithm):
         self.evolve()
 
         timer.record('Total evolution time')
-        print(timer)
+        print(f"\n\n{timer}\n\n")
 
         # Print summary banner (should done for all algorithms).
         self.print_summary_banner()
@@ -312,17 +325,32 @@ class QITE(Algorithm):
         print('Total imaginary evolution time (beta):   ',  self._beta)
         print('Imaginary time step (db):                ',  self._db)
         print('Use exact evolution:                     ',  self._use_exact_evolution)
-        print('Expansion type:                          ',  self._expansion_type)
-        print('x value threshold:                       ',  self._x_thresh)
-        print('Use sparse tensors to solve Sx = b:      ',  str(self._sparseSb))
-        if(self._sparseSb):
-            print('b value threshold:                       ',  str(self._b_thresh))
-        print('\n')
-        print('Use low memory mode:                     ',  self._low_memorySb)
-        print('Use 2nd order derivation of QITE:        ',  self._second_order)
+
+        if not self._use_exact_evolution:
+            print('Expansion type:                          ',  self._expansion_type)
+            print('Use DIIS:                                ',  self._use_diis)
+            print('Max DIIS size:                           ',  self._qite_diis_max)
+        
+            print('Use selected pool:                       ',  self._selected_pool)
+            if self._selected_pool:
+                print('Use cumulative selection:                ',  self._cumulative_t)
+                print('Use physical selection:                  ',  self._physical_r)
+                print('Selection time step (dt):                ',  self._dt)
+
+        
+            print('x value threshold:                       ',  self._x_thresh)
+            print('Use sparse tensors to solve Sx = b:      ',  str(self._sparseSb))
+            if(self._sparseSb):
+                print('b value threshold:                       ',  str(self._b_thresh))
+            print('\n')
+            print('Use low memory mode:                     ',  self._low_memorySb)
+            print('Use 2nd order derivation of QITE:        ',  self._second_order)
+
         print('Do Quantum Lanczos                       ',  str(self._do_lanczos))
         if(self._do_lanczos):
             print('Lanczos gap size                         ',  self._lanczos_gap)
+
+        print('\n\n')
 
     def print_summary_banner(self):
         print('\n\n                        ==> QITE summary <==')
@@ -431,6 +459,8 @@ class QITE(Algorithm):
 
             self._NI = len(self._sig.terms())
 
+        self._tamps = list(np.zeros(self._NI))
+
 
     def build_S_b_FCI(self):
         """Construct the matrix S (eq. 5a) and vector b (eq. 5b) of Motta, with h[m] the full Hamiltonian, utilizing FCIComputer class.
@@ -482,7 +512,7 @@ class QITE(Algorithm):
             else:
                 if(self._apply_ham_as_tensor):
                     Hpsi_qc.apply_tensor_spat_012bdy(
-                            self._nuclear_repulsion_energy, 
+                            self._zero_body_energy, 
                             self._mo_oeis, 
                             self._mo_teis, 
                             self._mo_teis_einsum, 
@@ -654,6 +684,11 @@ class QITE(Algorithm):
         # this is only for UCC!
         x_list_fci = [x*self._db for x in x_list]
 
+        # Also used only for DIIS
+        told = copy.deepcopy(self._tamps)
+        self._tamps = self._tamps = list(np.add(self._tamps, x_list_fci))
+        evec = list(np.subtract(self._tamps, told))
+
         if(self._computer_type=='fock'):
             if(self._sparseSb):
                 for I, spI in enumerate(sp_idxs):
@@ -710,7 +745,22 @@ class QITE(Algorithm):
                 self._qc.set_state(exp1)
 
             else:
-                self._sig.set_coeffs(x_list_fci)
+                if(self._use_diis):
+
+                    self._t_diis.append(copy.deepcopy(self._tamps))
+                    self._e_diis.append(copy.deepcopy(evec))
+
+                    self._tamps = self.qite_diis(
+                        self._qite_diis_max,
+                        self._t_diis,
+                        self._e_diis)
+                    
+                    x_list_fci_diis = list(np.subtract(self._tamps, told))
+                    self._sig.set_coeffs(x_list_fci_diis)
+                
+                else:
+                    self._sig.set_coeffs(x_list_fci)
+
                 self._qc.evolve_pool_trotter_basic(
                     self._sig, 
                     1, 
@@ -718,7 +768,7 @@ class QITE(Algorithm):
 
                 if(self._apply_ham_as_tensor):
                     self._Ekb.append(np.real(self._qc.get_exp_val_tensor(
-                            self._nuclear_repulsion_energy, 
+                            self._zero_body_energy, 
                             self._mo_oeis, 
                             self._mo_teis, 
                             self._mo_teis_einsum, 
@@ -780,7 +830,7 @@ class QITE(Algorithm):
 
                 if(self._apply_ham_as_tensor):
                     qcSig_temp.apply_tensor_spat_012bdy(
-                            self._nuclear_repulsion_energy, 
+                            self._zero_body_energy, 
                             self._mo_oeis, 
                             self._mo_teis, 
                             self._mo_teis_einsum, 
@@ -810,7 +860,7 @@ class QITE(Algorithm):
             if(self._use_exact_evolution):
                 if(self._apply_ham_as_tensor):
                     self._qc.evolve_tensor_taylor(
-                            self._nuclear_repulsion_energy, 
+                            self._zero_body_energy, 
                             self._mo_oeis, 
                             self._mo_teis, 
                             self._mo_teis_einsum, 
@@ -828,7 +878,7 @@ class QITE(Algorithm):
                     # print(f'norm after scaling: {self._qc.get_state().norm()}')
 
                     self._Ekb.append(np.real(self._qc.get_exp_val_tensor(
-                            self._nuclear_repulsion_energy, 
+                            self._zero_body_energy, 
                             self._mo_oeis, 
                             self._mo_teis, 
                             self._mo_teis_einsum, 
@@ -869,7 +919,7 @@ class QITE(Algorithm):
                     if(self._physical_r):
                         if(self._apply_ham_as_tensor):
                             qc_res.evolve_tensor_taylor(
-                                self._nuclear_repulsion_energy, 
+                                self._zero_body_energy, 
                                 self._mo_oeis, 
                                 self._mo_teis, 
                                 self._mo_teis_einsum, 
@@ -890,7 +940,7 @@ class QITE(Algorithm):
                     else:
                         if(self._apply_ham_as_tensor):
                             qc_res.apply_tensor_spat_012bdy(
-                                self._nuclear_repulsion_energy, 
+                                self._zero_body_energy, 
                                 self._mo_oeis, 
                                 self._mo_teis, 
                                 self._mo_teis_einsum, 
@@ -967,7 +1017,7 @@ class QITE(Algorithm):
 
                             if(self._apply_ham_as_tensor):
                                 qcSig_temp.apply_tensor_spat_012bdy(
-                                    self._nuclear_repulsion_energy, 
+                                    self._zero_body_energy, 
                                     self._mo_oeis, 
                                     self._mo_teis, 
                                     self._mo_teis_einsum, 
@@ -1003,3 +1053,39 @@ class QITE(Algorithm):
         print('\nQITE expansion operators:')
         print('-------------------------')
         print(self._sig.str())
+
+
+    # NOTE(Nick): Presently this is identical to the pqe/vqe diis, likely can be optemized for qite,
+    # We will also want a version that works with selection
+    def qite_diis(self, diis_max_dim, t_diis, e_diis):
+        """This function implements the direct inversion of iterative subspace
+        (DIIS) convergence accelerator. Draws heavy insiration from Daniel
+        Smith's ccsd_diss.py code in psi4 numpy
+        """
+
+        if len(t_diis) > diis_max_dim:
+            del t_diis[0]
+            del e_diis[0]
+
+        diis_dim = len(t_diis) - 1
+
+        # Construct diis B matrix (following Crawford Group github tutorial)
+        B = np.ones((diis_dim+1, diis_dim+1)) * -1
+        bsol = np.zeros(diis_dim+1)
+
+        B[-1, -1] = 0.0
+        bsol[-1] = -1.0
+        for i, ei in enumerate(e_diis):
+            for j, ej in enumerate(e_diis):
+                B[i,j] = np.dot(np.real(ei), np.real(ej))
+
+        B[:-1, :-1] /= np.abs(B[:-1, :-1]).max()
+
+        x = np.linalg.lstsq(B, bsol, rcond=None)[0][:-1]
+
+        t_new = np.zeros(( len(t_diis[0]) ))
+        for l in range(diis_dim):
+            temp_ary = x[l] * np.asarray(t_diis[l+1])
+            t_new = np.add(t_new, temp_ary)
+
+        return copy.deepcopy(list(np.real(t_new)))
