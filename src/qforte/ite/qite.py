@@ -138,6 +138,8 @@ class QITE(Algorithm):
             b_thresh=1.0e-6,
             x_thresh=1.0e-10,
             physical_r = False,
+            folded_spectrum = False,
+            e_shift = 0.0,
             do_lanczos=False,
             lanczos_gap=2,
             realistic_lanczos=True,
@@ -164,6 +166,9 @@ class QITE(Algorithm):
         self._x_thresh = x_thresh
         self._physical_r = physical_r
 
+        self._folded_spectrum = folded_spectrum # for the excited determinant stuff, you need to find lowest alpha/beta excitation indic in FCI graph
+        self._e_shift = e_shift
+
         self._n_classical_params = 0
         self._n_cnot = self._Uprep.get_num_cnots()
         self._n_pauli_trm_measures = 0
@@ -178,7 +183,7 @@ class QITE(Algorithm):
             if(self._use_exact_evolution):
                 self._fname = f'beta_{self._beta}_db_{self._db}_EXACT_EVOLUTION'
             else:
-                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_selected_pool_{self._selected_pool}_t_{self._t_thresh}'
+                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_folded_spectrum_{self._folded_spectrum}_e_shift_{self._e_shift}_selected_pool_{self._selected_pool}_t_{self._t_thresh}'
 
         self._sz = 0
 
@@ -201,6 +206,14 @@ class QITE(Algorithm):
 
             else:
                 qc_ref.hartree_fock()
+
+            if(self._folded_spectrum): # only implementing it for sq ham to start
+                if(self._apply_ham_as_tensor):
+                    self._shifted_0_body = self._nuclear_repulsion_energy - self._e_shift
+                else:
+                    self._Ofs = qf.SQOperator()
+                    self._Ofs.add_op(self._sq_ham)
+                    self._Ofs.add_term(-self._e_shift, [], [])
 
             if(self._evolve_dfham):
                 dfh = self._sys.df_ham
@@ -448,15 +461,34 @@ class QITE(Algorithm):
             Hpsi_qc.apply_sqop_pool(self._d0)
 
         else:
-            if(self._apply_ham_as_tensor):
-                Hpsi_qc.apply_tensor_spat_012bdy(
-                        self._nuclear_repulsion_energy, 
-                        self._mo_oeis, 
-                        self._mo_teis, 
-                        self._mo_teis_einsum, 
-                        self._norb)
+            if(self._folded_spectrum):
+                if(self._apply_ham_as_tensor):
+                    Hpsi_qc.apply_tensor_spat_012bdy(
+                            self._shifted_0_body,
+                            self._mo_oeis, 
+                            self._mo_teis, 
+                            self._mo_teis_einsum, 
+                            self._norb)
+                    Hpsi_qc.apply_tensor_spat_012bdy(
+                            self._shifted_0_body,
+                            self._mo_oeis, 
+                            self._mo_teis, 
+                            self._mo_teis_einsum, 
+                            self._norb)
+                else:
+                    Hpsi_qc.apply_sqop(self._Ofs)
+                    Hpsi_qc.apply_sqop(self._Ofs)
+                
             else:
-                Hpsi_qc.apply_sqop(self._sq_ham)
+                if(self._apply_ham_as_tensor):
+                    Hpsi_qc.apply_tensor_spat_012bdy(
+                            self._nuclear_repulsion_energy, 
+                            self._mo_oeis, 
+                            self._mo_teis, 
+                            self._mo_teis_einsum, 
+                            self._norb)
+                else:
+                    Hpsi_qc.apply_sqop(self._sq_ham)
 
         if(self._low_memorySb):
             for i in range(Idim):
@@ -696,7 +728,9 @@ class QITE(Algorithm):
 
 
         if(self._verbose):
-            qf.smart_print(self._qc)
+            print('state after operator pool evolution')
+            print(self._qc)
+            print('\n')
 
     def evolve(self):
         """Perform QITE for a time step :math:`\\Delta \\beta`.
