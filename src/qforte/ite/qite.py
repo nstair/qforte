@@ -685,9 +685,10 @@ class QITE(Algorithm):
         x_list_fci = [x*self._db for x in x_list]
 
         # Also used only for DIIS
-        told = copy.deepcopy(self._tamps)
-        self._tamps = self._tamps = list(np.add(self._tamps, x_list_fci))
-        evec = list(np.subtract(self._tamps, told))
+        if(self._use_diis):
+            told = copy.deepcopy(self._tamps)
+            self._tamps = self._tamps = list(np.add(self._tamps, x_list_fci))
+            evec = list(np.subtract(self._tamps, told))
 
         if(self._computer_type=='fock'):
             if(self._sparseSb):
