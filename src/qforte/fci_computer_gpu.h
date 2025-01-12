@@ -192,6 +192,16 @@ class FCIComputerGPU {
       const std::vector<int>& creb,
       const std::vector<int>& annb); 
 
+    void evolve_individual_nbody_easy_gpu(
+      const std::complex<double> time,
+      const std::complex<double> coeff,
+      const TensorGPU& Cin,
+      TensorGPU& Cout,
+      const std::vector<int>& crea,
+      const std::vector<int>& anna,
+      const std::vector<int>& creb,
+      const std::vector<int>& annb); 
+
     /// A lower-level helper function that applies the exponential of a
     /// two-term (hermitian) SQOperator to the FCIComputerGPU.
     void evolve_individual_nbody_hard(
@@ -235,6 +245,11 @@ class FCIComputerGPU {
       const bool antiherm = false,
       const bool adjoint = false);
 
+    void evolve_pool_trotter_basic_gpu(
+      const SQOpPool& pool,
+      const bool antiherm = false,
+      const bool adjoint = false);
+
     /// A more flexable function that applies the exponentials of an ordered list of
     /// two-term (hermitian) SQOperators to the FCIComputerGPU
     /// Onus on the user to assure evolution is unitary.
@@ -258,7 +273,7 @@ class FCIComputerGPU {
 
     /// A lower-level helper function that applies a SQOperator
     /// term to the FCIComputerGPU.
-    void apply_individual_nbody1_accumulate(
+    void apply_individual_nbody1_accumulate_gpu(
       const std::complex<double> coeff, 
       const TensorGPU& Cin,
       TensorGPU& Cout,
@@ -269,7 +284,16 @@ class FCIComputerGPU {
       std::vector<int>& sourceb,
       std::vector<int>& parityb);
 
-
+    void apply_individual_nbody1_accumulate_cpu(
+        const std::complex<double> coeff, 
+        const TensorGPU& Cin,
+        TensorGPU& Cout,
+        std::vector<int>& sourcea,
+        std::vector<int>& targeta,
+        std::vector<int>& paritya,
+        std::vector<int>& sourceb,
+        std::vector<int>& targetb,
+        std::vector<int>& parityb);
 
     /// Apply a single term of a SQOperator to the FCIComputerGPU after
     /// re-indexing the creators and anihilators. 

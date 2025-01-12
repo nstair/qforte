@@ -854,6 +854,43 @@ void FCIComputerGPU::evolve_individual_nbody_easy(
     }
 }
 
+void FCIComputerGPU::evolve_individual_nbody_easy_gpu(
+    const std::complex<double> time,
+    const std::complex<double> coeff,
+    const TensorGPU& Cin,  
+    TensorGPU& Cout,       
+    const std::vector<int>& crea,
+    const std::vector<int>& anna,
+    const std::vector<int>& creb,
+    const std::vector<int>& annb) 
+{
+
+    cuDoubleComplex cu_time = make_cuDoubleComplex(time.real(), time.imag());
+    cuDoubleComplex* cu_time_pointer = &cu_time;
+    cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
+
+
+    cuDoubleComplex factor = make_cuDoubleComplex(
+        std::exp(-std::real(time) * std::real(coeff)) * std::cos(std::imag(coeff)),
+        -std::exp(-std::real(time) * std::real(coeff)) * std::sin(std::imag(coeff))
+    );
+
+    std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number(anna, annb);
+    // std::vector<int>* map_first = &maps.first;
+    // std::vector<int>* map_second = &maps.second;
+
+    evolve_individual_nbody_easy_wrapper(
+        Cout.d_data(),
+        factor,
+        maps.first.data(),
+        maps.second.data(),
+        maps.first.size(),
+        maps.second.size(),
+        nbeta_strs_
+    );
+
+}
+
 void FCIComputerGPU::evolve_individual_nbody_hard(
     const std::complex<double> time,
     const std::complex<double> coeff,
@@ -1095,6 +1132,184 @@ void FCIComputerGPU::evolve_pool_trotter_basic(
     }
 }
 
+void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
+      const SQOpPool& pool,
+      const bool antiherm,
+      const bool adjoint)
+
+{
+    if(adjoint){
+        for (int i = pool.terms().size() - 1; i >= 0; --i) {
+
+            TensorGPU Cin = C_;
+
+                if (pool.terms()[i].second.terms().size() != 2) {
+                    std::cout << "This sqop has " << pool.terms()[i].second.terms().size() << " terms." << std::endl;
+                    throw std::invalid_argument("Individual n-body code is called with multiple terms");
+                }
+
+                auto term = pool.terms()[i].second.terms()[0];
+
+                if(std::abs(std::get<0>(term)) < compute_threshold_){
+                    return;
+                }
+
+                if(adjoint){
+                    std::get<0>(term) *= -1.0;
+                }
+
+                if(antiherm){
+                    std::complex<double> onei(0.0, 1.0);
+                    std::get<0>(term) *= onei;
+                }
+
+                std::vector<int> crea;
+                std::vector<int> anna;
+                std::vector<int> creb;
+                std::vector<int> annb;
+
+                for(size_t i = 0; i < std::get<1>(term).size(); i++){
+                    if(std::get<1>(term)[i]%2 == 0){
+                        crea.push_back(std::floor(std::get<1>(term)[i] / 2));
+                    } else {
+                        creb.push_back(std::floor(std::get<1>(term)[i] / 2));
+                    }
+                }
+
+                for(size_t i = 0; i < std::get<2>(term).size(); i++){
+                    if(std::get<2>(term)[i]%2 == 0){
+                        anna.push_back(std::floor(std::get<2>(term)[i] / 2));
+                    } else {
+                        annb.push_back(std::floor(std::get<2>(term)[i] / 2));
+                    }
+                }
+
+                std::vector<size_t> ops1(std::get<1>(term));
+                std::vector<size_t> ops2(std::get<2>(term));
+                ops1.insert(ops1.end(), ops2.begin(), ops2.end());
+
+                int nswaps = parity_sort(ops1);
+
+                std::complex<double> parity = std::pow(-1, nswaps);
+
+                if (crea == anna && creb == annb) {
+                    std::cout<<"Hit easy case GPU version"<<std::endl;
+                    evolve_individual_nbody_easy(
+                        pool.terms()[i].first,
+                        parity * std::get<0>(term),
+                        Cin,
+                        C_,
+                        crea,
+                        anna,
+                        creb,
+                        annb);
+
+
+                } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
+
+                    std::cout<< "Hit hard case GPU version" << std::endl;
+                    const std::complex<double> new_coef = parity * std::get<0>(term);
+
+                    std::vector<int> dagworka(crea);
+                    std::vector<int> dagworkb(creb);
+                    std::vector<int> undagworka(anna);
+                    std::vector<int> undagworkb(annb);
+                    std::vector<int> numbera;
+                    std::vector<int> numberb;                   
+
+                    int parity = 0;
+
+                    parity += isolate_number_operators(
+                        crea,
+                        anna,
+                        dagworka,
+                        undagworka,
+                        numbera);
+
+                    parity += isolate_number_operators(
+                        creb,
+                        annb,
+                        dagworkb,
+                        undagworkb,
+                        numberb);
+
+                    std::complex<double> ncoeff = new_coef * std::pow(-1.0, parity);
+                    std::complex<double> absol = std::abs(ncoeff);
+                    std::complex<double> sinfactor = std::sin(pool.terms()[i].first * absol) / absol;
+
+                    std::vector<int> numbera_dagworka(numbera.begin(), numbera.end());
+                    numbera_dagworka.insert(numbera_dagworka.end(), dagworka.begin(), dagworka.end());
+
+                    std::vector<int> numberb_dagworkb(numberb.begin(), numberb.end());
+                    numberb_dagworkb.insert(numberb_dagworkb.end(), dagworkb.begin(), dagworkb.end());
+
+                    apply_cos_inplace(
+                        pool.terms()[i].first,
+                        ncoeff,
+                        numbera_dagworka,
+                        undagworka,
+                        numberb_dagworkb,
+                        undagworkb,
+                        C_);
+
+                    std::vector<int> numbera_undagworka(numbera.begin(), numbera.end());
+                    numbera_undagworka.insert(numbera_undagworka.end(), undagworka.begin(), undagworka.end());
+
+                    std::vector<int> numberb_undagworkb(numberb.begin(), numberb.end());
+                    numberb_undagworkb.insert(numberb_undagworkb.end(), undagworkb.begin(), undagworkb.end());
+
+                    apply_cos_inplace(
+                        pool.terms()[i].first,
+                        ncoeff,
+                        numbera_undagworka,
+                        dagworka,
+                        numberb_undagworkb,
+                        dagworkb,
+                        C_);
+
+                    int phase = std::pow(-1, (crea.size() + anna.size()) * (creb.size() + annb.size()));
+                    std::complex<double> work_cof = std::conj(new_coef) * static_cast<double>(phase) * std::complex<double>(0.0, -1.0);
+
+                    apply_individual_nbody_accumulate_gpu(
+                        work_cof * sinfactor,
+                        Cin,
+                        C_, 
+                        anna,
+                        crea,
+                        annb,
+                        creb);
+
+                    apply_individual_nbody_accumulate_gpu(
+                        new_coef * std::complex<double>(0.0, -1.0) * sinfactor,
+                        Cin,
+                        C_, 
+                        crea,
+                        anna,
+                        creb,
+                        annb);
+
+
+                } else {
+                    throw std::invalid_argument("Evolved state must remain in spin and particle-number symmetry sector");
+                }
+
+                // evolve_individual_nbody end
+
+
+            // apply_sqop_evolution end
+
+        }
+    } else {
+        for (const auto& sqop_term : pool.terms()) {
+            apply_sqop_evolution(
+                sqop_term.first, 
+                sqop_term.second,
+                antiherm,
+                adjoint);
+            }
+    }
+}
+
 void FCIComputerGPU::evolve_pool_trotter(
       const SQOpPool& pool,
       const double evolution_time,
@@ -1200,7 +1415,7 @@ void FCIComputerGPU::apply_sqop_evolution(
 // i want to make it so that the sourcea, targeta, etc are being passed as device pointers already
 
 
-void FCIComputerGPU::apply_individual_nbody1_accumulate(
+void FCIComputerGPU::apply_individual_nbody1_accumulate_gpu(
     const std::complex<double> coeff, 
     const TensorGPU& Cin,
     TensorGPU& Cout,
@@ -1247,7 +1462,9 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     int paritya_mem = paritya.size() * sizeof(cuDoubleComplex);
     int parityb_mem = parityb.size() * sizeof(cuDoubleComplex);
 
-    int tensor_mem = Cin.size() * sizeof(cuDoubleComplex);
+    // int tensor_mem = Cin.size() * sizeof(cuDoubleComplex);
+    int tensor_mem = Cin.size();
+
 
     cudaMalloc(&d_sourcea, sourcea_mem);
     cudaMalloc(&d_sourceb, sourceb_mem);
@@ -1266,6 +1483,22 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     cudaMemcpy(d_parityb, parityb_complex.data(), parityb_mem, cudaMemcpyHostToDevice);
 
     cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
+
+    std::cout<< "i am here" <<std::endl;
+
+    // std::cout<< "cu_coeff: " << cu_coeff << std::endl;
+    std::cout<< "Cin: " << Cin.str() << std::endl;
+    std::cout<< "Cout: " << Cout.str() << std::endl;
+    std::cout<< "nbeta_strs_: " << nbeta_strs_ << std::endl;
+    std::cout<< "targeta size: " << targeta.size() << std::endl;
+    std::cout<< "targetb size: " << targetb.size() << std::endl;
+    std::cout<< "tensor_mem: " << tensor_mem << std::endl;
+
+
+
+
+
+
 
     apply_individual_nbody1_accumulate_wrapper(
         cu_coeff, 
@@ -1296,6 +1529,39 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
     }
 }
 
+void FCIComputerGPU::apply_individual_nbody1_accumulate_cpu(
+    const std::complex<double> coeff, 
+    const TensorGPU& Cin,
+    TensorGPU& Cout,
+    std::vector<int>& sourcea,
+    std::vector<int>& targeta,
+    std::vector<int>& paritya,
+    std::vector<int>& sourceb,
+    std::vector<int>& targetb,
+    std::vector<int>& parityb)
+{
+    Cin.cpu_error();
+    Cout.cpu_error();
+    if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
+        throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
+    }
+
+    if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
+        throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
+    }
+    // local_timer my_timer = local_timer();
+    // only part that has kernel
+    for (int i = 0; i < targeta.size(); i++) {
+        int ta_idx = targeta[i] * nbeta_strs_;
+        int sa_idx = sourcea[i] * nbeta_strs_;
+        std::complex<double> pref = coeff * static_cast<std::complex<double>>(paritya[i]);
+        for (int j = 0; j < targetb.size(); j++) {
+            Cout.h_data()[ta_idx + targetb[j]] += pref * static_cast<std::complex<double>>(parityb[j]) * Cin.read_h_data()[sa_idx + sourceb[j]];
+        }
+    }
+    
+    // std::cout << my_timer.str_table() << std::endl;
+}
 
 void FCIComputerGPU::apply_individual_nbody_accumulate(
     const std::complex<double> coeff,
@@ -1348,7 +1614,7 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
         parityb[i] = 1.0 - 2.0 * std::get<3>(ubetamap)[i];
     }
 
-    apply_individual_nbody1_accumulate(
+    apply_individual_nbody1_accumulate_cpu(
         coeff, 
         Cin,
         Cout,
@@ -1371,8 +1637,58 @@ void FCIComputerGPU::apply_individual_nbody_accumulate_gpu(
     const std::vector<int>& undagb)
 {
 
-    int helo = 4;
-    
+    if((daga.size() != undaga.size()) or (dagb.size() != undagb.size())){
+        throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
+    }
+
+    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ualfamap = graph_.make_mapping_each(
+        true,
+        daga,
+        undaga);
+
+    if (std::get<0>(ualfamap) == 0) {
+        return;
+    }
+
+    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ubetamap = graph_.make_mapping_each(
+        false,
+        dagb,
+        undagb);
+
+    if (std::get<0>(ubetamap) == 0) {
+        return;
+    }
+
+    std::vector<int> sourcea(std::get<0>(ualfamap));
+    std::vector<int> targeta(std::get<0>(ualfamap));
+    std::vector<int> paritya(std::get<0>(ualfamap));
+    std::vector<int> sourceb(std::get<0>(ubetamap));
+    std::vector<int> targetb(std::get<0>(ubetamap));
+    std::vector<int> parityb(std::get<0>(ubetamap));
+
+    for (int i = 0; i < std::get<0>(ualfamap); i++) {
+        sourcea[i] = std::get<1>(ualfamap)[i];
+        targeta[i] = graph_.get_aind_for_str(std::get<2>(ualfamap)[i]);
+        paritya[i] = 1.0 - 2.0 * std::get<3>(ualfamap)[i];
+    }
+
+    for (int i = 0; i < std::get<0>(ubetamap); i++) {
+        sourceb[i] = std::get<1>(ubetamap)[i];
+        targetb[i] = graph_.get_bind_for_str(std::get<2>(ubetamap)[i]);
+        parityb[i] = 1.0 - 2.0 * std::get<3>(ubetamap)[i];
+    }
+
+    apply_individual_nbody1_accumulate_gpu(
+        coeff, 
+        Cin,
+        Cout,
+        sourcea,
+        targeta,
+        paritya,
+        sourceb,
+        targetb,
+        parityb);
+
 
 }
 

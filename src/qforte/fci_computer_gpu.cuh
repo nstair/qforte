@@ -47,3 +47,22 @@ extern "C" void apply_individual_nbody1_accumulate_wrapper(
     int targetb_size,
     int tensor_size);
 
+__global__ void evolve_individual_nbody_easy_kernel(
+    cuDoubleComplex* Cout_data,
+    cuDoubleComplex factor,
+    const int* map_first,
+    const int* map_second,
+    size_t map_first_size,
+    size_t map_second_size,
+    size_t nbeta_strs);
+
+extern "C" void evolve_individual_nbody_easy_wrapper(
+    cuDoubleComplex* Cout_data,
+    const cuDoubleComplex factor,
+    const int* map_first,
+    const int* map_second,
+    int map_first_size,
+    int map_second_size,
+    int nbeta_strs);
+
+

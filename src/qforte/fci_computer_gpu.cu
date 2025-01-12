@@ -249,3 +249,47 @@ void apply_individual_nbody1_accumulate_wrapper(
         throw std::runtime_error("Kernel execution failed");
     }
 }
+
+__global__ void evolve_individual_nbody_easy_kernel(
+    cuDoubleComplex* Cout_data,
+    cuDoubleComplex factor,
+    const int* map_first,
+    const int* map_second,
+    size_t map_first_size,
+    size_t map_second_size,
+    size_t nbeta_strs)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int idy = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (idx < map_first_size) {
+        if (idy < map_second_size) {
+            int index = map_first[idx] * nbeta_strs + map_second[idy];
+            Cout_data[index] = cuCmul(Cout_data[index], factor);
+        }
+    }
+
+}
+
+void evolve_individual_nbody_easy_wrapper(
+    cuDoubleComplex* Cout_data,
+    const cuDoubleComplex factor,
+    const int* map_first,
+    const int* map_second,
+    int map_first_size,
+    int map_second_size,
+    int nbeta_strs)
+{
+
+    evolve_individual_nbody_easy_kernel<<<256, 256>>>(
+        Cout_data,
+        factor,
+        map_first,
+        map_second,
+        map_first_size,
+        map_second_size,
+        nbeta_strs
+    );
+
+}
+
