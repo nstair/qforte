@@ -141,6 +141,7 @@ class QITE(Algorithm):
             x_thresh=1.0e-10,
             physical_r = False,
             folded_spectrum = False,
+            BeH2_guess = False,
             e_shift = 0.0,
             do_lanczos=False,
             lanczos_gap=2,
@@ -172,7 +173,8 @@ class QITE(Algorithm):
         self._use_diis = use_diis
         self._qite_diis_max = max_diis_size
 
-        self._folded_spectrum = folded_spectrum # for the excited determinant stuff, you need to find lowest alpha/beta excitation indic in FCI graph
+        self._folded_spectrum = folded_spectrum
+        self._BeH2_guess = BeH2_guess # for the excited determinant stuff, you need to find lowest alpha/beta excitation indic in FCI graph
         self._e_shift = e_shift
 
         self._n_classical_params = 0
@@ -220,6 +222,32 @@ class QITE(Algorithm):
                     self._Ofs = qf.SQOperator()
                     self._Ofs.add_op(self._sq_ham)
                     self._Ofs.add_term(-self._e_shift, [], [])
+
+                #FOR BeH2 BENCHMARK ONLY
+                if(self._BeH2_guess):
+                    val = 1.0 / np.sqrt(2.0)
+    
+                    fci_temp = qf.FCIComputer(self._nel, self._sz, self._norb)
+
+                    alpha_ex = qf.SQOperator()
+                    alpha_ex.add_term(1.0, [6], [4])
+
+                    beta_ex = qf.SQOperator()
+                    beta_ex.add_term(1.0, [7], [5])
+
+                    fci_temp.hartree_fock()
+                    fci_temp.apply_sqop(alpha_ex)
+                    a_ind = fci_temp.get_nonzero_idxs()[0]
+
+                    fci_temp.hartree_fock()
+                    fci_temp.apply_sqop(beta_ex)
+                    b_ind = fci_temp.get_nonzero_idxs()[0]
+
+                    fci_temp.zero_state()
+                    fci_temp.set_element(a_ind, val)
+                    fci_temp.set_element(b_ind, val)
+
+                    self._excited_guess = fci_temp.get_state_deep()
 
             if(self._evolve_dfham):
                 dfh = self._sys.df_ham
@@ -681,8 +709,10 @@ class QITE(Algorithm):
 
         self._n_classical_params += len(x_list)
 
-        # this is only for UCC!
-        x_list_fci = [x*self._db for x in x_list]
+        if(self._folded_spectrum):
+            x_list_fci = [x*self._db*self._db for x in x_list]
+        else:
+            x_list_fci = [x*self._db for x in x_list]
 
         # Also used only for DIIS
         if(self._use_diis):
@@ -797,6 +827,8 @@ class QITE(Algorithm):
             
             if(self._random_state):
                 self._qc.set_state(self._rand_tensor)
+            if(self._BeH2_guess):
+                self._qc.set_state(self._excited_guess)
             else:
                 self._qc.hartree_fock()
 

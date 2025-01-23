@@ -97,7 +97,7 @@ class Molecule(System):
 
     """
 
-    def __init__(self, mol_geometry=None, basis='sto-3g', multiplicity=1, charge=0,
+    def __init__(self, mol_geometry=None, basis='sto-3g', multiplicity=1, charge=0, nroots_fci=1,
                  filename=""):
         """Initialize a qforte molecule object.
 
@@ -125,7 +125,16 @@ class Molecule(System):
         self.basis = basis
         self.multiplicity = multiplicity
         self.charge = charge
+        self.nroots_fci = nroots_fci
         self.filename = filename
+
+    @property
+    def nroots_fci(self):
+        return self._nroots_fci
+
+    @nroots_fci.setter
+    def nroots_fci(self, nroots_fci):
+        self._nroots_fci = nroots_fci
 
     @property
     def hf_energy(self):

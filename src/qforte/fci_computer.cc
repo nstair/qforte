@@ -1934,6 +1934,11 @@ void FCIComputer::hartree_fock() {
     C_.set({0, 0}, 1.0);
 }
 
+/// Sets all coefficeints fo the FCI Computer to Zero
+void FCIComputer::zero_state() {
+    C_.zero();
+}
+
 /// return the indexes of non-zero elements
 std::vector<std::vector<size_t>> FCIComputer::get_nonzero_idxs() const 
 {

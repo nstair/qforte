@@ -546,6 +546,9 @@ class FCIComputer {
     /// Sets all coefficeints fo the FCI Computer to Zero except the HF Determinant (set to 1).
     void hartree_fock();
 
+    /// Sets all coefficeints fo the FCI Computer to Zero
+    void zero_state();
+
     void print_vector(const std::vector<int>& vec, const std::string& name);
 
     void print_vector_z(const std::vector<std::complex<double>>& vec, const std::string& name);
