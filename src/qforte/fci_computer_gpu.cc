@@ -1281,25 +1281,10 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
                     int phase = std::pow(-1, (crea.size() + anna.size()) * (creb.size() + annb.size()));
                     std::complex<double> work_cof = std::conj(new_coef) * static_cast<double>(phase) * std::complex<double>(0.0, -1.0);
 
-                    // apply_individual_nbody_accumulate_gpu(
-                    //     work_cof * sinfactor,
-                    //     Cin,
-                    //     C_, 
-                    //     anna,
-                    //     crea,
-                    //     annb,
-                    //     creb);
+                    Cin.to_gpu();
+                    C_.to_gpu();
 
-                    // apply_individual_nbody_accumulate_gpu(
-                    //     new_coef * std::complex<double>(0.0, -1.0) * sinfactor,
-                    //     Cin,
-                    //     C_, 
-                    //     crea,
-                    //     anna,
-                    //     creb,
-                    //     annb);
-
-                    apply_individual_nbody_accumulate(
+                    apply_individual_nbody_accumulate_gpu(
                         work_cof * sinfactor,
                         Cin,
                         C_, 
@@ -1308,7 +1293,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
                         annb,
                         creb);
 
-                    apply_individual_nbody_accumulate(
+                    apply_individual_nbody_accumulate_gpu(
                         new_coef * std::complex<double>(0.0, -1.0) * sinfactor,
                         Cin,
                         C_, 
@@ -1316,6 +1301,27 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
                         anna,
                         creb,
                         annb);
+
+                    Cin.to_cpu();
+                    C_.to_cpu();
+
+                    // apply_individual_nbody_accumulate(
+                    //     work_cof * sinfactor,
+                    //     Cin,
+                    //     C_, 
+                    //     anna,
+                    //     crea,
+                    //     annb,
+                    //     creb);
+
+                    // apply_individual_nbody_accumulate(
+                    //     new_coef * std::complex<double>(0.0, -1.0) * sinfactor,
+                    //     Cin,
+                    //     C_, 
+                    //     crea,
+                    //     anna,
+                    //     creb,
+                    //     annb);
 
 
                 } else {
