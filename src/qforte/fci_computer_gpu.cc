@@ -1138,15 +1138,20 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
       const bool adjoint)
 
 {
-    C_.gpu_error();
+    // C_.gpu_error();
+    C_.cpu_error();
+    
     if(adjoint){
         for (int i = pool.terms().size() - 1; i >= 0; --i) {
             std::cout << "pool terms " << pool.terms()[i].second.str() << std::endl;
             // TensorGPU Cin = C_;
                 
                 
-                TensorGPU Cin(C_.shape(), "Cin", true);
-                Cin.copy_in_gpu(C_);
+                TensorGPU Cin(C_.shape(), "Cin", false);
+                // Cin.copy_in_gpu(C_);
+                Cin.copy_in(C_);
+
+                // Now we want to make sure 
 
 
                 if (pool.terms()[i].second.terms().size() != 2) {
@@ -1276,7 +1281,25 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
                     int phase = std::pow(-1, (crea.size() + anna.size()) * (creb.size() + annb.size()));
                     std::complex<double> work_cof = std::conj(new_coef) * static_cast<double>(phase) * std::complex<double>(0.0, -1.0);
 
-                    apply_individual_nbody_accumulate_gpu(
+                    // apply_individual_nbody_accumulate_gpu(
+                    //     work_cof * sinfactor,
+                    //     Cin,
+                    //     C_, 
+                    //     anna,
+                    //     crea,
+                    //     annb,
+                    //     creb);
+
+                    // apply_individual_nbody_accumulate_gpu(
+                    //     new_coef * std::complex<double>(0.0, -1.0) * sinfactor,
+                    //     Cin,
+                    //     C_, 
+                    //     crea,
+                    //     anna,
+                    //     creb,
+                    //     annb);
+
+                    apply_individual_nbody_accumulate(
                         work_cof * sinfactor,
                         Cin,
                         C_, 
@@ -1285,7 +1308,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
                         annb,
                         creb);
 
-                    apply_individual_nbody_accumulate_gpu(
+                    apply_individual_nbody_accumulate(
                         new_coef * std::complex<double>(0.0, -1.0) * sinfactor,
                         Cin,
                         C_, 
