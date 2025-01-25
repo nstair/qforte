@@ -1138,10 +1138,16 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
       const bool adjoint)
 
 {
+    C_.gpu_error();
     if(adjoint){
         for (int i = pool.terms().size() - 1; i >= 0; --i) {
+            std::cout << "pool terms " << pool.terms()[i].second.str() << std::endl;
+            // TensorGPU Cin = C_;
+                
+                
+                TensorGPU Cin(C_.shape(), "Cin", true);
+                Cin.copy_in_gpu(C_);
 
-            TensorGPU Cin = C_;
 
                 if (pool.terms()[i].second.terms().size() != 2) {
                     std::cout << "This sqop has " << pool.terms()[i].second.terms().size() << " terms." << std::endl;
@@ -1300,6 +1306,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
 
         }
     } else {
+        std::cout << "i got to the else statement in gpu" << std::endl;
         for (const auto& sqop_term : pool.terms()) {
             apply_sqop_evolution(
                 sqop_term.first, 
@@ -1427,6 +1434,9 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate_gpu(
     std::vector<int>& parityb)
 {
     
+
+
+
     if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
         throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
     }
@@ -1463,7 +1473,7 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate_gpu(
     int parityb_mem = parityb.size() * sizeof(cuDoubleComplex);
 
     // int tensor_mem = Cin.size() * sizeof(cuDoubleComplex);
-    int tensor_mem = Cin.size();
+    int tensor_size = Cin.size();
 
 
     cudaMalloc(&d_sourcea, sourcea_mem);
@@ -1484,15 +1494,16 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate_gpu(
 
     cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
 
-    std::cout<< "i am here" <<std::endl;
+
+
 
     // std::cout<< "cu_coeff: " << cu_coeff << std::endl;
-    std::cout<< "Cin: " << Cin.str() << std::endl;
-    std::cout<< "Cout: " << Cout.str() << std::endl;
-    std::cout<< "nbeta_strs_: " << nbeta_strs_ << std::endl;
-    std::cout<< "targeta size: " << targeta.size() << std::endl;
-    std::cout<< "targetb size: " << targetb.size() << std::endl;
-    std::cout<< "tensor_mem: " << tensor_mem << std::endl;
+    // std::cout<< "Cin: " << Cin.str() << std::endl;
+    // std::cout<< "Cout: " << Cout.str() << std::endl;
+    // std::cout<< "nbeta_strs_: " << nbeta_strs_ << std::endl;
+    // std::cout<< "targeta size: " << targeta.size() << std::endl;
+    // std::cout<< "targetb size: " << targetb.size() << std::endl;
+    // std::cout<< "tensor_mem: " << tensor_size << std::endl;
 
 
 
@@ -1513,7 +1524,7 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate_gpu(
         nbeta_strs_,
         targeta.size(),
         targetb.size(),
-        tensor_mem);
+        tensor_size);
 
     cudaFree(d_sourcea);
     cudaFree(d_sourceb);
@@ -1527,6 +1538,16 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate_gpu(
         std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
         throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
     }
+
+    std::cout<< "i am here GPU" <<std::endl;
+    Cout.to_cpu();
+    // Cin.to_cpu();
+    // std::cout << "Cin GPU version: " << Cin.str() << std::endl;
+    std::cout<< "Cout GPU version: " << Cout.str() << std::endl;
+    // Cin.to_gpu();
+    Cout.to_gpu();
+
+
 }
 
 void FCIComputerGPU::apply_individual_nbody1_accumulate_cpu(
@@ -1542,6 +1563,16 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate_cpu(
 {
     Cin.cpu_error();
     Cout.cpu_error();
+
+    // std::cout << "CPU VERSION ----------------" << std::endl;
+    // std::cout << "source a: " << sourcea << std::endl;
+    // std::cout << "target a: " << targeta << std::endl;
+    // std::cout << "parity a: " << paritya << std::endl;
+    // std::cout << "source b: " << sourceb << std::endl;
+    // std::cout << "target b: " << targetb << std::endl;
+    // std::cout << "parity b: " << parityb << std::endl;
+
+
     if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
         throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
     }
@@ -1614,6 +1645,14 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
         parityb[i] = 1.0 - 2.0 * std::get<3>(ubetamap)[i];
     }
 
+    // std::cout << "CPU VERSION ----------------" << std::endl;
+    // std::cout << "source a: " << sourcea << std::endl;
+    // std::cout << "target a: " << targeta << std::endl;
+    // std::cout << "parity a: " << paritya << std::endl;
+    // std::cout << "source b: " << sourceb << std::endl;
+    // std::cout << "target b: " << targetb << std::endl;
+    // std::cout << "parity b: " << parityb << std::endl;
+
     apply_individual_nbody1_accumulate_cpu(
         coeff, 
         Cin,
@@ -1625,6 +1664,9 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
         targetb,
         parityb);
 
+
+    std::cout << "Cin CPU version " << Cin.str() << std::endl;
+    std::cout << "Cout CPU version " << Cout.str() << std::endl;
 }
 
 void FCIComputerGPU::apply_individual_nbody_accumulate_gpu(
@@ -1677,6 +1719,14 @@ void FCIComputerGPU::apply_individual_nbody_accumulate_gpu(
         targetb[i] = graph_.get_bind_for_str(std::get<2>(ubetamap)[i]);
         parityb[i] = 1.0 - 2.0 * std::get<3>(ubetamap)[i];
     }
+
+    // std::cout << "GPU VERSION ----------------" << std::endl;
+    // std::cout << "source a: " << sourcea << std::endl;
+    // std::cout << "target a: " << targeta << std::endl;
+    // std::cout << "parity a: " << paritya << std::endl;
+    // std::cout << "source b: " << sourceb << std::endl;
+    // std::cout << "target b: " << targetb << std::endl;
+    // std::cout << "parity b: " << parityb << std::endl;
 
     apply_individual_nbody1_accumulate_gpu(
         coeff, 

@@ -57,8 +57,7 @@
 //     const int* d_parityb,
 //     int nbeta_strs_,
 //     int targeta_size,
-//     int targetb_size,
-//     int tensor_size) 
+//     int targetb_size) 
 // {
 //     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -67,7 +66,7 @@
 //         int sa_idx = d_sourcea[idx] * nbeta_strs_;
 //         cuDoubleComplex pref = cuCmul(coeff, make_cuDoubleComplex(d_paritya[idx], 0.0));
 
-//         #pragma unroll
+//         // #pragma unroll
 //         for (int j = 0; j < targetb_size; ++j) {
 //             cuDoubleComplex term = cuCmul(pref, make_cuDoubleComplex(d_parityb[j], 0.0));
 //             term = cuCmul(term, d_Cin[sa_idx + d_sourceb[j]]);
@@ -219,8 +218,8 @@ void apply_individual_nbody1_accumulate_wrapper(
     int tensor_size) 
 {
     
-    int blocksPerGrid = (tensor_size + 256 - 1) / 256;
-    apply_individual_nbody1_accumulate_kernel<<<blocksPerGrid, 256>>>(
+    // int blocksPerGrid = (tensor_size + 256 - 1) / 256;
+    apply_individual_nbody1_accumulate_kernel<<<256, 256>>>(
         coeff, 
         d_Cin, 
         d_Cout, 
@@ -293,3 +292,82 @@ void evolve_individual_nbody_easy_wrapper(
 
 }
 
+// starting over
+
+// __global__ void apply_individual_nbody1_accumulate_fresh_kernel(
+//     const cuDoubleComplex coeff,
+//     const cuDoubleComplex* Cin,
+//     cuDoubleComplex* Cout,
+//     const int* sourcea,
+//     const int* targeta,
+//     const int* paritya,
+//     const int* sourceb,
+//     const int* targetb,
+//     const int* parityb,
+//     int nbeta_strs,
+//     int targeta_size,
+//     int targetb_size)
+// {
+
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     int idy = blockIdx.y * blockDim.y + threadIdx.y;
+
+//     // apparently don't need a nested if statement
+//     if (idx < targeta_size && idy < targetb_size){
+//         int ta_idx = targeta[idx] * nbeta_strs;
+//         int sa_idx = sourcea[idx] * nbeta_strs;
+
+//         cuDoubleComplex pref = cuCmul(coeff, make_cuDoubleComplex((double)paritya[idx], 0.0));
+
+//         // atomicAdd(
+//         //     &Cout[ta_idx + targetb[idy]].x,
+//         //     pref.x * parityb[idy] * Cin[sa_idx + sourceb[idy]].x - 
+//         //     pref.y * parityb[idy] * Cin[sa_idx + sourceb[idy]].y
+//         // );
+
+//             term = cuCmul(term, d_Cin[sa_idx + d_sourceb[idy]]);
+
+
+//         Cout[ta_idx + targetb[idy]].x = cuCadd(Cout[ta_idx + targetb[idy]].x, )
+
+//         atomicAdd(
+//             &Cout[ta_idx + targetb[idy]].y,
+//             pref.x * parityb[idy] * Cin[sa_idx + sourceb[idy]].y + 
+//             pref.y * parityb[idy] * Cin[sa_idx + sourceb[idy]].x
+//         );
+
+//     }
+
+// }
+
+// void apply_individual_nbody1_accumulate_fresh_wrapper(
+//     const cuDoubleComplex coeff,
+//     const cuDoubleComplex* Cin,
+//     cuDoubleComplex* Cout,
+//     const int* sourcea,
+//     const int* targeta,
+//     const int* paritya,
+//     const int* sourceb,
+//     const int* targetb,
+//     const int* parityb,
+//     int nbeta_strs,
+//     int targeta_size,
+//     int targetb_size)
+// {
+
+//     apply_individual_nbody1_accumulate_fresh_kernel<<<256, 256>>>(
+//         coeff,
+//         Cin,
+//         Cout,
+//         sourcea,
+//         targeta,
+//         paritya,
+//         sourceb,
+//         targetb,
+//         parityb,
+//         nbeta_strs,
+//         targeta_size,
+//         targetb_size
+//     );
+
+// }

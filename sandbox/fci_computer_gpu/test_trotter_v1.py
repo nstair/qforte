@@ -33,10 +33,10 @@ print("===========================")
 
 
 sq_terms = [
-    (+0.704645, [7, 6], [3, 2]), # 2body ab 
+    # (+0.704645, [7, 6], [3, 2]), # 2body ab 
     (+0.4, [6], [0]), # 1bdy-a
-    (+0.4, [7], [3]), # 1bdy-a
-    (+0.4, [4], [4]), # 1bdy-a
+    # (+0.4, [7], [3]), # 1bdy-a
+    # (+0.4, [4], [4]), # 1bdy-a
     ]
 
 time = 1.0
@@ -52,7 +52,7 @@ for sq_term in sq_terms:
 
     pool.add_term(1.0, sqop)
 
-# fci_comp2.to_gpu()
+fci_comp2.to_gpu()
 
 timer = qf.local_timer()
 timer.reset()
@@ -70,17 +70,17 @@ fci_comp2.evolve_pool_trotter_basic_gpu(
     adjoint=True)
     
 timer.record("gpu")
-print("\n Final FCIcomp1 Stuff")
-print("===========================")
+# print("\n Final FCIcomp1 Stuff")
+# print("===========================")
 
-Ctemp1 = fci_comp1.get_state_deep()
-cnrm1 = Ctemp1.norm()
-print(f"||C||: {cnrm1}")
-print(fci_comp1.str(print_data=True, print_complex=print_imag))
+# Ctemp1 = fci_comp1.get_state_deep()
+# cnrm1 = Ctemp1.norm()
+# print(f"||C||: {cnrm1}")
+# print(fci_comp1.str(print_data=True, print_complex=print_imag))
 
 print("\n Final FCIcomp2 Stuff")
 print("===========================")
-
+fci_comp2.to_cpu()
 Ctemp2 = fci_comp2.get_state_deep()
 cnrm2 = Ctemp2.norm()
 print(f"||C||: {cnrm2}")

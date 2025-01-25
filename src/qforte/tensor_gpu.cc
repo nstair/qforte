@@ -764,6 +764,7 @@ std::string TensorGPU::str(
     const std::string& header_format
     ) const
 {
+    cpu_error();
     std::string str = "";
     str += std::printf( "TensorGPU: %s\n", name_.c_str());
     str += std::printf( "  Ndim  = %zu\n", ndim());
