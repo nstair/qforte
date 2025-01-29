@@ -425,6 +425,15 @@ class FCIComputer {
       const DFHamiltonian& df_ham,
       const double nuc_rep_en);
 
+    /// Apples unitary rotations between two INDIVIDUAL determinants
+    /// The action is parameterized by the angle theta.
+    void apply_two_determinant_rotations(
+      const std::vector<std::vector<size_t>> IJ_source,
+      const std::vector<std::vector<size_t>> IJ_target,
+      const std::vector<double> angles,
+      const bool adjoint = false
+    );
+
     /// Applies the trotterized form of a
     /// double factorized hamiltonain time evolution,
     /// NOTE: thresholds for the double factorization eigenvalue cutoffs

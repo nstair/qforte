@@ -280,6 +280,7 @@ PYBIND11_MODULE(qforte, m) {
             )
         .def("apply_df_ham", &FCIComputer::apply_df_ham)
         .def("evolve_df_ham_trotter", &FCIComputer::evolve_df_ham_trotter)
+        .def("apply_two_determinant_rotations", &FCIComputer::apply_two_determinant_rotations)
         .def("evolve_givens", &FCIComputer::evolve_givens)
         .def("evolve_diagonal_from_mat", &FCIComputer::evolve_diagonal_from_mat)
         .def("set_state", &FCIComputer::set_state)

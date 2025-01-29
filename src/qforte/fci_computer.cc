@@ -1657,6 +1657,52 @@ void FCIComputer::evolve_df_ham_trotter(
 
 }
 
+// NOTE(Nick): could be made faster if this becomes a popular subroutine
+void FCIComputer::apply_two_determinant_rotations(
+      const std::vector<std::vector<size_t>> IJ_source,
+      const std::vector<std::vector<size_t>> IJ_target,
+      const std::vector<double> angles,
+      const bool adjoint
+    )
+{
+    if(IJ_source.size() != IJ_target.size() or IJ_source.size() != angles.size()){
+        throw std::invalid_argument("IJ_source, IJ_target, and angles to all have the same size");
+    }
+
+    size_t N = IJ_source.size();
+
+    // Tensor Cin = C_;
+
+    if(adjoint){
+        for(int n = N-1; n >= 0; --n){
+            std::complex<double> C_source = C_.get(IJ_source[n]);
+            std::complex<double> C_target = C_.get(IJ_target[n]);
+            double theta = angles[n];
+
+            std::complex<double> C_source_prime =  std::cos(theta)*C_source + std::sin(theta)*C_target;
+            std::complex<double> C_target_prime = -std::sin(theta)*C_source + std::cos(theta)*C_target;
+
+            C_.set(IJ_source[n], C_source_prime);
+            C_.set(IJ_target[n], C_target_prime);
+    }
+    } else {
+        for(int n = 0; n < N; ++n){
+            std::complex<double> C_source = C_.get(IJ_source[n]);
+            std::complex<double> C_target = C_.get(IJ_target[n]);
+            double theta = angles[n];
+
+            std::complex<double> C_source_prime = std::cos(theta)*C_source - std::sin(theta)*C_target;
+            std::complex<double> C_target_prime = std::sin(theta)*C_source + std::cos(theta)*C_target;
+
+            C_.set(IJ_source[n], C_source_prime);
+            C_.set(IJ_target[n], C_target_prime);
+        }
+    }
+
+    
+
+}
+
 // NOTE(Nick): If this proves exceedingly slow,
 // it is possible to apply blocks of these givens
 // rotations in parallel, will look into this if
