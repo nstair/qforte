@@ -144,7 +144,10 @@ class QITE(Algorithm):
             lanczos_gap=2,
             realistic_lanczos=True,
             fname=None,
-            print_pool=False):
+            print_pool=False,
+            use_cis_reference=False,
+            target_root=0,
+            ):
 
         self._beta = beta
         self._db = db
@@ -169,6 +172,10 @@ class QITE(Algorithm):
         # DIIS options
         self._use_diis = use_diis
         self._qite_diis_max = max_diis_size
+
+        # CIS options
+        self._use_cis_reference = use_cis_reference
+        self._target_root = target_root
 
         self._n_classical_params = 0
         self._n_cnot = self._Uprep.get_num_cnots()
@@ -204,6 +211,30 @@ class QITE(Algorithm):
                         self._rand_tensor.set([i,j], normalized_coeffs[i,j])
 
                 qc_ref.set_state(self._rand_tensor)
+            elif(self._use_cis_reference):
+
+                alg_cis = qf.CIS(
+                    self._sys,
+                    computer_type = self._computer_type,
+                    apply_ham_as_tensor=self._apply_ham_as_tensor,
+                )
+
+                alg_cis.run(
+                    target_root=self._target_root,
+                    diagonalize_each_step=False,
+                    low_memory=False
+                )
+
+                self._cis_IJ_sources, self._cis_IJ_targets, self._cis_angles = alg_cis.get_cis_unitary_parameters()
+
+                qc_ref.hartree_fock()
+
+                qc_ref.apply_two_determinant_rotations(
+                    self._cis_IJ_sources,
+                    self._cis_IJ_targets,
+                    self._cis_angles,
+                    False
+                )
 
             else:
                 qc_ref.hartree_fock()
@@ -762,6 +793,31 @@ class QITE(Algorithm):
             
             if(self._random_state):
                 self._qc.set_state(self._rand_tensor)
+
+            elif(self._use_cis_reference):
+
+                alg_cis = qf.CIS(
+                    self._sys,
+                    computer_type = self._computer_type,
+                    apply_ham_as_tensor=self._apply_ham_as_tensor,
+                )
+
+                alg_cis.run(
+                    target_root=self._target_root,
+                    diagonalize_each_step=False,
+                    low_memory=False
+                )
+
+                self._cis_IJ_sources, self._cis_IJ_targets, self._cis_angles = alg_cis.get_cis_unitary_parameters()
+
+                self._qc.hartree_fock()
+
+                self._qc.apply_two_determinant_rotations(
+                    self._cis_IJ_sources,
+                    self._cis_IJ_targets,
+                    self._cis_angles,
+                    False
+                )
             else:
                 self._qc.hartree_fock()
 
