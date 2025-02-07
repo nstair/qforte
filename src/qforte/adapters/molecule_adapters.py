@@ -496,6 +496,9 @@ def create_pyscf_mol(**kwargs):
     kwargs.setdefault('run_cisd', False)
     kwargs.setdefault('run_fci', False)
 
+    kwargs.setdefault('nroots_fci', 1)
+    nroots_fci = kwargs['nroots_fci']
+
     # ===> Run PySCF End <=== #
 
     pyscf_geom_str = ""
@@ -684,8 +687,13 @@ def create_pyscf_mol(**kwargs):
 
         else:
             cisolver = fci.FCI(mf)
+
+            cisolver.nroots = nroots_fci
+
             fci_energy, _ = cisolver.kernel()
             qforte_mol.fci_energy = fci_energy
+
+            qforte_mol.fci_energy_list = fci_energy
 
 
     # Retrieve the number of frozen core and virtual orbitals
