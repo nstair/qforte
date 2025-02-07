@@ -140,6 +140,9 @@ class QITE(Algorithm):
             b_thresh=1.0e-6,
             x_thresh=1.0e-10,
             physical_r = False,
+            folded_spectrum = False,
+            BeH2_guess = False,
+            e_shift = 0.0,
             do_lanczos=False,
             lanczos_gap=2,
             realistic_lanczos=True,
@@ -176,6 +179,9 @@ class QITE(Algorithm):
         # CIS options
         self._use_cis_reference = use_cis_reference
         self._target_root = target_root
+        self._folded_spectrum = folded_spectrum
+        self._BeH2_guess = BeH2_guess # for the excited determinant stuff, you need to find lowest alpha/beta excitation indic in FCI graph
+        self._e_shift = e_shift
 
         self._n_classical_params = 0
         self._n_cnot = self._Uprep.get_num_cnots()
@@ -191,7 +197,7 @@ class QITE(Algorithm):
             if(self._use_exact_evolution):
                 self._fname = f'beta_{self._beta}_db_{self._db}_EXACT_EVOLUTION'
             else:
-                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_selected_pool_{self._selected_pool}_t_{self._t_thresh}'
+                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_folded_spectrum_{self._folded_spectrum}_e_shift_{self._e_shift}_selected_pool_{self._selected_pool}_t_{self._t_thresh}'
 
         self._sz = 0
 
@@ -238,6 +244,40 @@ class QITE(Algorithm):
 
             else:
                 qc_ref.hartree_fock()
+
+            if(self._folded_spectrum): # only implementing it for sq ham to start
+                if(self._apply_ham_as_tensor):
+                    self._shifted_0_body = self._nuclear_repulsion_energy - self._e_shift
+                else:
+                    self._Ofs = qf.SQOperator()
+                    self._Ofs.add_op(self._sq_ham)
+                    self._Ofs.add_term(-self._e_shift, [], [])
+
+                #FOR BeH2 BENCHMARK ONLY
+                if(self._BeH2_guess):
+                    val = 1.0 / np.sqrt(2.0)
+    
+                    fci_temp = qf.FCIComputer(self._nel, self._sz, self._norb)
+
+                    alpha_ex = qf.SQOperator()
+                    alpha_ex.add_term(1.0, [6], [4])
+
+                    beta_ex = qf.SQOperator()
+                    beta_ex.add_term(1.0, [7], [5])
+
+                    fci_temp.hartree_fock()
+                    fci_temp.apply_sqop(alpha_ex)
+                    a_ind = fci_temp.get_nonzero_idxs()[0]
+
+                    fci_temp.hartree_fock()
+                    fci_temp.apply_sqop(beta_ex)
+                    b_ind = fci_temp.get_nonzero_idxs()[0]
+
+                    fci_temp.zero_state()
+                    fci_temp.set_element(a_ind, val)
+                    fci_temp.set_element(b_ind, val)
+
+                    self._excited_guess = fci_temp.get_state_deep()
 
             if(self._evolve_dfham):
                 dfh = self._sys.df_ham
@@ -509,15 +549,34 @@ class QITE(Algorithm):
             Hpsi_qc.apply_sqop_pool(self._d0)
 
         else:
-            if(self._apply_ham_as_tensor):
-                Hpsi_qc.apply_tensor_spat_012bdy(
-                        self._zero_body_energy, 
-                        self._mo_oeis, 
-                        self._mo_teis, 
-                        self._mo_teis_einsum, 
-                        self._norb)
+            if(self._folded_spectrum):
+                if(self._apply_ham_as_tensor):
+                    Hpsi_qc.apply_tensor_spat_012bdy(
+                            self._shifted_0_body,
+                            self._mo_oeis, 
+                            self._mo_teis, 
+                            self._mo_teis_einsum, 
+                            self._norb)
+                    Hpsi_qc.apply_tensor_spat_012bdy(
+                            self._shifted_0_body,
+                            self._mo_oeis, 
+                            self._mo_teis, 
+                            self._mo_teis_einsum, 
+                            self._norb)
+                else:
+                    Hpsi_qc.apply_sqop(self._Ofs)
+                    Hpsi_qc.apply_sqop(self._Ofs)
+                
             else:
-                Hpsi_qc.apply_sqop(self._sq_ham)
+                if(self._apply_ham_as_tensor):
+                    Hpsi_qc.apply_tensor_spat_012bdy(
+                            self._zero_body_energy, 
+                            self._mo_oeis, 
+                            self._mo_teis, 
+                            self._mo_teis_einsum, 
+                            self._norb)
+                else:
+                    Hpsi_qc.apply_sqop(self._sq_ham)
 
         if(self._low_memorySb):
             for i in range(Idim):
@@ -680,13 +739,16 @@ class QITE(Algorithm):
 
         self._n_classical_params += len(x_list)
 
-        # this is only for UCC!
-        x_list_fci = [x*self._db for x in x_list]
+        if(self._folded_spectrum):
+            x_list_fci = [x*self._db*self._db for x in x_list]
+        else:
+            x_list_fci = [x*self._db for x in x_list]
 
         # Also used only for DIIS
-        told = copy.deepcopy(self._tamps)
-        self._tamps = self._tamps = list(np.add(self._tamps, x_list_fci))
-        evec = list(np.subtract(self._tamps, told))
+        if(self._use_diis):
+            told = copy.deepcopy(self._tamps)
+            self._tamps = self._tamps = list(np.add(self._tamps, x_list_fci))
+            evec = list(np.subtract(self._tamps, told))
 
         if(self._computer_type=='fock'):
             if(self._sparseSb):
@@ -777,7 +839,9 @@ class QITE(Algorithm):
 
 
         if(self._verbose):
-            qf.smart_print(self._qc)
+            print('state after operator pool evolution')
+            print(self._qc)
+            print('\n')
 
     def evolve(self):
         """Perform QITE for a time step :math:`\\Delta \\beta`.

@@ -470,18 +470,20 @@ def create_pyscf_mol(**kwargs):
     kwargs.setdefault('symmetry', 'c1')
     kwargs.setdefault('charge', 0)
     kwargs.setdefault('multiplicity', 1)
+    kwargs.setdefault('nroots_fci', 1)
 
     mol_geometry = kwargs['mol_geometry']
     basis = kwargs['basis']
     multiplicity = kwargs['multiplicity']
     charge = kwargs['charge']
+    nroots_fci = kwargs['nroots_fci']
 
     qforte_mol = Molecule(
         mol_geometry = mol_geometry,
         basis = basis,
         multiplicity = multiplicity,
         charge = charge,
-        )
+        nroots_fci = nroots_fci)
 
     if not use_pyscf:
         raise ImportError("PySCF was not imported correctely.")
@@ -691,7 +693,9 @@ def create_pyscf_mol(**kwargs):
             cisolver.nroots = nroots_fci
 
             fci_energy, _ = cisolver.kernel()
-            qforte_mol.fci_energy = fci_energy
+            qforte_mol.fci_energy = fci_energy[0]
+
+            qforte_mol.fci_energy_list = fci_energy
 
             qforte_mol.fci_energy_list = fci_energy
 

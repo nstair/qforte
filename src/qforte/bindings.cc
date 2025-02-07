@@ -240,6 +240,7 @@ PYBIND11_MODULE(qforte, m) {
     py::class_<FCIComputer>(m, "FCIComputer")
         .def(py::init<int, int, int>(), "nel"_a, "sz"_a, "norb"_a, "Make a FCIComputer with nel, sz, and norb")
         .def("hartree_fock", &FCIComputer::hartree_fock)
+        .def("zero_state", &FCIComputer::zero_state)
         .def("set_element", &FCIComputer::set_element)
         .def("apply_tensor_spat_1bdy", &FCIComputer::apply_tensor_spat_1bdy)
         .def("apply_tensor_spin_1bdy", &FCIComputer::apply_tensor_spin_1bdy)
