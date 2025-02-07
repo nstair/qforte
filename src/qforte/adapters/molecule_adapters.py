@@ -692,12 +692,15 @@ def create_pyscf_mol(**kwargs):
 
             cisolver.nroots = nroots_fci
 
-            fci_energy, _ = cisolver.kernel()
-            qforte_mol.fci_energy = fci_energy[0]
+            fci_energies, _ = cisolver.kernel()
+            qforte_mol.fci_energy = fci_energies[0]
+            qforte_mol.fci_energy_list = fci_energies
 
-            qforte_mol.fci_energy_list = fci_energy
-
-            qforte_mol.fci_energy_list = fci_energy
+            if(nroots_fci > 1):
+                print('\n  FCI Eigenstate Energies')
+                print('======================================:')
+                for i, Ei in enumerate(fci_energies):
+                    print(f"  i: {i}  Ei:       {Ei:+10.10f}")
 
 
     # Retrieve the number of frozen core and virtual orbitals
