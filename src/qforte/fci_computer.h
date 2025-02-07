@@ -353,10 +353,34 @@ class FCIComputer {
       const int max_taylor_iter,
       const bool real_evolution);
 
+    /// A funciton to apply the exact time evolution of an operator^2
+    /// usnig a tayler expanson.
+    /// Onus on the user to assure evolution is unitary
+    void evolve_op2_taylor(
+      const SQOperator& op,
+      const double evolution_time,
+      const double convergence_thresh,
+      const int max_taylor_iter,
+      const bool real_evolution);
+
     /// A funciton to apply the exact time evolution of an operator
     /// usnig a tayler expanson.
     /// Onus on the user to assure evolution is unitary.
     void evolve_tensor_taylor(
+      const std::complex<double> h0e,
+      const Tensor& h1e, 
+      const Tensor& h2e, 
+      const Tensor& h2e_einsum, 
+      size_t norb,
+      const double evolution_time,
+      const double convergence_thresh,
+      const int max_taylor_iter,
+      const bool real_evolution);
+
+    /// A funciton to apply the exact time evolution of an operator^2
+    /// usnig a tayler expanson.
+    /// Onus on the user to assure evolution is unitary.
+    void evolve_tensor2_taylor(
       const std::complex<double> h0e,
       const Tensor& h1e, 
       const Tensor& h2e, 
@@ -424,6 +448,15 @@ class FCIComputer {
     void apply_df_ham(
       const DFHamiltonian& df_ham,
       const double nuc_rep_en);
+
+    /// Apples unitary rotations between two INDIVIDUAL determinants
+    /// The action is parameterized by the angle theta.
+    void apply_two_determinant_rotations(
+      const std::vector<std::vector<size_t>> IJ_source,
+      const std::vector<std::vector<size_t>> IJ_target,
+      const std::vector<double> angles,
+      const bool adjoint = false
+    );
 
     /// Applies the trotterized form of a
     /// double factorized hamiltonain time evolution,
@@ -545,6 +578,9 @@ class FCIComputer {
 
     /// Sets all coefficeints fo the FCI Computer to Zero except the HF Determinant (set to 1).
     void hartree_fock();
+
+    /// Sets all coefficeints fo the FCI Computer to Zero
+    void zero_state();
 
     void print_vector(const std::vector<int>& vec, const std::string& name);
 

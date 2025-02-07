@@ -427,7 +427,7 @@ class UCCVQE(VQE, UCC):
         # qc_sig.apply_operator(self._qb_ham)
         if(self._apply_ham_as_tensor):
             qc_sig.apply_tensor_spat_012bdy(
-            self._zero_body_energy_energy, 
+            self._zero_body_energy, 
             self._mo_oeis, 
             self._mo_teis, 
             self._mo_teis_einsum, 

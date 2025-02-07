@@ -140,17 +140,34 @@ class QITE(Algorithm):
             b_thresh=1.0e-6,
             x_thresh=1.0e-10,
             physical_r = False,
+            folded_spectrum = False,
+            BeH2_guess = False,
+            e_shift = None,
+            update_e_shift = True,
             do_lanczos=False,
             lanczos_gap=2,
             realistic_lanczos=True,
             fname=None,
-            print_pool=False):
+            print_pool=False,
+            use_cis_reference=False,
+            target_root=0,
+            cis_target_root=0,
+            ):
+        
+        # TODO(Nick): Remove BeH2 specific stuff..
 
         self._beta = beta
         self._db = db
         self._dt = dt
         self._use_exact_evolution = use_exact_evolution
-        self._nbeta = int(beta/db)+1
+
+        if(folded_spectrum):
+            beta_sq = beta*beta
+            db_sq = db*db
+            self._nbeta = int(beta_sq/db_sq)+1
+        else:
+            self._nbeta = int(beta/db)+1
+
         self._expansion_type = expansion_type
         self._evolve_dfham = evolve_dfham
         self._random_state = random_state
@@ -170,6 +187,17 @@ class QITE(Algorithm):
         self._use_diis = use_diis
         self._qite_diis_max = max_diis_size
 
+        # CIS options
+        self._use_cis_reference = use_cis_reference
+        self._target_root = target_root
+        self._cis_target_root = cis_target_root
+
+        # FS options
+        self._folded_spectrum = folded_spectrum
+        self._BeH2_guess = BeH2_guess 
+        self._e_shift = e_shift
+        self._update_e_shift = update_e_shift
+
         self._n_classical_params = 0
         self._n_cnot = self._Uprep.get_num_cnots()
         self._n_pauli_trm_measures = 0
@@ -184,7 +212,7 @@ class QITE(Algorithm):
             if(self._use_exact_evolution):
                 self._fname = f'beta_{self._beta}_db_{self._db}_EXACT_EVOLUTION'
             else:
-                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_selected_pool_{self._selected_pool}_t_{self._t_thresh}'
+                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_folded_spectrum_{self._folded_spectrum}_e_shift_{self._e_shift}_selected_pool_{self._selected_pool}_t_{self._t_thresh}'
 
         self._sz = 0
 
@@ -204,9 +232,71 @@ class QITE(Algorithm):
                         self._rand_tensor.set([i,j], normalized_coeffs[i,j])
 
                 qc_ref.set_state(self._rand_tensor)
+            elif(self._use_cis_reference):
+
+                alg_cis = qf.CIS(
+                    self._sys,
+                    computer_type = self._computer_type,
+                    apply_ham_as_tensor=self._apply_ham_as_tensor,
+                )
+
+                alg_cis.run(
+                    target_root=self._target_root,
+                    diagonalize_each_step=False,
+                    low_memory=False
+                )
+                
+                if(self._e_shift == None):
+                    print(f'\n** Setting FS-QITE Eshft={alg_cis._Ets:+8.8f} from cis root: {self._cis_target_root} **\n')
+                    self._e_shift = alg_cis._Ets
+
+                self._cis_IJ_sources, self._cis_IJ_targets, self._cis_angles = alg_cis.get_cis_unitary_parameters()
+
+                qc_ref.hartree_fock()
+
+                qc_ref.apply_two_determinant_rotations(
+                    self._cis_IJ_sources,
+                    self._cis_IJ_targets,
+                    self._cis_angles,
+                    False
+                )
 
             else:
                 qc_ref.hartree_fock()
+
+            if(self._folded_spectrum): # only implementing it for sq ham to start
+                if(self._apply_ham_as_tensor):
+                    self._shifted_0_body = self._nuclear_repulsion_energy - self._e_shift
+                else:
+                    self._Ofs = qf.SQOperator()
+                    self._Ofs.add_op(self._sq_ham)
+                    self._Ofs.add_term(-self._e_shift, [], [])
+
+                #FOR BeH2 BENCHMARK ONLY
+                if(self._BeH2_guess):
+                    val = 1.0 / np.sqrt(2.0)
+    
+                    fci_temp = qf.FCIComputer(self._nel, self._sz, self._norb)
+
+                    alpha_ex = qf.SQOperator()
+                    alpha_ex.add_term(1.0, [6], [4])
+
+                    beta_ex = qf.SQOperator()
+                    beta_ex.add_term(1.0, [7], [5])
+
+                    fci_temp.hartree_fock()
+                    fci_temp.apply_sqop(alpha_ex)
+                    a_ind = fci_temp.get_nonzero_idxs()[0]
+
+                    fci_temp.hartree_fock()
+                    fci_temp.apply_sqop(beta_ex)
+                    b_ind = fci_temp.get_nonzero_idxs()[0]
+
+                    fci_temp.zero_state()
+                    fci_temp.set_element(a_ind, val)
+                    fci_temp.set_element(b_ind, val)
+
+                    self._excited_guess = fci_temp.get_state_deep()
 
             if(self._evolve_dfham):
                 dfh = self._sys.df_ham
@@ -309,11 +399,29 @@ class QITE(Algorithm):
             print('Measurement variance thresh:             ',  0.01)
 
         # Specific QITE options.
+        print('\n')
         print('Total imaginary evolution time (beta):   ',  self._beta)
         print('Imaginary time step (db):                ',  self._db)
-        print('Use exact evolution:                     ',  self._use_exact_evolution)
+
+        # Options for Folded Spectrum
+        print('\n')
+        print('Use Folded Spectrum:                     ',  self._folded_spectrum)
+        if(self._folded_spectrum):
+            print('FS-QITE target root:                     ',  self._target_root)
+
+        # Options for CIS Reference
+        print('\n')
+        print('Use CIS Reference:                       ',  self._use_cis_reference)
+        if(self._use_cis_reference):
+            print('Using CIS Reference root:                ',  self._cis_target_root)
+            print('Update Eshift during QITE:               ',  self._update_e_shift)
+
+        # Last QITE option, dictates whether more is printed
+        print('\n')
+        print('Use exact evolutoin:                     ', self._use_exact_evolution)
 
         if not self._use_exact_evolution:
+            print('\n')
             print('Expansion type:                          ',  self._expansion_type)
             print('Use DIIS:                                ',  self._use_diis)
             print('Max DIIS size:                           ',  self._qite_diis_max)
@@ -342,7 +450,9 @@ class QITE(Algorithm):
     def print_summary_banner(self):
         print('\n\n                        ==> QITE summary <==')
         print('-----------------------------------------------------------')
-        print('Final QITE Energy:                        ', round(self._Egs, 10))
+        print('Final QITE Energy:                        ', round(self._Ets, 10))
+        print('Final Energy Shift:                       ', round(self._e_shift, 10))
+
         if(not self._use_exact_evolution):
             print('Number of operators in pool:              ', self._NI)
             print('Number of classical parameters used:      ', self._n_classical_params)
@@ -478,15 +588,34 @@ class QITE(Algorithm):
             Hpsi_qc.apply_sqop_pool(self._d0)
 
         else:
-            if(self._apply_ham_as_tensor):
-                Hpsi_qc.apply_tensor_spat_012bdy(
-                        self._zero_body_energy, 
-                        self._mo_oeis, 
-                        self._mo_teis, 
-                        self._mo_teis_einsum, 
-                        self._norb)
+            if(self._folded_spectrum):
+                if(self._apply_ham_as_tensor):
+                    Hpsi_qc.apply_tensor_spat_012bdy(
+                            self._shifted_0_body,
+                            self._mo_oeis, 
+                            self._mo_teis, 
+                            self._mo_teis_einsum, 
+                            self._norb)
+                    Hpsi_qc.apply_tensor_spat_012bdy(
+                            self._shifted_0_body,
+                            self._mo_oeis, 
+                            self._mo_teis, 
+                            self._mo_teis_einsum, 
+                            self._norb)
+                else:
+                    Hpsi_qc.apply_sqop(self._Ofs)
+                    Hpsi_qc.apply_sqop(self._Ofs)
+                
             else:
-                Hpsi_qc.apply_sqop(self._sq_ham)
+                if(self._apply_ham_as_tensor):
+                    Hpsi_qc.apply_tensor_spat_012bdy(
+                            self._zero_body_energy, 
+                            self._mo_oeis, 
+                            self._mo_teis, 
+                            self._mo_teis_einsum, 
+                            self._norb)
+                else:
+                    Hpsi_qc.apply_sqop(self._sq_ham)
 
         if(self._low_memorySb):
             for i in range(Idim):
@@ -623,6 +752,9 @@ class QITE(Algorithm):
 
     def do_qite_step(self):
 
+        if(self._folded_spectrum and self._update_e_shift):
+            self.update_e_shift()
+
         if(self._computer_type=='fci'):
             if(self._sparseSb):
                 print(f"Warning, build sparseSb method isn't supported for FCI computer, setting option to false")
@@ -649,13 +781,16 @@ class QITE(Algorithm):
 
         self._n_classical_params += len(x_list)
 
-        # this is only for UCC!
-        x_list_fci = [x*self._db for x in x_list]
+        if(self._folded_spectrum):
+            x_list_fci = [x*self._db*self._db for x in x_list]
+        else:
+            x_list_fci = [x*self._db for x in x_list]
 
         # Also used only for DIIS
-        told = copy.deepcopy(self._tamps)
-        self._tamps = self._tamps = list(np.add(self._tamps, x_list_fci))
-        evec = list(np.subtract(self._tamps, told))
+        if(self._use_diis):
+            told = copy.deepcopy(self._tamps)
+            self._tamps = self._tamps = list(np.add(self._tamps, x_list_fci))
+            evec = list(np.subtract(self._tamps, told))
 
         if(self._computer_type=='fock'):
             if(self._sparseSb):
@@ -746,7 +881,9 @@ class QITE(Algorithm):
 
 
         if(self._verbose):
-            qf.smart_print(self._qc)
+            print('state after operator pool evolution')
+            print(self._qc)
+            print('\n')
 
     def evolve(self):
         """Perform QITE for a time step :math:`\\Delta \\beta`.
@@ -762,6 +899,17 @@ class QITE(Algorithm):
             
             if(self._random_state):
                 self._qc.set_state(self._rand_tensor)
+
+            elif(self._use_cis_reference):
+
+                self._qc.hartree_fock()
+
+                self._qc.apply_two_determinant_rotations(
+                    self._cis_IJ_sources,
+                    self._cis_IJ_targets,
+                    self._cis_angles,
+                    False
+                )
             else:
                 self._qc.hartree_fock()
 
@@ -806,10 +954,16 @@ class QITE(Algorithm):
 
                 self._Hlanczos_vecs.append(qcSig_temp.get_state_deep())
 
+        
 
-        print(f"{'beta':>7}{'E(beta)':>18}{'N(params)':>14}{'N(CNOT)':>18}{'N(measure)':>20}")
-        print('-------------------------------------------------------------------------------')
-        print(f' {0.0:7.3f}    {self._Ekb[0]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}')
+        if(self._folded_spectrum):
+            print(f"{'beta^2':>8}{'E(beta)':>18}{'N(params)':>14}{'N(CNOT)':>18}{'N(measure)':>20}")
+            print('-------------------------------------------------------------------------------')
+            print(f' {0.0:7.3f}    {self._Ekb[0]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}')
+        else:
+            print(f"{'beta':>7}{'E(beta)':>18}{'N(params)':>14}{'N(CNOT)':>18}{'N(measure)':>20}")
+            print('-------------------------------------------------------------------------------')
+            print(f' {0.0:7.3f}    {self._Ekb[0]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}')
 
         if (self._print_summary_file):
             f = open(f"qite_{self._fname}_summary.dat", "w+", buffering=1)
@@ -824,47 +978,95 @@ class QITE(Algorithm):
 
         for kb in range(1, self._nbeta):
             if(self._use_exact_evolution):
-                if(self._apply_ham_as_tensor):
-                    self._qc.evolve_tensor_taylor(
-                            self._zero_body_energy, 
-                            self._mo_oeis, 
-                            self._mo_teis, 
-                            self._mo_teis_einsum, 
-                            self._norb,
-                            self._db,
-                            1.0e-15,
-                            30,
-                            True)
+                if(self._folded_spectrum):
 
-                    # print(f'norm before scaling: {self._qc.get_state().norm()}')
+                    if(self._update_e_shift):
+                        self.update_e_shift()
 
-                    norm = 1.0 / self._qc.get_state().norm()
-                    self._qc.scale(norm)
+                    if(self._apply_ham_as_tensor):
+                            self._qc.evolve_tensor2_taylor(
+                                    self._shifted_0_body,
+                                    self._mo_oeis, 
+                                    self._mo_teis, 
+                                    self._mo_teis_einsum, 
+                                    self._norb,
+                                    self._db*self._db,
+                                    1.0e-15,
+                                    30,
+                                    True)
 
-                    # print(f'norm after scaling: {self._qc.get_state().norm()}')
+                            # print(f'norm before scaling: {self._qc.get_state().norm()}')
 
-                    self._Ekb.append(np.real(self._qc.get_exp_val_tensor(
-                            self._zero_body_energy, 
-                            self._mo_oeis, 
-                            self._mo_teis, 
-                            self._mo_teis_einsum, 
-                            self._norb)))
+                            norm = 1.0 / self._qc.get_state().norm()
+                            self._qc.scale(norm)
+
+                            # print(f'norm after scaling: {self._qc.get_state().norm()}')
+
+                            self._Ekb.append(np.real(self._qc.get_exp_val_tensor(
+                                    self._zero_body_energy, 
+                                    self._mo_oeis, 
+                                    self._mo_teis, 
+                                    self._mo_teis_einsum, 
+                                    self._norb)))
+                    else:
+                        self._qc.evolve_op2_taylor(
+                                self._Ofs,
+                                self._db*self._db,
+                                1.0e-15,
+                                30,
+                                True)
+
+                        # print(f'norm before scaling: {self._qc.get_state().norm()}')
+
+                        norm = 1.0 / self._qc.get_state().norm()
+                        self._qc.scale(norm)
+
+                        # print(f'norm after scaling: {self._qc.get_state().norm()}')
+
+                        self._Ekb.append(np.real(self._qc.get_exp_val(self._sq_ham)))
+
                 else:
-                    self._qc.evolve_op_taylor(
-                            self._sq_ham,
-                            self._db,
-                            1.0e-15,
-                            30,
-                            True)
+                    if(self._apply_ham_as_tensor):
+                        self._qc.evolve_tensor_taylor(
+                                self._zero_body_energy, 
+                                self._mo_oeis, 
+                                self._mo_teis, 
+                                self._mo_teis_einsum, 
+                                self._norb,
+                                self._db,
+                                1.0e-15,
+                                30,
+                                True)
 
-                    # print(f'norm before scaling: {self._qc.get_state().norm()}')
+                        # print(f'norm before scaling: {self._qc.get_state().norm()}')
 
-                    norm = 1.0 / self._qc.get_state().norm()
-                    self._qc.scale(norm)
+                        norm = 1.0 / self._qc.get_state().norm()
+                        self._qc.scale(norm)
 
-                    # print(f'norm after scaling: {self._qc.get_state().norm()}')
+                        # print(f'norm after scaling: {self._qc.get_state().norm()}')
 
-                    self._Ekb.append(np.real(self._qc.get_exp_val(self._sq_ham)))
+                        self._Ekb.append(np.real(self._qc.get_exp_val_tensor(
+                                self._zero_body_energy, 
+                                self._mo_oeis, 
+                                self._mo_teis, 
+                                self._mo_teis_einsum, 
+                                self._norb)))
+                    else:
+                        self._qc.evolve_op_taylor(
+                                self._sq_ham,
+                                self._db,
+                                1.0e-15,
+                                30,
+                                True)
+
+                        # print(f'norm before scaling: {self._qc.get_state().norm()}')
+
+                        norm = 1.0 / self._qc.get_state().norm()
+                        self._qc.scale(norm)
+
+                        # print(f'norm after scaling: {self._qc.get_state().norm()}')
+
+                        self._Ekb.append(np.real(self._qc.get_exp_val(self._sq_ham)))
 
             else:
                 if(self._selected_pool):
@@ -948,7 +1150,7 @@ class QITE(Algorithm):
                     else:
                         for i in range(len(self._full_pool.terms())):
                             state_idx = self._pool_idx_to_state_idx[i]
-                            self._R_sq_lst[i] += res_coeffs.get([state_idx[0],state_idx[1]])**2
+                            self._R_sq_lst[i] += np.real(res_coeffs.get([state_idx[0],state_idx[1]])**2)
                             self._idx_lst[i] = i
 
                             if(i>0):
@@ -993,7 +1195,11 @@ class QITE(Algorithm):
 
                             self._Hlanczos_vecs.append(qcSig_temp.get_state_deep())
 
-            print(f' {kb*self._db:7.3f}    {self._Ekb[kb]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}')
+            if(self._folded_spectrum):
+                print(f' {kb*(self._db)**2:7.3f}    {self._Ekb[kb]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}')
+            else:
+                print(f' {kb*self._db:7.3f}    {self._Ekb[kb]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}')
+
             if (self._print_summary_file):
                 f.write(f'  {kb*self._db:7.3f}    {self._Ekb[kb]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}\n')
                 
@@ -1003,7 +1209,12 @@ class QITE(Algorithm):
                         # sorted_pool = sorted(self._sig.terms(), key=lambda t: (len(t[1].terms()[0][2]), t[1].terms()[0][2]))
                         f_pool.write(f'iteration {kb} pool coeffs: {[term[0] for term in sorted_pool]}\n')
 
-        self._Egs = self._Ekb[-1]
+        self._Ets = self._Ekb[-1]
+
+        if(self._target_root == 0):
+            self._Egs = self._Ets
+        else:
+            self._Egs = self._sys.hf_energy
 
         if (self._print_summary_file):
             if(self._print_pool):
@@ -1055,3 +1266,14 @@ class QITE(Algorithm):
             t_new = np.add(t_new, temp_ary)
 
         return copy.deepcopy(list(np.real(t_new)))
+
+
+    def update_e_shift(self):
+        if(self._apply_ham_as_tensor):
+            self._shifted_0_body = self._nuclear_repulsion_energy - self._Ekb[-1]
+            self._e_shift = self._Ekb[-1]
+
+        else:
+            self._Ofs.add_term(-self._Ekb[-1] + self._e_shift, [], [])
+            self._e_shift = self._Ekb[-1]
+        

@@ -35,17 +35,17 @@ alg_fock = qf.ADAPTVQE(
     )
 
 
-timer.reset()
+# timer.reset()
 
-alg_fock.run(
-    opt_thresh=1.0e-4, 
-    pool_type='SD',
-    optimizer='BFGS',
-    )
+# alg_fock.run(
+#     opt_thresh=1.0e-4, 
+#     pool_type='SD',
+#     optimizer='BFGS',
+#     )
 
-timer.record("ADAPT Fock")
+# timer.record("ADAPT Fock")
 
-print(f'\n\n Efci:   {mol.fci_energy:+12.10f}')
+# print(f'\n\n Efci:   {mol.fci_energy:+12.10f}')
 
 
 alg_fci = qf.ADAPTVQE(

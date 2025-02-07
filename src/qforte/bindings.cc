@@ -240,6 +240,7 @@ PYBIND11_MODULE(qforte, m) {
     py::class_<FCIComputer>(m, "FCIComputer")
         .def(py::init<int, int, int>(), "nel"_a, "sz"_a, "norb"_a, "Make a FCIComputer with nel, sz, and norb")
         .def("hartree_fock", &FCIComputer::hartree_fock)
+        .def("zero_state", &FCIComputer::zero_state)
         .def("set_element", &FCIComputer::set_element)
         .def("apply_tensor_spat_1bdy", &FCIComputer::apply_tensor_spat_1bdy)
         .def("apply_tensor_spin_1bdy", &FCIComputer::apply_tensor_spin_1bdy)
@@ -258,7 +259,9 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_exp_val_tensor", &FCIComputer::get_exp_val_tensor)
         .def("scale", &FCIComputer::scale)
         .def("evolve_op_taylor", &FCIComputer::evolve_op_taylor)
+        .def("evolve_op2_taylor", &FCIComputer::evolve_op2_taylor)
         .def("evolve_tensor_taylor", &FCIComputer::evolve_tensor_taylor)
+        .def("evolve_tensor2_taylor", &FCIComputer::evolve_tensor2_taylor)
         .def("apply_sqop_evolution", &FCIComputer::apply_sqop_evolution, 
             py::arg("time"),
             py::arg("sqop"),
@@ -280,6 +283,7 @@ PYBIND11_MODULE(qforte, m) {
             )
         .def("apply_df_ham", &FCIComputer::apply_df_ham)
         .def("evolve_df_ham_trotter", &FCIComputer::evolve_df_ham_trotter)
+        .def("apply_two_determinant_rotations", &FCIComputer::apply_two_determinant_rotations)
         .def("evolve_givens", &FCIComputer::evolve_givens)
         .def("evolve_diagonal_from_mat", &FCIComputer::evolve_diagonal_from_mat)
         .def("set_state", &FCIComputer::set_state)

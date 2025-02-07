@@ -470,18 +470,20 @@ def create_pyscf_mol(**kwargs):
     kwargs.setdefault('symmetry', 'c1')
     kwargs.setdefault('charge', 0)
     kwargs.setdefault('multiplicity', 1)
+    kwargs.setdefault('nroots_fci', 1)
 
     mol_geometry = kwargs['mol_geometry']
     basis = kwargs['basis']
     multiplicity = kwargs['multiplicity']
     charge = kwargs['charge']
+    nroots_fci = kwargs['nroots_fci']
 
     qforte_mol = Molecule(
         mol_geometry = mol_geometry,
         basis = basis,
         multiplicity = multiplicity,
         charge = charge,
-        )
+        nroots_fci = nroots_fci)
 
     if not use_pyscf:
         raise ImportError("PySCF was not imported correctely.")
@@ -495,6 +497,9 @@ def create_pyscf_mol(**kwargs):
     kwargs.setdefault('run_ccsd', False)
     kwargs.setdefault('run_cisd', False)
     kwargs.setdefault('run_fci', False)
+
+    kwargs.setdefault('nroots_fci', 1)
+    nroots_fci = kwargs['nroots_fci']
 
     # ===> Run PySCF End <=== #
 
@@ -684,8 +689,18 @@ def create_pyscf_mol(**kwargs):
 
         else:
             cisolver = fci.FCI(mf)
-            fci_energy, _ = cisolver.kernel()
-            qforte_mol.fci_energy = fci_energy
+
+            cisolver.nroots = nroots_fci
+
+            fci_energies, _ = cisolver.kernel()
+            qforte_mol.fci_energy = fci_energies[0]
+            qforte_mol.fci_energy_list = fci_energies
+
+            if(nroots_fci > 1):
+                print('\n  FCI Eigenstate Energies')
+                print('======================================:')
+                for i, Ei in enumerate(fci_energies):
+                    print(f"  i: {i}  Ei:       {Ei:+10.10f}")
 
 
     # Retrieve the number of frozen core and virtual orbitals

@@ -44,6 +44,7 @@ def system_factory(system_type = 'molecule', build_type = 'psi4', **kwargs):
         kwargs.setdefault('store_mo_ints', 1)
         kwargs.setdefault('build_df_ham', 0)
         kwargs.setdefault('df_icut', 1.0e-6)
+        kwargs.setdefault('nroots_fci', 1)
         try:
             adapter = molecule_adapters[build_type]
         except:

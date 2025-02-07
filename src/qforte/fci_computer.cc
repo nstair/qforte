@@ -1061,6 +1061,49 @@ void FCIComputer::evolve_op_taylor(
         }
 
         apply_sqop(op);
+
+        scale(coeff);
+
+        Cevol.zaxpy(
+            C_,
+            1.0 / std::tgamma(order+1),
+            1,
+            1);
+        
+        if (C_.norm() * std::abs(coeff) < convergence_thresh) {
+            break;
+        }
+    }
+    C_ = Cevol;
+}
+
+void FCIComputer::evolve_op2_taylor(
+      const SQOperator& op,
+      const double evolution_time,
+      const double convergence_thresh,
+      const int max_taylor_iter,
+      const bool real_evolution)
+
+{
+    Tensor Cevol = C_;
+
+    for (int order = 1; order < max_taylor_iter; ++order) {
+
+        // std::cout << "I get here, order: " << order << std::endl;
+
+        // std::cout << "C_: " << C_.str() << std::endl;
+        // std::cout << "Cevol: " << Cevol.str() << std::endl;
+        std::complex<double> coeff;
+
+        if (real_evolution) {
+            coeff = std::complex<double>(-evolution_time, 0.0);
+        } else {
+            coeff = std::complex<double>(0.0, -evolution_time);
+        }
+
+        apply_sqop(op);
+        apply_sqop(op);
+
         scale(coeff);
 
         Cevol.zaxpy(
@@ -1110,6 +1153,67 @@ void FCIComputer::evolve_tensor_taylor(
             h2e,
             h2e_einsum,
             norb);
+
+        scale(coeff);
+
+        Cevol.zaxpy(
+            C_,
+            1.0 / std::tgamma(order+1),
+            1,
+            1);
+        
+        if (C_.norm() * std::abs(coeff) < convergence_thresh) {
+            break;
+        }
+    }
+    C_ = Cevol;
+}
+
+void FCIComputer::evolve_tensor2_taylor(
+      const std::complex<double> h0e,
+      const Tensor& h1e, 
+      const Tensor& h2e, 
+      const Tensor& h2e_einsum, 
+      size_t norb,
+      const double evolution_time,
+      const double convergence_thresh,
+      const int max_taylor_iter,
+      const bool real_evolution)
+
+{
+    Tensor Cevol = C_;
+
+    for (int order = 1; order < max_taylor_iter; ++order) {
+
+        // std::cout << "I get here, order: " << order << std::endl;
+
+        // std::cout << "C_: " << C_.str() << std::endl;
+        // std::cout << "Cevol: " << Cevol.str() << std::endl;
+        std::complex<double> coeff;
+
+        if (real_evolution) {
+            coeff = std::complex<double>(-evolution_time, 0.0);
+        } else {
+            coeff = std::complex<double>(0.0, -evolution_time);
+        }
+
+        apply_tensor_spat_012bdy(
+            h0e,
+            h1e,
+            h2e,
+            h2e_einsum,
+            norb);
+
+        // Causes discrepancy!!!
+        // Maybe bcause this does Cnew = HCold + Cold
+        // And NOT Cnew = HCold as would be expected?
+        apply_tensor_spat_012bdy(
+            h0e,
+            h1e,
+            h2e,
+            h2e_einsum,
+            norb);
+
         scale(coeff);
 
         Cevol.zaxpy(
@@ -1657,6 +1761,52 @@ void FCIComputer::evolve_df_ham_trotter(
 
 }
 
+// NOTE(Nick): could be made faster if this becomes a popular subroutine
+void FCIComputer::apply_two_determinant_rotations(
+      const std::vector<std::vector<size_t>> IJ_source,
+      const std::vector<std::vector<size_t>> IJ_target,
+      const std::vector<double> angles,
+      const bool adjoint
+    )
+{
+    if(IJ_source.size() != IJ_target.size() or IJ_source.size() != angles.size()){
+        throw std::invalid_argument("IJ_source, IJ_target, and angles to all have the same size");
+    }
+
+    size_t N = IJ_source.size();
+
+    // Tensor Cin = C_;
+
+    if(adjoint){
+        for(int n = N-1; n >= 0; --n){
+            std::complex<double> C_source = C_.get(IJ_source[n]);
+            std::complex<double> C_target = C_.get(IJ_target[n]);
+            double theta = angles[n];
+
+            std::complex<double> C_source_prime =  std::cos(theta)*C_source + std::sin(theta)*C_target;
+            std::complex<double> C_target_prime = -std::sin(theta)*C_source + std::cos(theta)*C_target;
+
+            C_.set(IJ_source[n], C_source_prime);
+            C_.set(IJ_target[n], C_target_prime);
+    }
+    } else {
+        for(int n = 0; n < N; ++n){
+            std::complex<double> C_source = C_.get(IJ_source[n]);
+            std::complex<double> C_target = C_.get(IJ_target[n]);
+            double theta = angles[n];
+
+            std::complex<double> C_source_prime = std::cos(theta)*C_source - std::sin(theta)*C_target;
+            std::complex<double> C_target_prime = std::sin(theta)*C_source + std::cos(theta)*C_target;
+
+            C_.set(IJ_source[n], C_source_prime);
+            C_.set(IJ_target[n], C_target_prime);
+        }
+    }
+
+    
+
+}
+
 // NOTE(Nick): If this proves exceedingly slow,
 // it is possible to apply blocks of these givens
 // rotations in parallel, will look into this if
@@ -1932,6 +2082,11 @@ void FCIComputer::set_state(const Tensor& other_state) {
 void FCIComputer::hartree_fock() {
     C_.zero();
     C_.set({0, 0}, 1.0);
+}
+
+/// Sets all coefficeints fo the FCI Computer to Zero
+void FCIComputer::zero_state() {
+    C_.zero();
 }
 
 /// return the indexes of non-zero elements
