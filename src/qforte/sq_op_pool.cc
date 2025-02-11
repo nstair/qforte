@@ -68,6 +68,20 @@ void SQOpPool::add_hermitian_pairs(std::complex<double> coeff, const SQOperator&
     }
 }
 
+void add_connection_pairs(
+      const FCIComputer& residual, 
+      const FCIComputer& reference,
+      const double threshold)
+{
+    // 1. Do the sort of the residual vector and 'keep' residual determinants above threshold
+
+    // 2. Initialize (hash?) map of bitstrings, masks will represent alph and beta transitions
+
+    // 3. add_term(s) based on bitmaks 
+
+
+}
+
 void SQOpPool::set_coeffs(const std::vector<std::complex<double>>& new_coeffs){
     if(new_coeffs.size() != terms_.size()){
         throw std::invalid_argument( "Number of new coefficients for quantum operator must equal." );
