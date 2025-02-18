@@ -7,11 +7,13 @@
 #include "sq_op_pool.h"
 #include "df_hamiltonian.h"
 #include "tensor.h"
+#include "fci_computer.h"
 
 #include "qubit_basis.h"
 
 #include <stdexcept>
 #include <algorithm>
+#include <math>
 
 void SQOpPool::add_term(std::complex<double> coeff, const SQOperator& sq_op ){
     terms_.push_back(std::make_pair(coeff, sq_op));
@@ -75,7 +77,53 @@ void add_connection_pairs(
 {
     // 1. Do the sort of the residual vector and 'keep' residual determinants above threshold
 
+    size_t n_alfa_str = residual.get_state().shape()[0];
+    size_t n_beta_str = residual.get_state().shape()[1];
+
+    // Need a temporary container to store r_mu, I_mu, J_mu that is std::sort(able), size of Nfci
+    std::vector<std::tuple<double, int, int>> res_sqs(n_alfa_str * n_beta_str);
+
+    for (size_t I_mu=0; I_mu < n_alfa_str; ++I_mu) {
+        for (size_t J_mu=0; J_mu < n_beta_str; ++J_mu) {
+            std::complex<double> r_mu = residual.get_state().get({I_mu, J_mu});
+            double r_mu_sq = std::real(r_mu * std::conj(r_mu));
+
+            size_t IJ_mu = n_beta_str * I_mu + J_mu;
+
+            res_sq[IJ_mu] = std::make_tuple(r_mu_sq, I_mu, J_mu));
+        }
+    } 
+
+    // Sorting the vector
+    std::sort(res_sq.begin(), res_sq.end());
+
+    size_t n_start = 0;
+    double sum = 0.0;
+
+    for(size_t IJ_mu = 0; IJ_mu < n_alfa_str * n_beta_str; ++IJ_mu){
+        sum += std::get<0>(res_sq[IJ_mu]);
+        ++n_start;
+
+        if(sum > threshold){
+            break;
+        }
+
+    }
+
     // 2. Initialize (hash?) map of bitstrings, masks will represent alph and beta transitions
+
+    // say we want the alfa and beta bitstrings for the r_mu_sq values that are 'kept'
+    for(size_t IJ_mu = n_start; IJ_mu < n_alfa_str * n_beta_str; ++IJ_mu){
+
+        int I_mu = std::get<1>(res_sq[IJ_mu]);
+        int J_mu = std::get<2>(res_sq[IJ_mu]);
+        
+        uint64_t I_mu_str = residual.get_graph().get_astr_at_idx(I_mu);
+        uint64_t J_mu_str = residual.get_graph().get_bstr_at_idx(J_mu);
+
+        // Loop over reference strings...
+
+    }
 
     // 3. add_term(s) based on bitmaks 
 
