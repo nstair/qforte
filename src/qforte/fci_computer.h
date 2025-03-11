@@ -556,6 +556,9 @@ class FCIComputer {
     /// return the number of spatial orbitals
     size_t none_ops() const { return norb_; }
 
+    /// return the corresponding FCIGraph for this computer
+    FCIGraph get_graph() const { return graph_; }
+
     /// return the indexes of non-zero elements
     std::vector<std::vector<size_t>> get_nonzero_idxs() const;
 

@@ -13,7 +13,12 @@
 
 #include <stdexcept>
 #include <algorithm>
-#include <math>
+#include <tuple>
+// #include <functional>
+#include <unordered_set>
+// #include <bitset>
+// #include <cstdint>
+// #include <math>
 
 void SQOpPool::add_term(std::complex<double> coeff, const SQOperator& sq_op ){
     terms_.push_back(std::make_pair(coeff, sq_op));
@@ -70,18 +75,50 @@ void SQOpPool::add_hermitian_pairs(std::complex<double> coeff, const SQOperator&
     }
 }
 
-void add_connection_pairs(
+// The code below is a helper function to add_connection_pairs
+namespace {
+    struct TupleHash {
+        std::size_t operator()(const std::tuple<uint64_t, uint64_t, uint64_t, uint64_t>& t) const {
+            uint64_t a = std::get<0>(t);
+            uint64_t b = std::get<1>(t);
+            uint64_t c = std::get<2>(t);
+            uint64_t d = std::get<3>(t);
+
+            std::size_t seed = 0;
+            
+            // Boost-style hash combination function
+            auto combine = [](std::size_t& seed, uint64_t value) {
+                seed ^= std::hash<uint64_t>{}(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            };
+
+            combine(seed, a);
+            combine(seed, b);
+            combine(seed, c);
+            combine(seed, d);
+
+            return seed;
+        }
+    };
+}
+
+void SQOpPool::add_connection_pairs(
       const FCIComputer& residual, 
       const FCIComputer& reference,
       const double threshold)
 {
     // 1. Do the sort of the residual vector and 'keep' residual determinants above threshold
 
+    // Need to ensure residual and reference have the same shape
+    if (residual.get_state().shape() != reference.get_state().shape()) {  // Condition to throw an error
+        throw std::invalid_argument( "Dimension of residual must have the same shape as reference." );
+    }
+
     size_t n_alfa_str = residual.get_state().shape()[0];
     size_t n_beta_str = residual.get_state().shape()[1];
+    size_t Nfci = n_alfa_str * n_beta_str;
 
     // Need a temporary container to store r_mu, I_mu, J_mu that is std::sort(able), size of Nfci
-    std::vector<std::tuple<double, int, int>> res_sqs(n_alfa_str * n_beta_str);
+    std::vector<std::tuple<double, int, int>> res_sqs(Nfci);
 
     for (size_t I_mu=0; I_mu < n_alfa_str; ++I_mu) {
         for (size_t J_mu=0; J_mu < n_beta_str; ++J_mu) {
@@ -90,18 +127,18 @@ void add_connection_pairs(
 
             size_t IJ_mu = n_beta_str * I_mu + J_mu;
 
-            res_sq[IJ_mu] = std::make_tuple(r_mu_sq, I_mu, J_mu));
+            res_sqs[IJ_mu] = std::make_tuple(r_mu_sq, I_mu, J_mu);
         }
     } 
 
     // Sorting the vector
-    std::sort(res_sq.begin(), res_sq.end());
+    std::sort(res_sqs.begin(), res_sqs.end());
 
     size_t n_start = 0;
     double sum = 0.0;
 
-    for(size_t IJ_mu = 0; IJ_mu < n_alfa_str * n_beta_str; ++IJ_mu){
-        sum += std::get<0>(res_sq[IJ_mu]);
+    for(size_t IJ_mu = 0; IJ_mu < Nfci; ++IJ_mu){
+        sum += std::get<0>(res_sqs[IJ_mu]);
         ++n_start;
 
         if(sum > threshold){
@@ -111,24 +148,146 @@ void add_connection_pairs(
     }
 
     // 2. Initialize (hash?) map of bitstrings, masks will represent alph and beta transitions
+    std::unordered_set<std::tuple<uint64_t, uint64_t, uint64_t, uint64_t>, TupleHash> str_set;    
 
-    // say we want the alfa and beta bitstrings for the r_mu_sq values that are 'kept'
-    for(size_t IJ_mu = n_start; IJ_mu < n_alfa_str * n_beta_str; ++IJ_mu){
+    // Loop over residual strings
+    for(size_t IJ_mu = n_start; IJ_mu < Nfci; ++IJ_mu){
 
-        int I_mu = std::get<1>(res_sq[IJ_mu]);
-        int J_mu = std::get<2>(res_sq[IJ_mu]);
+        int I_mu = std::get<1>(res_sqs[IJ_mu]);
+        int J_mu = std::get<2>(res_sqs[IJ_mu]);
         
-        uint64_t I_mu_str = residual.get_graph().get_astr_at_idx(I_mu);
-        uint64_t J_mu_str = residual.get_graph().get_bstr_at_idx(J_mu);
+        uint64_t res_astr = residual.get_graph().get_astr_at_idx(I_mu);
+        uint64_t res_bstr = residual.get_graph().get_bstr_at_idx(J_mu);
 
         // Loop over reference strings...
+        for(size_t IJ_mu = n_start; IJ_mu < Nfci; ++IJ_mu){
 
+            int I_mu = std::get<1>(res_sqs[IJ_mu]);
+            int J_mu = std::get<2>(res_sqs[IJ_mu]);
+
+            uint64_t ref_astr = reference.get_graph().get_astr_at_idx(I_mu);
+            uint64_t ref_bstr = reference.get_graph().get_bstr_at_idx(J_mu);
+
+            uint64_t ann_mask_alfa = 0;
+            uint64_t ann_mask_beta = 0;
+            uint64_t cre_mask_alfa = 0;
+            uint64_t cre_mask_beta = 0;
+
+            // alfa
+            for (int i = 0; i < 64; ++i) {
+                bool ref = (ref_astr >> i) & 1; 
+                bool res = (res_astr >> i) & 1;
+
+                if (ref == 0 and res == 1) {
+                    cre_mask_alfa ^= (1ULL << i);
+                }
+
+                if (ref == 1 and res == 0) {
+                    ann_mask_alfa ^= (1ULL << i);
+                }
+            }
+
+            // beta
+            for (int i = 0; i < 64; ++i) {
+                bool ref = (ref_bstr >> i) & 1; 
+                bool res = (res_bstr >> i) & 1;
+
+                if (ref == 0 and res == 1) {
+                    cre_mask_beta ^= (1ULL << i);
+                }
+
+                if (ref == 1 and res == 0) {
+                    ann_mask_beta ^= (1ULL << i);
+                }
+            }
+
+            std::tuple<uint64_t, uint64_t, uint64_t, uint64_t> op_str = std::make_tuple(cre_mask_alfa, 
+                                                                                        cre_mask_beta, 
+                                                                                        ann_mask_alfa, 
+                                                                                        ann_mask_beta);
+
+            // add new bitstring pair to our hash map
+            if (str_set.find(op_str) == str_set.end()) {
+                str_set.insert(op_str);
+            }
+        }
     }
 
-    // 3. add_term(s) based on bitmaks 
+    // // 3. add_term(s) based on bitmaks 
+    // SQOperator temp1a;
+    // temp1a.add_term(+1.0, {aa}, {ia});
+    for (const auto& t : str_set) {
 
+        uint64_t crea = std::get<0>(t);
+        uint64_t creb = std::get<1>(t);
+        uint64_t anna = std::get<2>(t);
+        uint64_t annb = std::get<3>(t);
 
+        std::vector<std::size_t> ann_idxs;
+        std::vector<std::size_t> cre_idxs;
+
+        for (int i = 0; i < 32; ++i) {
+
+            if (bool (crea >> i) & 1) {
+                cre_idxs.push_back(2*i);
+            }
+
+            if (bool (creb >> i) & 1) {
+                cre_idxs.push_back(2*i + 1);
+            }
+
+            if (bool (anna >> i) & 1) {
+                ann_idxs.push_back(2*i);
+            }
+
+            if (bool (annb >> i) & 1) {
+                ann_idxs.push_back(2*i + 1);
+            }
+        }
+
+        SQOperator temp;
+        temp.add_term(1.0, cre_idxs, ann_idxs);
+        terms_.push_back(std::make_pair(1.0, temp));
+        
+    }
 }
+
+            // // calculate bitmask
+            // uint64_t amask = ref_astr ^ res_astr;  // Compute the masks (bits that differ)
+            // uint64_t bmask = ref_bstr ^ res_bstr;
+
+            
+
+            // for (size_t i = 0; i < bit_length; ++i) {
+            //     uint64_t apos = 1ULL << i;  // Single-bit mask for position i
+            //     uint64_t bpos = 1ULL << i;
+
+            //     if (amask & apos) {  // Check if mask has a 1 at this position
+            //         if ((res_astr & apos) == 0) {
+            //             anna.push_back(apos);  // Add to "anna" (annihilation)
+            //         } else {
+            //             crea.push_back(apos);  // Add to "crea" (creation)
+            //         }
+            //     }
+
+            //     if (bmask & bpos) {  // Check if mask has a 1 at this position
+            //         if ((res_astr & bpos) == 0) {
+            //             anna.push_back(bpos);  // Add to "anna" (annihilation)
+            //         } else {
+            //             crea.push_back(bpos);  // Add to "crea" (creation)
+            //         }
+            //     }
+            // }
+            // ASTR and BSTR from the same index need to be combined into the same SQOP, so need to make unordered map of masks
+
+            // std::tuple<uint64_t, uint64_t> ab_str = std::make_tuple(new_astr, new_bstr);
+            
+            // // add new bitstring pair to our hash map
+            // if (str_set.find(ab_str) == str_set.end()) {
+            //     str_set.insert(ab_str);
+
+            // }
+
 
 void SQOpPool::set_coeffs(const std::vector<std::complex<double>>& new_coeffs){
     if(new_coeffs.size() != terms_.size()){
