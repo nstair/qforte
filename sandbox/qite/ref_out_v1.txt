@@ -1,0 +1,163 @@
+Run BeH2 Excited States Calc
+---------------------------------
+ ==> PySCF geometry <==
+-------------------------
+
+H  +0.000000000000  +0.000000000000  +0.000000000000
+H  +0.000000000000  +0.000000000000  +1.000000000000
+H  +0.000000000000  +0.000000000000  +2.000000000000
+H  +0.000000000000  +0.000000000000  +3.000000000000
+H  +0.000000000000  +0.000000000000  +4.000000000000
+H  +0.000000000000  +0.000000000000  +5.000000000000
+converged SCF energy = -3.15600092954731
+
+  FCI Eigenstate Energies
+======================================:
+  i: 0  Ei:       -3.2576068322
+  i: 1  Ei:       -2.9088869459
+  i: 2  Ei:       -2.8694244800
+  i: 3  Ei:       -2.5998814176
+  i: 4  Ei:       -2.5812265928
+  i: 5  Ei:       -2.5802602067
+
+-----------------------------------------------------
+     Quantum Imaginary Time Evolution Algorithm   
+-----------------------------------------------------
+
+
+                 ==> QITE options <==
+-----------------------------------------------------------
+Computer Type:                            fci
+Trial reference state:                    |111111000000>
+Number of Hamiltonian Pauli terms:        919
+Trial state preparation method:           occupation_list
+Trotter order (rho):                      1
+Trotter number (m):                       1
+Use fast version of algorithm:            True
+
+
+Total imaginary evolution time (beta):    0.3
+Imaginary time step (db):                 0.1
+
+
+Use Folded Spectrum:                      False
+
+
+Use CIS Reference:                        False
+
+
+Use exact evolutoin:                      False
+
+
+Expansion type:                           All
+Use DIIS:                                 False
+Max DIIS size:                            False
+Use selected pool:                        True
+Use cumulative selection:                 True
+Use physical selection:                   False
+Selection time step (dt):                 0.001
+x value threshold:                        1e-10
+Use sparse tensors to solve Sx = b:       0
+
+
+Use low memory mode:                      False
+Use 2nd order derivation of QITE:         True
+Do Quantum Lanczos                        False
+
+
+
+
+==> Building expansion pool <==
+   beta           E(beta)     N(params)           N(CNOT)          N(measure)
+-------------------------------------------------------------------------------
+   0.000       -3.156000930           0                 0                   0
+
+
+==> 5 Most important residual states <==
+1: 0.011699774346407414  (1, 1)
+2: 0.007515530404379544  (4, 4)
+3: 0.007442257196902689  (2, 2)
+4: 0.007363063079358798  (5, 5)
+5: 0.00642823947038389  (4, 2)
+
+
+
+ -----> 0 <-----
+ +1.000000 [
+  -1.000000 ( 5^ 4^ 9 8 )
+ +1.000000 ( 9^ 8^ 5 4 )
+ ]
+
+ -----> 1 <-----
+ +1.000000 [
+  -1.000000 ( 3^ 2^ 7 6 )
+ +1.000000 ( 7^ 6^ 3 2 )
+ ]
+
+ -----> 2 <-----
+ +1.000000 [
+  -1.000000 ( 5^ 4^ 7 6 )
+ +1.000000 ( 7^ 6^ 5 4 )
+ ]
+
+
+   0.100       -3.161032251           3                 0                2763
+
+
+==> 5 Most important residual states <==
+1: 0.009879080853919605  (1, 1)
+2: 0.006991363749178345  (5, 5)
+3: 0.0067513361271776175  (4, 2)
+4: 0.006751336127177615  (2, 4)
+5: 0.005958162788736438  (10, 10)
+
+
+
+ -----> 0 <-----
+ +1.000000 [
+  -1.000000 ( 5^ 2^ 9 6 )
+ +1.000000 ( 9^ 6^ 5 2 )
+ ]
+
+ -----> 1 <-----
+ +1.000000 [
+  -1.000000 ( 3^ 2^ 9 8 )
+ +1.000000 ( 9^ 8^ 3 2 )
+ ]
+
+ -----> 2 <-----
+ +1.000000 [
+  -1.000000 ( 5^ 4^ 7 6 )
+ +1.000000 ( 7^ 6^ 5 4 )
+ ]
+
+
+   0.200       -3.165535835           6                 0                5526
+
+
+        Process name            Time (s)             Percent
+       =============       =============       =============
+Total evolution time              0.0182              100.00
+
+          Total Time              0.0182              100.00
+
+
+
+
+
+                        ==> QITE summary <==
+-----------------------------------------------------------
+Final QITE Energy:                         -3.1655358353
+Final Energy Shift:                        0.0
+Number of operators in pool:               3
+Number of classical parameters used:       6
+Estimated classical memory usage (GB):     2.553600e-03
+Number of CNOT gates in deepest circuit:   0
+Number of Pauli term measurements:         5526
+
+
+The FCI target_root energy from pyscf:     -3.2576068322
+The target_root energy from qite:          -3.1655358353
+Delta E                                    0.0920709970
+
+# LGTM!

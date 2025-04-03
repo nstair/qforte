@@ -101,9 +101,6 @@ namespace {
     };
 }
 
-// #include <iostream>  // for debugging
-// #include <cmath>     // for std::abs
-
 void SQOpPool::add_connection_pairs(
       const FCIComputer& residual, 
       const FCIComputer& reference,

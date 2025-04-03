@@ -1,0 +1,120 @@
+---------------------------------
+ ==> PySCF geometry <==
+-------------------------
+
+H  +0.000000000000  +0.000000000000  +0.000000000000
+H  +0.000000000000  +0.000000000000  +1.000000000000
+H  +0.000000000000  +0.000000000000  +2.000000000000
+H  +0.000000000000  +0.000000000000  +3.000000000000
+H  +0.000000000000  +0.000000000000  +4.000000000000
+H  +0.000000000000  +0.000000000000  +5.000000000000
+H  +0.000000000000  +0.000000000000  +6.000000000000
+H  +0.000000000000  +0.000000000000  +7.000000000000
+H  +0.000000000000  +0.000000000000  +8.000000000000
+H  +0.000000000000  +0.000000000000  +9.000000000000
+converged SCF energy = -5.24761734255199
+
+  FCI Eigenstate Energies
+======================================:
+  i: 0  Ei:       -5.4153933184
+  i: 1  Ei:       -5.1767200847
+  i: 2  Ei:       -5.1570643593
+  i: 3  Ei:       -4.9871023018
+  i: 4  Ei:       -4.9576471715
+  i: 5  Ei:       -4.9529417527
+
+-----------------------------------------------------
+     Quantum Imaginary Time Evolution Algorithm   
+-----------------------------------------------------
+
+
+                 ==> QITE options <==
+-----------------------------------------------------------
+Computer Type:                            fci
+Trial reference state:                    |11111111110000000000>
+Number of Hamiltonian Pauli terms:        7151
+Trial state preparation method:           occupation_list
+Trotter order (rho):                      1
+Trotter number (m):                       1
+Use fast version of algorithm:            True
+
+
+Total imaginary evolution time (beta):    0.3
+Imaginary time step (db):                 0.1
+
+
+Use Folded Spectrum:                      False
+
+
+Use CIS Reference:                        False
+
+
+Use exact evolutoin:                      False
+
+
+Expansion type:                           All
+Use DIIS:                                 False
+Max DIIS size:                            False
+Use selected pool:                        True
+Use cumulative selection:                 True
+Use physical selection:                   False
+Selection time step (dt):                 0.001
+x value threshold:                        1e-10
+Use sparse tensors to solve Sx = b:       0
+
+
+Use low memory mode:                      False
+Use 2nd order derivation of QITE:         True
+Do Quantum Lanczos                        False
+
+
+
+
+==> Building expansion pool <==
+
+
+WARNING: ESTIMATED MEMORY USAGE EXCEEDS 8GB, SWITCHING TO LOW MEMORY MODE
+
+
+   beta           E(beta)     N(params)           N(CNOT)          N(measure)
+-------------------------------------------------------------------------------
+   0.000       -5.247617343           0                 0                   0
+   0.100       -5.267798418          44                 0              315634
+   0.200       -5.283166046          87                 0              624073
+
+
+        Process name            Time (s)             Percent
+       =============       =============       =============
+Total evolution time             14.1486              100.00
+
+          Total Time             14.1486              100.00
+
+
+
+
+
+    Process name        Time (s)         Percent
+   =============   =============   =============
+   c++ selection          0.0000            0.00
+python selection          6.2492          100.00
+
+      Total Time          6.2492          100.00
+
+
+
+
+
+                        ==> QITE summary <==
+-----------------------------------------------------------
+Final QITE Energy:                         -5.2831660457
+Final Energy Shift:                        0.0
+Number of operators in pool:               43
+Number of classical parameters used:       87
+Estimated classical memory usage (GB):     5.080320e-03
+Number of CNOT gates in deepest circuit:   0
+Number of Pauli term measurements:         624073
+
+
+The FCI target_root energy from pyscf:     -5.4153933184
+The target_root energy from qite:          -5.2831660457
+Delta E                                    0.1322272727

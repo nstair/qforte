@@ -66,6 +66,19 @@ class SQOperator {
     /// Combine like terms in terms_. As a side-effect, canonicalizes the order.
     void simplify();
 
+    // Returns the number of unique Pauli operator products (up to phase)
+    // that must be measured to determine the expectation value of this SQOperator.
+    // The qubit_excitation flag does not affect the counting.
+    int count_unique_pauli_products(bool qubit_excitation = false);
+
+    // Returns the number of CNOT gates required to implement the exponential
+    // of a two-term anti-Hermitian SQOperator K of the form:
+    //   K = i (g + g^)   or   K = g - g^
+    // The circuit implementation is based on a standard decomposition for multi-qubit
+    // Pauli rotations assuming linear connectivity, where the number of CNOTs is
+    // 2*(r-1), with r being the size of the contiguous qubit support.
+    int count_cnot_for_exponential();
+
     /// Return the QubitOperator object corresponding the the Jordan-Wigner
     /// transform of this sq operator. Calls simplify as a side-effect.
     /// If qubit_excitation = true, replace fermionic creation/annihilation
