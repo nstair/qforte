@@ -148,6 +148,7 @@ class QITE(Algorithm):
             lanczos_gap=2,
             realistic_lanczos=True,
             fname=None,
+            output_path=None,
             print_pool=False,
             use_cis_reference=False,
             target_root=0,
@@ -199,20 +200,24 @@ class QITE(Algorithm):
         self._update_e_shift = update_e_shift
 
         self._n_classical_params = 0
-        self._n_cnot = self._Uprep.get_num_cnots()
+        self._n_cnot = 0
         self._n_pauli_trm_measures = 0
 
         self._do_lanczos = do_lanczos
         self._lanczos_gap = lanczos_gap
         self._realistic_lanczos = realistic_lanczos
         self._fname = fname
+        self._output_path = output_path
         self._print_pool = print_pool
 
         if(self._fname is None):
             if(self._use_exact_evolution):
                 self._fname = f'beta_{self._beta}_db_{self._db}_EXACT_EVOLUTION'
             else:
-                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_folded_spectrum_{self._folded_spectrum}_e_shift_{self._e_shift}_selected_pool_{self._selected_pool}_t_{self._t_thresh}'
+                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_folded_spectrum_{self._folded_spectrum}_e_shift_{self._e_shift}_selected_pool_{self._selected_pool}_t_{self._t_thresh}_physical_r_{self._physical_r}_dfham_{self._evolve_dfham}'
+
+        if(self._output_path is None):
+            self._output_path = ''
 
         self._sz = 0
 
@@ -451,7 +456,8 @@ class QITE(Algorithm):
         print('\n\n                        ==> QITE summary <==')
         print('-----------------------------------------------------------')
         print('Final QITE Energy:                        ', round(self._Ets, 10))
-        print('Final Energy Shift:                       ', round(self._e_shift, 10))
+        if(not self._use_exact_evolution and self._folded_spectrum):
+            print('Final Energy Shift:                       ', round(self._e_shift, 10))
 
         if(not self._use_exact_evolution):
             print('Number of operators in pool:              ', self._NI)
@@ -966,7 +972,7 @@ class QITE(Algorithm):
             print(f' {0.0:7.3f}    {self._Ekb[0]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}')
 
         if (self._print_summary_file):
-            f = open(f"qite_{self._fname}_summary.dat", "w+", buffering=1)
+            f = open(f"{self._output_path}qite_{self._fname}_summary.dat", "w+", buffering=1)
             f.write(f"#{'beta':>7}{'E(beta)':>18}{'N(params)':>14}{'N(CNOT)':>18}{'N(measure)':>20}\n")
             f.write('#-------------------------------------------------------------------------------\n')
             f.write(f'  {0.0:7.3f}    {self._Ekb[0]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}\n')
@@ -1169,6 +1175,23 @@ class QITE(Algorithm):
                     #             self._sig.add_term(1.0, self._full_pool.terms()[mu][1])
 
                     self._NI = len(self._sig.terms())
+
+                #do CNOT estimation here
+                nqbit = self._norb * 2
+                cnot_count = {}
+                for term in self._sig.terms():
+                    num_exc = len(term[1].terms()[1][1])
+                    cnot_count[num_exc] = cnot_count.get(num_exc, 0) + 1
+
+                # print(f'# excitacions per excitation order: {cnot_count}')
+
+                temp_cnot = 0.0
+                for exc in cnot_count.keys():
+                    temp_cnot += (nqbit/3)*exc*cnot_count[exc]
+
+                final_cnot = round(temp_cnot)
+                self._n_cnot += final_cnot
+                # print(f'total cnot gate estimate: {final_cnot}')
 
                 self.do_qite_step()
 
