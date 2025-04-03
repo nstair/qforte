@@ -141,6 +141,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("fill_pool_df_trotter", &SQOpPool::fill_pool_df_trotter)
         .def("append_givens_ops_sector", &SQOpPool::append_givens_ops_sector)
         .def("append_diagonal_ops_all", &SQOpPool::append_diagonal_ops_all)
+        .def("add_connection_pairs", &SQOpPool::add_connection_pairs)
         .def("str", &SQOpPool::str)
         .def("__getitem__", [](const SQOpPool &pool, size_t i) { return pool.terms()[i]; })
         .def("__iter__", [](const SQOpPool &pool) { return py::make_iterator(pool.terms()); },

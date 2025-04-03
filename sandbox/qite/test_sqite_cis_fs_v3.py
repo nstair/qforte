@@ -1,7 +1,8 @@
+# Need to get working for excited states
+
 import numpy as np
 from pyscf import gto, scf, fci
-# from qforte import Molecule, QITE, system_factory, FCIComputer
-import qforte as qf
+from qforte import Molecule, QITE, system_factory
 
 print('\nRun BeH2 Excited States Calc')
 print('---------------------------------')
@@ -23,11 +24,13 @@ geom = [('H', (0., 0., 0.)),
         # ('H', (0., 0., 5.00)),
         # ('H', (0., 0., 6.00)), 
         # ('H', (0., 0., 7.00)), 
+        # ('H', (0., 0., 8.00)), 
+        # ('H', (0., 0., 9.00)), 
         ]
 
 
 # Build the molecule
-mol = qf.system_factory(
+mol = system_factory(
         build_type='pyscf',
         symmetry='D2h',
         mol_geometry=geom, 
@@ -39,7 +42,7 @@ mol = qf.system_factory(
         build_df_ham=0,
         df_icut=1.0e-1)
 
-alg = qf.QITE(
+alg = QITE(
         mol, 
         reference=mol.hf_reference, 
         computer_type='fci', 
@@ -49,8 +52,8 @@ alg = qf.QITE(
         )
 
 alg.run(
-        beta=0.5,
-        db=0.5,
+        beta=0.3,
+        db=0.1,
         dt=0.001,
         sparseSb=0,
         folded_spectrum=True,       ##
@@ -61,14 +64,14 @@ alg.run(
         e_shift=None, # can set to a number to override cis guess
         # e_shift=mol.fci_energy_list[root], 
         update_e_shift=True,
-        expansion_type='SD',
-        low_memorySb=0,
-        second_order=1, 
+        selected_pool=True,       ##
+        expansion_type='All',
+        low_memorySb=False,
+        second_order=True, 
         print_pool=False,
-        selected_pool=False,
-        physical_r=0,
-        cumulative_t=0,
-        t_thresh=1e-2,
+        physical_r=False,
+        cumulative_t=True,
+        t_thresh=1e-1,
         BeH2_guess=False, #Remove option
         )
 
@@ -80,80 +83,5 @@ print('\n')
 print(f'The FCI target_root energy from pyscf:     {Eroot:12.10f}')
 print(f'The target_root energy from qite:          {Ets:12.10f}')
 print(f'Delta E                                    {np.abs(Ets-Eroot):12.10f}')
-
-
-# just after a few iterations, get Uqite and find the residual based on that state, 
-# then get the operator pool corresponding to |redidual> and |reference>
-
-# make a new fc1 (for residual), and fc2 (for reference)
-ref = qf.FCIComputer(
-        alg._nel, 
-        alg._2_spin, 
-        alg._norb)
-
-res = qf.FCIComputer(
-        alg._nel, 
-        alg._2_spin, 
-        alg._norb)
-
-ref.hartree_fock()
-res.hartree_fock()
-
-# Get cis info
-IJs =  alg._cis_IJ_sources
-IJt = alg._cis_IJ_targets
-angles = alg._cis_angles
-
-ref.apply_two_determinant_rotations(
-        IJs,
-        IJt,
-        angles,
-        False)
-
-
-A = alg._sig
-
-res.apply_two_determinant_rotations(
-        IJs,
-        IJt,
-        angles,
-        False)
-
-res.evolve_pool_trotter_basic(
-        A, 
-        True, 
-        False)
-
-# res = alg._qc
-
-res.apply_tensor_spat_012bdy(
-        alg._nuclear_repulsion_energy, 
-        alg._mo_oeis, 
-        alg._mo_teis, 
-        alg._mo_teis_einsum, 
-        alg._norb)
-
-res.evolve_pool_trotter_basic(
-        A, 
-        True, 
-        True)
-
-res.apply_two_determinant_rotations(
-        IJs,
-        IJt,
-        angles,
-        True)
-
-print(res)
-print(f"||R|| = {res.get_state().norm():10.10f}")
-print(ref)
-
-# looks the way we want it :)
-
-new_pool = qf.SQOpPool()
-new_pool.add_connection_pairs(res, ref, 1.0e-2)
-
-print(new_pool)
-
 
 

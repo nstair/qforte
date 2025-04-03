@@ -222,10 +222,10 @@ class QITE(Algorithm):
         self._sz = 0
 
         if(self._computer_type=='fci'):
-            qc_ref = qf.FCIComputer(self._nel, self._sz, self._norb)
+            self._qc_ref = qf.FCIComputer(self._nel, self._sz, self._norb)
 
             if(self._random_state):
-                comp_shape = qc_ref.get_state_deep().shape()
+                comp_shape = self._qc_ref.get_state_deep().shape()
                 rand_arr = np.random.rand(*comp_shape)
                 norm = np.linalg.norm(rand_arr)
                 normalized_coeffs = rand_arr / norm
@@ -236,7 +236,7 @@ class QITE(Algorithm):
                     for j in range(comp_shape[1]):
                         self._rand_tensor.set([i,j], normalized_coeffs[i,j])
 
-                qc_ref.set_state(self._rand_tensor)
+                self._qc_ref.set_state(self._rand_tensor)
             elif(self._use_cis_reference):
 
                 alg_cis = qf.CIS(
@@ -257,9 +257,9 @@ class QITE(Algorithm):
 
                 self._cis_IJ_sources, self._cis_IJ_targets, self._cis_angles = alg_cis.get_cis_unitary_parameters()
 
-                qc_ref.hartree_fock()
+                self._qc_ref.hartree_fock()
 
-                qc_ref.apply_two_determinant_rotations(
+                self._qc_ref.apply_two_determinant_rotations(
                     self._cis_IJ_sources,
                     self._cis_IJ_targets,
                     self._cis_angles,
@@ -267,7 +267,9 @@ class QITE(Algorithm):
                 )
 
             else:
-                qc_ref.hartree_fock()
+                self._qc_ref.hartree_fock()
+                if(self._folded_spectrum == False):
+                        self._e_shift = 0.0
 
             if(self._folded_spectrum): # only implementing it for sq ham to start
                 if(self._apply_ham_as_tensor):
@@ -326,15 +328,15 @@ class QITE(Algorithm):
                     v_lst[0], 
                     1.0)
 
-                exp1 = qc_ref.get_state_deep()
-                qc_ref.apply_sqop_pool(self._d0)
+                exp1 = self._qc_ref.get_state_deep()
+                self._qc_ref.apply_sqop_pool(self._d0)
 
-                self._Ekb = [np.real(exp1.vector_dot(qc_ref.get_state_deep()))]
+                self._Ekb = [np.real(exp1.vector_dot(self._qc_ref.get_state_deep()))]
             
             else:
                 if(self._apply_ham_as_tensor):
 
-                    self._Ekb = [np.real(qc_ref.get_exp_val_tensor(
+                    self._Ekb = [np.real(self._qc_ref.get_exp_val_tensor(
                             self._zero_body_energy, 
                             self._mo_oeis, 
                             self._mo_teis, 
@@ -342,12 +344,12 @@ class QITE(Algorithm):
                             self._norb))]
 
                 else:
-                    self._Ekb = [np.real(qc_ref.get_exp_val(self._sq_ham))]
+                    self._Ekb = [np.real(self._qc_ref.get_exp_val(self._sq_ham))]
             
         if(self._computer_type=='fock'):
-            qc_ref = qf.Computer(self._nqb)
-            qc_ref.apply_circuit(self._Uprep)
-            self._Ekb = [np.real(qc_ref.direct_op_exp_val(self._qb_ham))]
+            self._qc_ref = qf.Computer(self._nqb)
+            self._qc_ref.apply_circuit(self._Uprep)
+            self._Ekb = [np.real(self._qc_ref.direct_op_exp_val(self._qb_ham))]
 
         # Print options banner (should done for all algorithms).
         self.print_options_banner()
@@ -371,6 +373,8 @@ class QITE(Algorithm):
 
         timer.record('Total evolution time')
         print(f"\n\n{timer}\n\n")
+
+        print(f"\n\n{self._nt}\n\n")
 
         # Print summary banner (should done for all algorithms).
         self.print_summary_banner()
@@ -1132,26 +1136,65 @@ class QITE(Algorithm):
 
                     self._sig = qf.SQOpPool()
 
-                    if(self._cumulative_t):
-                        for i in range(len(self._full_pool.terms())):
-                            state_idx = self._pool_idx_to_state_idx[i]
+                    if(self._cumulative_t): 
 
-                            if(self._physical_r):
-                                self._R[i] = (np.real(res_coeffs.get([state_idx[0],state_idx[1]])*np.conj(res_coeffs.get([state_idx[0],state_idx[1]])))/self._dt**2, i)
-                            else:
-                                self._R[i] = (np.real(res_coeffs.get([state_idx[0],state_idx[1]])*np.conj(res_coeffs.get([state_idx[0],state_idx[1]]))), i)
+                        self._nt = qf.local_timer()
 
-                        R_sorted = sorted(self._R, key=lambda x: x[0])
-                        R_magnitude = 0.0
-                        self._sig_ind = []
 
-                        for i in range(len(R_sorted)):
-                            R_magnitude += R_sorted[i][0]
-                            j = R_sorted[i][1]
+                        # ====> New Version <==== #
 
-                            if(R_magnitude>self._t_thresh):
-                                self._sig_ind.append(j)
-                                self._sig.add_term(1.0, self._full_pool.terms()[j][1])
+                        self._nt.reset()
+
+                        self._sig = qf.SQOpPool()
+                        self._sig.add_connection_pairs(
+                            qc_res, 
+                            self._qc_ref, 
+                            self._t_thresh)
+                        
+                        self._nt.record("c++ selection")
+                        
+                        # print(self._sig)                        
+                        
+                        # ====> Old Version <==== #
+
+                        self._nt.reset()
+
+                        # for i in range(len(self._full_pool.terms())):
+                        #     state_idx = self._pool_idx_to_state_idx[i]
+
+                        #     if(self._physical_r):
+                        #         self._R[i] = (np.real(res_coeffs.get([state_idx[0],state_idx[1]])*np.conj(res_coeffs.get([state_idx[0],state_idx[1]])))/self._dt**2, i)
+                        #     else:
+                        #         self._R[i] = (np.real(res_coeffs.get([state_idx[0],state_idx[1]])*np.conj(res_coeffs.get([state_idx[0],state_idx[1]]))), i)
+
+                        # R_sorted = sorted(self._R, key=lambda x: x[0])
+                        # R_magnitude = 0.0
+                        # self._sig_ind = []
+
+                        # for i in range(len(R_sorted)):
+                        #     R_magnitude += R_sorted[i][0]
+                        #     j = R_sorted[i][1]
+
+                        #     if(R_magnitude>self._t_thresh):
+                        #         self._sig_ind.append(j)
+                        #         self._sig.add_term(1.0, self._full_pool.terms()[j][1])
+
+                        self._nt.record("python selection")
+
+
+                        # counter = 0
+                        # print(f"\n\n==> 5 Most important residual states <==")
+                        # for k in range(len(R_sorted)-1, len(R_sorted)-6, -1):
+                        #     counter += 1
+                        #     print(f"{counter}: {R_sorted[k][0]}  {self._pool_idx_to_state_idx[R_sorted[k][1]]}")
+                        # print("\n\n")
+
+                        # print(self._sig)
+
+
+
+
+
 
                     else:
                         for i in range(len(self._full_pool.terms())):
