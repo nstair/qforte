@@ -43,16 +43,10 @@ full_pool.fill_pool(expansion_type)
 # print('================')
 # print('\n')
 
-cnot_count = {}
+cnot_count = 0
 for term in full_pool.terms():
-    num_exc = len(term[1].terms()[1][1])
-    cnot_count[num_exc] = cnot_count.get(num_exc, 0) + 1
+    cnot = term[1].count_cnot_for_exponential()
+    print(cnot)
+    cnot_count += cnot
 
-print(f'# excitacions per excitation order: {cnot_count}')
-
-temp_cnot = 0.0
-for exc in cnot_count.keys():
-    temp_cnot += (nqbit/3)*exc*cnot_count[exc]
-
-final_cnot = round(temp_cnot)
-print(f'total cnot gate estimate: {final_cnot}')
+print(f'total cnot gate estimate: {cnot_count}')

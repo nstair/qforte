@@ -66,10 +66,13 @@ class SQOperator {
     /// Combine like terms in terms_. As a side-effect, canonicalizes the order.
     void simplify();
 
-    // Returns the number of unique Pauli operator products (up to phase)
-    // that must be measured to determine the expectation value of this SQOperator.
-    // The qubit_excitation flag does not affect the counting.
-    int count_unique_pauli_products(bool qubit_excitation = false);
+    /// Estimate total CNOT cost to implement exp(i * dt * H), where H is a second-quantized operator.
+    int count_cnot_for_exponential_jw() const;
+
+    // Returns the number of unique Pauli operator products resulting from an SQOperator.
+    // If the second operator is provided, it computes products between both A and B.
+    // If B is nullptr, it computes products for A only.
+    size_t count_unique_pauli_products(const SQOperator* B = nullptr) const;
 
     // Returns the number of CNOT gates required to implement the exponential
     // of a two-term anti-Hermitian SQOperator K of the form:

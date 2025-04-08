@@ -58,6 +58,10 @@ PYBIND11_MODULE(qforte, m) {
         .def("simplify", &SQOperator::simplify)
         .def("jw_transform", &SQOperator::jw_transform, py::arg("qubit_excitation") = false)
         .def("split_by_rank", &SQOperator::split_by_rank)
+        .def("count_cnot_for_exponential_jw", &SQOperator::count_cnot_for_exponential_jw)
+        .def("count_unique_pauli_products", &SQOperator::count_unique_pauli_products, 
+            py::arg("B") = nullptr)
+        .def("count_cnot_for_exponential", &SQOperator::count_cnot_for_exponential)
         .def("str", &SQOperator::str)
         .def("__str__", &SQOperator::str)
         .def("__repr__", &SQOperator::str);

@@ -261,41 +261,120 @@ std::vector<SQOperator> SQOperator::split_by_rank(bool simplify){
 
 }
 
-// Returns the number of unique Pauli operator products (up to phase)
-// that must be measured to determine the expectation value of this SQOperator.
-// This function uses the fact that, under the Jordan–Wigner transformation,
-// a fermionic operator acting on a unique support S (the union of the creation and
-// annihilation operator indices) yields 2^(|S|) distinct Pauli strings.
-// Note: The qubit_excitation flag does not change the counting, as it only affects
-// whether or not a string of Z operators is included.
-int SQOperator::count_unique_pauli_products(bool qubit_excitation /* = false */) {
-    // Use a set to accumulate unique supports. Each support is represented by a sorted vector of indices.
-    std::set<std::vector<size_t>> unique_supports;
-    
-    // Iterate over all terms.
+/**
+ * @brief Estimate total CNOT cost to implement exp(i * dt * H), where H is a second-quantized operator.
+ * 
+ * Each term is assumed to be of the form g - g† (anti-Hermitian), and mapped using Jordan-Wigner.
+ * We estimate cost using 2 * (r - 1) where r = max_index - min_index + 1, based on fermionic support.
+ */
+int SQOperator::count_cnot_for_exponential_jw() const {
+    int total_cnot = 0;
+
     for (const auto& term : terms_) {
-        // Combine the creation and annihilation indices.
-        std::vector<size_t> support = std::get<1>(term);
-        const std::vector<size_t>& ann_ops = std::get<2>(term);
-        support.insert(support.end(), ann_ops.begin(), ann_ops.end());
-        
-        // Sort and remove duplicates to form a canonical support.
-        std::sort(support.begin(), support.end());
-        support.erase(std::unique(support.begin(), support.end()), support.end());
-        
-        // Insert the canonical support into our set.
-        unique_supports.insert(support);
+        const std::vector<size_t>& cre = std::get<1>(term);
+        const std::vector<size_t>& ann = std::get<2>(term);
+
+        std::vector<size_t> indices = cre;
+        indices.insert(indices.end(), ann.begin(), ann.end());
+
+        if (indices.empty()) continue;
+
+        auto minmax = std::minmax_element(indices.begin(), indices.end());
+        size_t r = *minmax.second - *minmax.first + 1;
+
+        if (r > 1) {
+            total_cnot += 2 * (r - 1);
+        }
     }
+
+    return total_cnot;
+}
+
+// // Returns the number of unique Pauli operator products (up to phase)
+// // that must be measured to determine the expectation value of this SQOperator.
+// // This function uses the fact that, under the Jordan–Wigner transformation,
+// // a fermionic operator acting on a unique support S (the union of the creation and
+// // annihilation operator indices) yields 2^(|S|) distinct Pauli strings.
+// // Note: The qubit_excitation flag does not change the counting, as it only affects
+// // whether or not a string of Z operators is included.
+// int SQOperator::count_unique_pauli_products(bool qubit_excitation /* = false */) {
+//     // Use a set to accumulate unique supports. Each support is represented by a sorted vector of indices.
+//     std::set<std::vector<size_t>> unique_supports;
     
-    int count = 0;
+//     // Iterate over all terms.
+//     for (const auto& term : terms_) {
+//         // Combine the creation and annihilation indices.
+//         std::vector<size_t> support = std::get<1>(term);
+//         const std::vector<size_t>& ann_ops = std::get<2>(term);
+//         support.insert(support.end(), ann_ops.begin(), ann_ops.end());
+        
+//         // Sort and remove duplicates to form a canonical support.
+//         std::sort(support.begin(), support.end());
+//         support.erase(std::unique(support.begin(), support.end()), support.end());
+        
+//         // Insert the canonical support into our set.
+//         unique_supports.insert(support);
+//     }
+    
+//     int count = 0;
+//     // For each unique support S, the JW transform gives 2^(|S|) unique Pauli strings.
+//     for (const auto& support : unique_supports) {
+//         // Use a bit-shift to compute 2^(support.size()). (Assumes support.size() is small.)
+//         count += (1 << support.size());
+//     }
+    
+//     return count;
+// }
+
+size_t SQOperator::count_unique_pauli_products(const SQOperator* B) const {
+    std::set<std::vector<size_t>> unique_supports;
+
+    if (B == nullptr) {
+        // Just act on *this
+        for (const auto& term : terms_) {
+            std::vector<size_t> support = std::get<1>(term);
+            const std::vector<size_t>& ann_ops = std::get<2>(term);
+            support.insert(support.end(), ann_ops.begin(), ann_ops.end());
+
+            std::sort(support.begin(), support.end());
+            support.erase(std::unique(support.begin(), support.end()), support.end());
+
+            unique_supports.insert(support);
+        }
+    } else {
+        // Act on pairs of terms from *this and *B
+        for (const auto& termA : terms_) {
+            std::vector<size_t> supportA = std::get<1>(termA);
+            const std::vector<size_t>& ann_opsA = std::get<2>(termA);
+            supportA.insert(supportA.end(), ann_opsA.begin(), ann_opsA.end());
+
+            for (const auto& termB : B->terms()) {
+                std::vector<size_t> supportB = std::get<1>(termB);
+                const std::vector<size_t>& ann_opsB = std::get<2>(termB);
+                supportB.insert(supportB.end(), ann_opsB.begin(), ann_opsB.end());
+
+                std::vector<size_t> combined_support;
+                combined_support.insert(combined_support.end(), supportA.begin(), supportA.end());
+                combined_support.insert(combined_support.end(), supportB.begin(), supportB.end());
+
+                std::sort(combined_support.begin(), combined_support.end());
+                combined_support.erase(std::unique(combined_support.begin(), combined_support.end()), combined_support.end());
+
+                unique_supports.insert(combined_support);
+            }
+        }
+    }
+
+    std::size_t count = 0;
     // For each unique support S, the JW transform gives 2^(|S|) unique Pauli strings.
     for (const auto& support : unique_supports) {
-        // Use a bit-shift to compute 2^(support.size()). (Assumes support.size() is small.)
-        count += (1 << support.size());
-    }
-    
+        // Use a 64-bit-safe bit-shift to compute 2^(support.size()).
+        count += static_cast<std::size_t>(1) << support.size();
+    }    
+
     return count;
 }
+
 
 /**
  * @brief Estimates the number of CNOT gates required to implement the exponential of a two-term 

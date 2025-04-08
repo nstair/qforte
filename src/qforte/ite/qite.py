@@ -224,6 +224,9 @@ class QITE(Algorithm):
         if(self._computer_type=='fci'):
             self._qc_ref = qf.FCIComputer(self._nel, self._sz, self._norb)
 
+            self._n_pauli_ham = self._sq_ham.count_unique_pauli_products()
+            self._exp_ham_cnot = self._sq_ham.count_cnot_for_exponential_jw()
+
             if(self._random_state):
                 comp_shape = self._qc_ref.get_state_deep().shape()
                 rand_arr = np.random.rand(*comp_shape)
@@ -345,6 +348,8 @@ class QITE(Algorithm):
 
                 else:
                     self._Ekb = [np.real(self._qc_ref.get_exp_val(self._sq_ham))]
+                    # self._n_pauli_trm_measures += self._n_pauli_ham
+
             
         if(self._computer_type=='fock'):
             self._qc_ref = qf.Computer(self._nqb)
@@ -374,7 +379,8 @@ class QITE(Algorithm):
         timer.record('Total evolution time')
         print(f"\n\n{timer}\n\n")
 
-        print(f"\n\n{self._nt}\n\n")
+        if(self._selected_pool and self._cumulative_t):
+            print(f"\n\n{self._nt}\n\n")
 
         # Print summary banner (should done for all algorithms).
         self.print_summary_banner()
@@ -574,8 +580,8 @@ class QITE(Algorithm):
         """
         Idim = self._NI
 
-        self._n_pauli_trm_measures += int(self._NI*(self._NI+1)*0.5)
-        self._n_pauli_trm_measures += self._Nl * self._NI
+        # self._n_pauli_trm_measures += int(self._NI*(self._NI+1)*0.5)
+        # self._n_pauli_trm_measures += self._Nl * self._NI
 
         # Initialize linear system
         S = np.zeros((Idim, Idim), dtype=complex)
@@ -641,6 +647,8 @@ class QITE(Algorithm):
                     exp_val = Hpsi_qc.get_state_deep().vector_dot(Ipsi_mu)
                     b[i] = prefactor * exp_val
 
+                    self._n_pauli_trm_measures += self._n_pauli_ham
+
                 # build b (original)
                 else:
                     exp_val = Ipsi_mu.vector_dot(Hpsi_qc.get_state_deep())
@@ -653,6 +661,8 @@ class QITE(Algorithm):
 
                     S[i][j] = Ipsi_mu.vector_dot(Ipsi_qc.get_state_deep())
                     S[j][i] = S[i][j].conj()
+
+                    self._n_pauli_trm_measures += self._sig.terms()[i][1].count_unique_pauli_products(self._sig.terms()[j][1])
 
             return S_factor * np.real(S), np.real(b)
 
@@ -671,6 +681,8 @@ class QITE(Algorithm):
                     exp_val = Hpsi_qc.get_state_deep().vector_dot(rho_psi[i])
                     b[i] = prefactor * exp_val
 
+                    self._n_pauli_trm_measures += self._n_pauli_ham
+
                 # build b (original)
                 else:
                     exp_val = rho_psi[i].vector_dot(Hpsi_qc.get_state_deep())
@@ -680,6 +692,8 @@ class QITE(Algorithm):
                 for j in range(i):
                     S[i][j] = rho_psi[i].vector_dot(rho_psi[j])
                     S[j][i] = S[i][j].conj()
+
+                    self._n_pauli_trm_measures += self._sig.terms()[i][1].count_unique_pauli_products(self._sig.terms()[j][1])
 
             return S_factor * np.real(S), np.real(b)
 
@@ -694,7 +708,7 @@ class QITE(Algorithm):
         Ipsi_qc = qf.Computer(self._nqb)
         Ipsi_qc.set_coeff_vec(copy.deepcopy(self._qc.get_coeff_vec()))
         # CI[I][J] = (σ_I Ψ)_J
-        self._n_pauli_trm_measures += int(self._NI*(self._NI+1)*0.5)
+        # self._n_pauli_trm_measures += int(self._NI*(self._NI+1)*0.5)
         CI = np.zeros(shape=(Idim, int(2**self._nqb)), dtype=complex)
 
         for i in range(Idim):
@@ -716,7 +730,7 @@ class QITE(Algorithm):
                 idx_sparse.append(I)
                 b_sparse.append(bI)
         Idim = len(idx_sparse)
-        self._n_pauli_trm_measures += int(Idim*(Idim+1)*0.5)
+        # self._n_pauli_trm_measures += int(Idim*(Idim+1)*0.5)
 
         S = np.zeros((len(b_sparse),len(b_sparse)), dtype=complex)
 
@@ -744,7 +758,7 @@ class QITE(Algorithm):
         denom = np.sqrt(1 - 2*self._db*self._Ekb[-1])
         prefactor = -1.0j / denom
 
-        self._n_pauli_trm_measures += self._Nl * self._NI
+        # self._n_pauli_trm_measures += self._Nl * self._NI
 
         Hpsi_qc = qf.Computer(self._nqb)
         Hpsi_qc.set_coeff_vec(copy.deepcopy(self._qc.get_coeff_vec()))
@@ -888,6 +902,7 @@ class QITE(Algorithm):
                             self._norb)))
                 else:
                     self._Ekb.append(np.real(self._qc.get_exp_val(self._sq_ham)))
+                    self._n_pauli_trm_measures += self._n_pauli_ham
 
 
         if(self._verbose):
@@ -1082,9 +1097,17 @@ class QITE(Algorithm):
                 if(self._selected_pool):
 
                     if(kb>=2):
+                        # total_pool_cnot = 0
+                        # total_pool_pauli = 0
                         for term in self._sig.terms():
                             self._total_pool.add_term(term[0], term[1])
+                            # total_pool_cnot += term[1].count_cnot_for_exponential()
+                            # total_pool_pauli += term[1].count_unique_pauli_products()
 
+                        # total_pool_cnot *= 2
+                        # total_pool_cnot += self._exp_ham_cnot
+
+                        self._n_cnot += total_pool_cnot
 
                     qc_res = qf.FCIComputer(self._nel, self._sz, self._norb)
                     qc_res.hartree_fock()
@@ -1135,6 +1158,13 @@ class QITE(Algorithm):
                     # print(res_coeffs)
 
                     self._sig = qf.SQOpPool()
+
+
+                    #qc res Pauli estimate
+                    # total_pool_pauli *= 2
+                    # total_pool_pauli += self._n_pauli_ham
+
+                    # qite_cnot = 0
 
                     if(self._cumulative_t): 
 
@@ -1190,7 +1220,8 @@ class QITE(Algorithm):
                         # print("\n\n")
 
                         # print(self._sig)
-
+                        # for term in self._sig.terms():
+                        #     qite_cnot += term[1].count_cnot_for_exponential()
 
 
 
@@ -1205,6 +1236,7 @@ class QITE(Algorithm):
                             if(i>0):
                                 if(np.real(res_coeffs.get([state_idx[0],state_idx[1]])**2) > self._t_thresh):
                                     self._sig.add_term(1.0, self._full_pool.terms()[i][1])
+                                    # qite_cnot += self._full_pool.terms()[i][1].count_cnot_for_exponential()
 
                     # for i in range(res_coeffs.shape()[0]):
                     #     for j in range(res_coeffs.shape()[1]):
@@ -1219,22 +1251,16 @@ class QITE(Algorithm):
 
                     self._NI = len(self._sig.terms())
 
-                #do CNOT estimation here
-                nqbit = self._norb * 2
-                cnot_count = {}
+                    #do CNOT estimation here
+                    # n_res_m = 1
+                    # self._n_cnot += (n_res_m*total_pool_cnot + qite_cnot)
+                    # self._n_pauli_trm_measures += n_res_m*total_pool_pauli
+                
+                qite_cnot = 0
                 for term in self._sig.terms():
-                    num_exc = len(term[1].terms()[1][1])
-                    cnot_count[num_exc] = cnot_count.get(num_exc, 0) + 1
+                    qite_cnot += term[1].count_cnot_for_exponential()
 
-                # print(f'# excitacions per excitation order: {cnot_count}')
-
-                temp_cnot = 0.0
-                for exc in cnot_count.keys():
-                    temp_cnot += (nqbit/3)*exc*cnot_count[exc]
-
-                final_cnot = round(temp_cnot)
-                self._n_cnot += final_cnot
-                # print(f'total cnot gate estimate: {final_cnot}')
+                self._n_cnot += qite_cnot
 
                 self.do_qite_step()
 
