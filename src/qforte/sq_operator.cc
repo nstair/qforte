@@ -261,35 +261,6 @@ std::vector<SQOperator> SQOperator::split_by_rank(bool simplify){
 
 }
 
-/**
- * @brief Estimate total CNOT cost to implement exp(i * dt * H), where H is a second-quantized operator.
- * 
- * Each term is assumed to be of the form g - g† (anti-Hermitian), and mapped using Jordan-Wigner.
- * We estimate cost using 2 * (r - 1) where r = max_index - min_index + 1, based on fermionic support.
- */
-int SQOperator::count_cnot_for_exponential_jw() const {
-    int total_cnot = 0;
-
-    for (const auto& term : terms_) {
-        const std::vector<size_t>& cre = std::get<1>(term);
-        const std::vector<size_t>& ann = std::get<2>(term);
-
-        std::vector<size_t> indices = cre;
-        indices.insert(indices.end(), ann.begin(), ann.end());
-
-        if (indices.empty()) continue;
-
-        auto minmax = std::minmax_element(indices.begin(), indices.end());
-        size_t r = *minmax.second - *minmax.first + 1;
-
-        if (r > 1) {
-            total_cnot += 2 * (r - 1);
-        }
-    }
-
-    return total_cnot;
-}
-
 // // Returns the number of unique Pauli operator products (up to phase)
 // // that must be measured to determine the expectation value of this SQOperator.
 // // This function uses the fact that, under the Jordan–Wigner transformation,

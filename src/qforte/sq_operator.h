@@ -66,9 +66,6 @@ class SQOperator {
     /// Combine like terms in terms_. As a side-effect, canonicalizes the order.
     void simplify();
 
-    /// Estimate total CNOT cost to implement exp(i * dt * H), where H is a second-quantized operator.
-    int count_cnot_for_exponential_jw() const;
-
     // Returns the number of unique Pauli operator products resulting from an SQOperator.
     // If the second operator is provided, it computes products between both A and B.
     // If B is nullptr, it computes products for A only.

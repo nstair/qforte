@@ -139,6 +139,7 @@ class QITE(Algorithm):
             cumulative_t=False,
             b_thresh=1.0e-6,
             x_thresh=1.0e-10,
+            conv_thresh=1.0e-3,
             physical_r = False,
             folded_spectrum = False,
             BeH2_guess = False,
@@ -182,6 +183,7 @@ class QITE(Algorithm):
         self._Uqite = qf.Circuit()
         self._b_thresh = b_thresh
         self._x_thresh = x_thresh
+        self._conv_thresh = conv_thresh
         self._physical_r = physical_r
 
         # DIIS options
@@ -225,7 +227,17 @@ class QITE(Algorithm):
             self._qc_ref = qf.FCIComputer(self._nel, self._sz, self._norb)
 
             self._n_pauli_ham = self._sq_ham.count_unique_pauli_products()
-            self._exp_ham_cnot = self._sq_ham.count_cnot_for_exponential_jw()
+
+            if(selected_pool):
+                cnot_pool = qf.SQOpPool()
+                cnot_pool.add_hermitian_pairs(1.0, self._sq_ham)
+
+                ham_cnot = 0
+                for term in cnot_pool.terms():
+                    ham_cnot += term[1].count_cnot_for_exponential()
+
+                self._exp_ham_cnot = ham_cnot
+                # print(f'cnots in exp ham: {self._exp_ham_cnot}')
 
             if(self._random_state):
                 comp_shape = self._qc_ref.get_state_deep().shape()
@@ -1097,17 +1109,23 @@ class QITE(Algorithm):
                 if(self._selected_pool):
 
                     if(kb>=2):
-                        # total_pool_cnot = 0
-                        # total_pool_pauli = 0
+
+                        total_pool_cnot = 0
+
+                        # if(len(self._sig.terms()) == 0):
+                        #     print(f'SELECTED QITE HAS CONVEREGED FOR THRESHOLD {self._t_thresh}')
+
                         for term in self._sig.terms():
                             self._total_pool.add_term(term[0], term[1])
-                            # total_pool_cnot += term[1].count_cnot_for_exponential()
+                        
+                        for term in self._total_pool.terms():
+                            total_pool_cnot += term[1].count_cnot_for_exponential()
                             # total_pool_pauli += term[1].count_unique_pauli_products()
 
-                        # total_pool_cnot *= 2
-                        # total_pool_cnot += self._exp_ham_cnot
-
+                        total_pool_cnot *= 2
+                        total_pool_cnot += self._exp_ham_cnot
                         self._n_cnot += total_pool_cnot
+
 
                     qc_res = qf.FCIComputer(self._nel, self._sz, self._norb)
                     qc_res.hartree_fock()
@@ -1160,9 +1178,8 @@ class QITE(Algorithm):
                     self._sig = qf.SQOpPool()
 
 
-                    #qc res Pauli estimate
-                    # total_pool_pauli *= 2
-                    # total_pool_pauli += self._n_pauli_ham
+                    #qc res CNOT estimate
+
 
                     # qite_cnot = 0
 
@@ -1300,6 +1317,10 @@ class QITE(Algorithm):
                         sorted_pool = self._sig.terms()
                         # sorted_pool = sorted(self._sig.terms(), key=lambda t: (len(t[1].terms()[0][2]), t[1].terms()[0][2]))
                         f_pool.write(f'iteration {kb} pool coeffs: {[term[0] for term in sorted_pool]}\n')
+
+            if(self._Ekb[kb] - self._sys.fci_energy <= self._conv_thresh):
+                print(f'qite converged for convergence threshold {self._conv_thresh} Hartree')
+                break
 
         self._Ets = self._Ekb[-1]
 
