@@ -237,6 +237,7 @@ class QITE(Algorithm):
                     ham_cnot += term[1].count_cnot_for_exponential()
 
                 self._exp_ham_cnot = ham_cnot
+                # self._exp_ham_cnot = 0
                 # print(f'cnots in exp ham: {self._exp_ham_cnot}')
 
             if(self._random_state):
@@ -815,6 +816,29 @@ class QITE(Algorithm):
         x = np.real(x)
         x_list = x.tolist()
 
+        if(not self._selected_pool):
+            temp_x = []
+            A = qf.SQOpPool()
+
+            for I, x in enumerate(x_list):
+                if(np.abs(x_list[I]) > self._x_thresh):
+                    temp_x.append(x_list[I])
+                    A.add_term(self._sig.terms()[I][0], self._sig.terms()[I][1])
+
+            self._sig = qf.SQOpPool()
+
+            for term in A.terms():
+                self._sig.add_term(term[0], term[1])
+            
+            x_list = temp_x
+            
+            self._NI = len(self._sig.terms())
+
+        qite_cnot = 0
+        for term in self._sig.terms():
+            qite_cnot += term[1].count_cnot_for_exponential()
+
+        self._n_cnot += qite_cnot
         self._n_classical_params += len(x_list)
 
         if(self._folded_spectrum):
@@ -840,6 +864,15 @@ class QITE(Algorithm):
                     if np.abs(x[I]) > self._x_thresh:
                         A.add(-1.0j * self._db * x[I], SigI[1].terms()[0][1])
                         self._n_classical_params += 1
+
+        # # screen x for small contributions
+        # if(self._computer_type=='fci'):
+        #     A = qf.SQOpPool()
+            
+        #     for I, SigI in enumerate(self._sig.terms()):
+        #         if np.abs(x[I]) > self._x_thresh:
+        #             A.add(-1.0j * self._db * x[I], SigI[1].terms()[0][1])
+        #             self._n_classical_params += 1
 
         if(self._verbose):
             print('\nbtot:\n ', btot)
@@ -1108,6 +1141,9 @@ class QITE(Algorithm):
             else:
                 if(self._selected_pool):
 
+                    if(kb==1):
+                        self._n_cnot += self._exp_ham_cnot
+
                     if(kb>=2):
 
                         total_pool_cnot = 0
@@ -1117,13 +1153,13 @@ class QITE(Algorithm):
 
                         for term in self._sig.terms():
                             self._total_pool.add_term(term[0], term[1])
-                        
-                        for term in self._total_pool.terms():
                             total_pool_cnot += term[1].count_cnot_for_exponential()
-                            # total_pool_pauli += term[1].count_unique_pauli_products()
+                            
+                        # for term in self._total_pool.terms():
+                        #     total_pool_cnot += term[1].count_cnot_for_exponential()
+                        #     # total_pool_pauli += term[1].count_unique_pauli_products()
 
                         total_pool_cnot *= 2
-                        total_pool_cnot += self._exp_ham_cnot
                         self._n_cnot += total_pool_cnot
 
 
@@ -1273,11 +1309,11 @@ class QITE(Algorithm):
                     # self._n_cnot += (n_res_m*total_pool_cnot + qite_cnot)
                     # self._n_pauli_trm_measures += n_res_m*total_pool_pauli
                 
-                qite_cnot = 0
-                for term in self._sig.terms():
-                    qite_cnot += term[1].count_cnot_for_exponential()
+                # qite_cnot = 0
+                # for term in self._sig.terms():
+                #     qite_cnot += term[1].count_cnot_for_exponential()
 
-                self._n_cnot += qite_cnot
+                # self._n_cnot += qite_cnot
 
                 self.do_qite_step()
 
