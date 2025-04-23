@@ -198,7 +198,9 @@ H14_geom = [
 
 geom_list = [
 
-    Ethylyne_geom,
+    # Ethylyne_geom,
+
+    # H2_geom,
 
     # H4_geom,
 
@@ -214,17 +216,19 @@ geom_list = [
 
     # H20_geom,
 
-    # H10_geom,
+    H10_geom,
 
-    # H12_geom,
+    H12_geom,
 
-    # H14_geom
+    H14_geom
 
     ]
 
 name_list = [
 
-    'Ethylyne',
+    # 'Ethylyne',
+
+    # 'H2',
 
     # 'H4',
 
@@ -240,11 +244,11 @@ name_list = [
 
     # 'H2O',
 
-    # 'H10',
+    'H10',
 
-    # 'H12',
+    'H12',
 
-    # 'H14'
+    'H14'
 
     ]
 
@@ -291,39 +295,34 @@ for geom, name in zip(geom_list, name_list):
 
     #     print(f" nel:       {nel}")
 
+    if name != 'H14':
+
+
+        fock1 = qf.Computer(norb * 2)
+
+        # fock1.hartree_fock()
+
+        timer.reset()
+
+        fock1.apply_sq_operator(mol.sq_hamiltonian)
+
+        timer.record(f'fock computer {name}')
+
+    # -----
+
     fc1 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 
     fc1.hartree_fock()
    
     timer.reset()
 
-    # fc1.apply_tensor_spat_012bdy(
-
-    #     mol.nuclear_repulsion_energy,
-
-    #     mol.mo_oeis,
-
-    #     mol.mo_teis,
-
-    #     mol.mo_teis_einsum,
-
-    #     norb
-
-    # )
-
     fc1.apply_sqop(mol.sq_hamiltonian)
 
     timer.record(f'fci  computer {name}')
 
-    E1 = fc1.get_hf_dot()
+    # E1 = fc1.get_hf_dot()
 
-    # fock computer stuff
 
-    # fk1 = qf.Computer(norb * 2)
-
-    # Uhf = qf.utils.state_prep.build_Uprep(ref, 'occupation_list')
-
-    # fk1.apply_circuit(Uhf)
 
     fcg1 = qf.FCIComputerGPU(nel=nel, sz=sz, norb=norb)
 
@@ -334,32 +333,35 @@ for geom, name in zip(geom_list, name_list):
     timer.reset()
 
 
-    fcg1.apply_sqop(mol.sq_hamiltonian)
+    fcg1.apply_sqop_gpu(mol.sq_hamiltonian)
 
     timer.record(f'fcigpu computer {name}')
     
     fcg1.to_cpu()
 
+    # -----
+
     times = timer.get_timings()
 
-    acc_times_gpu = fcg1.get_acc_timer().get_acc_timings()
-    acc_times_cpu = fc1.get_acc_timer().get_acc_timings()
+    # acc_times_gpu = fcg1.get_acc_timer().get_acc_timings()
+    # acc_times_cpu = fc1.get_acc_timer().get_acc_timings()
 
-    E1 = fc1.get_hf_dot() 
-    E2 = fcg1.get_hf_dot() 
+    # E1 = fc1.get_hf_dot()  -----
+    # E2 = fcg1.get_hf_dot() -----
 
 
 
     # print("acc_times: \n")
     # print(acc_times_gpu)
 
-    gpu_kernel_time = acc_times_gpu["calling gpu function"]
-    cpu_specific_time = acc_times_cpu["cpu function"]
+    # gpu_kernel_time = acc_times_gpu["calling gpu function"]
+    # cpu_specific_time = acc_times_cpu["cpu function"]
 
-    gpu_kernel_times.append(gpu_kernel_time)
-    cpu_specific_times.append(cpu_specific_time)
+    # gpu_kernel_times.append(gpu_kernel_time)
+    # cpu_specific_times.append(cpu_specific_time)
 
     N = int(len(times) / 2)
+    # N = 1
     # N2 = int(len(acc_times) / 2)
  
 
@@ -367,20 +369,21 @@ for geom, name in zip(geom_list, name_list):
     # print(N)
 
     print("\n\n Timing")
-
+    print(times)
     print("======================================================") 
+    print(name_list)
+    # for n in range(N):
+    #     print(n)
+    #     ifc = 2*n
+    #     ifgpu = 2*n + 1
 
-    for n in range(N):
+    #     _, tval_fc = times[ifc]
+    #     # _, tval_fk = times[ifgpu]
 
-        ifc = 2*n
-        ifgpu = 2*n + 1
-
-        _, tval_fc = times[ifc]
-        _, tval_fk = times[ifgpu]
-
-        line = f"{name_list[n]:8}  {tval_fk:e}   {tval_fc:e}  {tval_fc/tval_fk:e}  {norb_lst[n]*2:6}  {gpu_kernel_times[n]:e}   {cpu_specific_times[n]:e}   {cpu_specific_times[n]/gpu_kernel_times[n]:e}"
-
-        print(line)
+    #     # line = f"{name_list[n]:8}  {tval_fk:e}   {tval_fc:e}  {tval_fc/tval_fk:e}  {norb_lst[n]*2:6}  {gpu_kernel_times[n]:e}   {cpu_specific_times[n]:e}   {cpu_specific_times[n]/gpu_kernel_times[n]:e}"
+    #     line = f"{name_list[n]:8}  {tval_fc:e}   "
+    #     print("the")
+    #     print(line)
 
     print("\n")
 
@@ -390,8 +393,8 @@ for geom, name in zip(geom_list, name_list):
     print(f" Ehf:                {mol.hf_energy}")
     print(f" Enr:                {mol.nuclear_repulsion_energy}")
     # print(f" Eelec:              {mol.hf_energy - mol.nuclear_repulsion_energy}")
-    print(f" E1 (from cpu):   {E1}")
-    print(f" E2 (from gpu):   {E2}")     
+    # print(f" E1 (from cpu):   {E1}")--
+    # print(f" E2 (from gpu):   {E2}")  --   
 
 
 print("")

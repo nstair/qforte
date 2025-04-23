@@ -381,9 +381,21 @@ class FCIComputerGPU {
     TensorGPU get_state() const { return C_; }
 
     /// return a tensor of the coeficients
-    TensorGPU get_state_deep() const { 
-      TensorGPU Cprime = C_; 
-      return Cprime; 
+    TensorGPU get_state_deep() const {
+      
+      if (C_.on_gpu()){
+        std::cout << "on gpu state deep\n" << std::endl;
+        TensorGPU Cnew(C_.shape(), "Cnew", true);
+        Cnew.copy_in_gpu(C_);
+        return Cnew;
+      } else {
+        TensorGPU Cnew(C_.shape(), "Cnew", false);
+        // TensorGPU Cnew = TensorGPU();
+
+        Cnew.copy_in(C_);    
+        return Cnew;    
+      }  
+
     }
 
     /// return the dot product of the current FCIComputerGPU state (as the ket) and the HF state (i.e. <HF|C_>)

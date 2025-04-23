@@ -44,8 +44,22 @@ TensorGPU::TensorGPU(
     // Ed's special memory thing
     total_memory__ += h_data_.size() * sizeof(std::complex<double>);
 
+    // size_t freeMem, totalMem;
+    // cudaMemGetInfo(&freeMem, &totalMem);
+    // std::cout << "Free = " << freeMem << " / " << totalMem << std::endl;
+
+
+
     // allocate device memory
-    cudaMalloc((void**) & d_data_, size_ * sizeof(std::complex<double>));
+    // cudaError_t err = cudaMalloc((void**) & d_data_, size_ * sizeof(std::complex<double>));
+    cudaError_t err = cudaMalloc(&d_data_, size_ * sizeof(cuDoubleComplex));
+    // std::cout << "created " << name_ << " at " << this << " with size of " << size_ * sizeof(cuDoubleComplex) << " and " << &d_data_ << std::endl;
+
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA malloc failed\n" << std::endl;
+    }
+    
+
 }
 
 TensorGPU::TensorGPU()
@@ -57,18 +71,30 @@ TensorGPU::TensorGPU()
     total_memory__ += h_data_.size() * sizeof(std::complex<double>);
     on_gpu_ = false;
 
-    // allocate device memory
-    cudaMalloc((void**) & d_data_, size_ * sizeof(std::complex<double>));
+    size_t freeMem, totalMem;
+    cudaMemGetInfo(&freeMem, &totalMem);
+    // std::cout << "Free = " << freeMem << " / " << totalMem << std::endl;
 
+
+    // allocate device memory
+    // cudaError_t err = cudaMalloc((void**) & d_data_, size_ * sizeof(std::complex<double>));
+    cudaError_t err = cudaMalloc(&d_data_, size_ * sizeof(cuDoubleComplex));
+    // std::cout << "created " << name_ << " at " << this << " with size of " << size_ * sizeof(cuDoubleComplex) << " and " << d_data_ << std::endl;
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA malloc failed\n" << std::endl;
+    }
 }
 
 /// Destructor
 TensorGPU::~TensorGPU()
 {
+    // std::cout << "destroying: " << name_ << " at " << this << " and " << d_data_ << std::endl;
+    cudaDeviceSynchronize();
     // Ed's special memory thing
     total_memory__ -= h_data_.size() * sizeof(std::complex<double>);
 
     // free the device memory
+
     cudaFree(d_data_);
 }
 
@@ -499,7 +525,7 @@ void TensorGPU::copy_in(
     cpu_error();
     other.cpu_error();
     shape_error(other.shape());
-    std::memcpy(h_data_.data(), other.read_h_data().data(), sizeof(std::complex<double>)*size_);
+    std::memcpy(h_data_.data(), other.read_h_data().data(), sizeof(cuDoubleComplex)*size_);
 }
 
 void TensorGPU::copy_in_gpu(const TensorGPU& other)
@@ -507,7 +533,12 @@ void TensorGPU::copy_in_gpu(const TensorGPU& other)
     gpu_error();
     other.gpu_error();
     shape_error(other.shape());
-    cudaMemcpy(d_data_, other.read_d_data(), size_ * sizeof(cuDoubleComplex), cudaMemcpyDeviceToDevice);
+    cudaError_t err = cudaMemcpy(d_data_, other.read_d_data(), size_ * sizeof(cuDoubleComplex), cudaMemcpyDeviceToDevice);
+    cudaMemset(d_data_, 0, size_ * sizeof(std::complex<double>));
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA memcpy failed\n" << std::endl;
+    }
+
 }
 
 void TensorGPU::copy_in_from_tensor(const Tensor& other)

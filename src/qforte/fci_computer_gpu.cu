@@ -218,7 +218,92 @@ void apply_individual_nbody1_accumulate_wrapper(
     int tensor_size) 
 {
     
+
+    // cudaPointerAttributes attributes;
+    // cudaError_t err = cudaPointerGetAttributes(&attributes, d_Cin);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for Cin\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: Cin" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, d_Cout);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for Cout\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: Cout" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, d_sourcea);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for source a\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: source a" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, d_sourceb);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for source b\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: source b" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, d_targeta);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for target a\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: target a" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, d_targetb);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for target b\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: target b" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, d_paritya);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for parity a\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: parity a" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, d_parityb);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for parity b\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: parity b" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // int maxThreadsPerBlock;
+    // cudaDeviceGetAttribute(&maxThreadsPerBlock, cudaDevAttrMaxThreadsPerBlock, 0);
+    // std::cout << "Max threads per block: " << maxThreadsPerBlock << std::endl;
+
+    
     // int blocksPerGrid = (tensor_size + 256 - 1) / 256;
+    int total_threads = targeta_size * targetb_size;
+    int blocksPerGrid = (total_threads + 256 - 1) / 256;
+    // std::cout << "bpg: " << blocksPerGrid << std::endl;
+    // std::cout << "threads: " << total_threads << std::endl;
+
+    // std::cout << "coeff: " << coeff << std::endl;
+
+    // std::cout << "cin: " << d_Cin << std::endl;
+    // std::cout << "cout: " << d_Cout << std::endl;
+    // std::cout << "src a: " << d_sourcea << std::endl;
+    // std::cout << "src b: " << d_sourceb << std::endl;
+    // std::cout << "target a: " << d_targeta << std::endl;
+    // std::cout << "target b: " << d_targetb << std::endl;
+    // std::cout << "parity a: " << d_paritya << std::endl;
+    // std::cout << "parity b: " << d_parityb << std::endl;
+    // std::cout << "nbeta_strs: " << nbeta_strs_ << std::endl;
+    // std::cout << "target a size: " << targeta_size << std::endl;
+    // std::cout << "target b size: " << targetb_size << std::endl;
+
+
+
+
     apply_individual_nbody1_accumulate_kernel<<<256, 256>>>(
         coeff, 
         d_Cin, 

@@ -32,7 +32,9 @@ elif(reference == 'random'):
     fci_comp.set_state_from_tensor(Crand)
     fci_comp2.set_state_from_tensor(Crand)
 
-fci_comp.to_gpu()
+
+
+# fci_comp.to_cpu()
 fci_comp2.to_gpu()
 
 print("\n SQOP Stuff")
@@ -53,7 +55,8 @@ print("===========================")
 # print(fci_comp)
 # print(fci_comp2)
 
-
+# fci_comp.to_cpu()
+print("IOFHJEWOFJ(WE")
 fci_comp.apply_sqop(sqop)
 fci_comp2.apply_sqop_gpu(sqop)
 

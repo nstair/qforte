@@ -56,6 +56,8 @@ const cuDoubleComplex* read_d_data() const { return d_data_; }
 
 void add2(const TensorGPU& other);
 
+bool on_gpu() const { return on_gpu_; }
+
 void gpu_error() const;
 
 void cpu_error() const;

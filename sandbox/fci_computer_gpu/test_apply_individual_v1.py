@@ -34,7 +34,7 @@ print(fci_comp2)
 
 fci_comp.apply_sqop(sqop)
 fci_comp2.do_on_gpu()
-fci_comp2.apply_sqop(sqop)
+fci_comp2.apply_sqop_gpu(sqop)
 
 
 print("\n Final FCIcomp Stuff")

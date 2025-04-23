@@ -24,11 +24,10 @@ if(rand):
     fci_comp1.set_state(Crand)
     print(fci_comp1.str(print_data=True))
 
-dim = 2*norb
-max_nbody = 1
 
-print("\n Initial FCIcomp Stuff")
-print("===========================")
+
+# print("\n Initial FCIcomp Stuff")
+# print("===========================")
 # print(fci_comp1)
 
 
@@ -64,9 +63,18 @@ fci_comp1.evolve_pool_trotter_basic(
 
 timer.record("cpu")
 
+print("\n Final FCIcomp1 Stuff")
+print("===========================")
 
+Ctemp1 = fci_comp1.get_state_deep()
+# new_tensor = qf.TensorGPU()
+# cnrm1 = Ctemp1.norm()
+# print(f"||C||: {cnrm1}")
+# print(fci_comp1.str(print_data=True, print_complex=print_imag))
+print("IOWEJFIOWJEIOFJ")
 
 timer.reset()
+
 fci_comp2.evolve_pool_trotter_basic_gpu(
     pool,
     antiherm=True,
@@ -76,13 +84,13 @@ timer.record("gpu")
 
 
 
-print("\n Final FCIcomp1 Stuff")
-print("===========================")
+# print("\n Final FCIcomp1 Stuff")
+# print("===========================")
 
-Ctemp1 = fci_comp1.get_state_deep()
-cnrm1 = Ctemp1.norm()
-print(f"||C||: {cnrm1}")
-print(fci_comp1.str(print_data=True, print_complex=print_imag))
+# Ctemp1 = fci_comp1.get_state_deep()
+# cnrm1 = Ctemp1.norm()
+# print(f"||C||: {cnrm1}")
+# print(fci_comp1.str(print_data=True, print_complex=print_imag))
 
 print("\n Final FCIcomp2 Stuff")
 print("===========================")
@@ -93,6 +101,13 @@ Ctemp2 = fci_comp2.get_state_deep()
 cnrm2 = Ctemp2.norm()
 print(f"||C||: {cnrm2}")
 print(fci_comp2.str(print_data=True, print_complex=print_imag))
+
+
+# print("\n Diff Tensor")
+# print("===========================")
+# Ctemp1.subtract(Ctemp2)
+# dnrm = Ctemp1.norm()
+# print(f"||dC||: {dnrm}\n\n")
 
 print("timer")
 print(timer)

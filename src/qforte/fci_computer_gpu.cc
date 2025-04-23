@@ -1140,14 +1140,14 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
 {
     // C_.gpu_error();
     C_.cpu_error();
-    
+    TensorGPU Cin(C_.shape(), "Cin", false);
     if(adjoint){
         for (int i = pool.terms().size() - 1; i >= 0; --i) {
-            std::cout << "pool terms " << pool.terms()[i].second.str() << std::endl;
+            // std::cout << "pool terms " << pool.terms()[i].second.str() << std::endl;
             // TensorGPU Cin = C_;
                 
                 
-                TensorGPU Cin(C_.shape(), "Cin", false);
+                
                 // Cin.copy_in_gpu(C_);
                 Cin.copy_in(C_);
 
@@ -1204,7 +1204,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
                 std::complex<double> parity = std::pow(-1, nswaps);
 
                 if (crea == anna && creb == annb) {
-                    std::cout<<"Hit easy case GPU version"<<std::endl;
+                    // std::cout<<"Hit easy case GPU version"<<std::endl;
                     evolve_individual_nbody_easy(
                         pool.terms()[i].first,
                         parity * std::get<0>(term),
@@ -1218,7 +1218,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
 
                 } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
 
-                    std::cout<< "Hit hard case GPU version" << std::endl;
+                    // std::cout<< "Hit hard case GPU version" << std::endl;
                     const std::complex<double> new_coef = parity * std::get<0>(term);
 
                     std::vector<int> dagworka(crea);
@@ -1278,11 +1278,20 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
                         dagworkb,
                         C_);
 
+
+                    // size_t free_memory, total_memory;
+                    // cudaMemGetInfo(&free_memory, &total_memory);
+                    // std::cout << "free memory: " << free_memory << std::endl;
+                    // std::cout << "total_memory: " << total_memory << std::endl;
+
                     int phase = std::pow(-1, (crea.size() + anna.size()) * (creb.size() + annb.size()));
                     std::complex<double> work_cof = std::conj(new_coef) * static_cast<double>(phase) * std::complex<double>(0.0, -1.0);
 
+
                     Cin.to_gpu();
                     C_.to_gpu();
+
+
 
                     apply_individual_nbody_accumulate_gpu(
                         work_cof * sinfactor,
@@ -1335,7 +1344,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
 
         }
     } else {
-        std::cout << "i got to the else statement in gpu" << std::endl;
+        // std::cout << "i got to the else statement in gpu" << std::endl;
         for (const auto& sqop_term : pool.terms()) {
             apply_sqop_evolution(
                 sqop_term.first, 
@@ -1537,8 +1546,77 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate_gpu(
 
 
 
+    cudaPointerAttributes attributes;
+    cudaError_t err = cudaPointerGetAttributes(&attributes, Cin.read_d_data());
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for Cin\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: Cin" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, Cout.d_data());
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for Cout\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: Cout" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, d_sourcea);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for source a\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: source a" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, d_sourceb);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for source b\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: source b" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, d_targeta);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for target a\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: target a" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, d_targetb);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for target b\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: target b" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, d_paritya);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for parity a\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: parity a" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // err = cudaPointerGetAttributes(&attributes, d_parityb);
+    // if (err == cudaSuccess) {
+    //     std::cout << "Succcess for parity b\n" << std::endl;
+    // } else {
+    //     std::cerr << "Invalid pointer or unrecognized memory: parity b" << cudaGetErrorString(err) << std::endl;
+    // }
+
+    // int total_threads = targeta.size() * targetb.size();
+
+    // size_t freeMem, totalMem;
+    // cudaMemGetInfo(&freeMem, &totalMem);
+    // std::cout << "Free = " << freeMem << " / " << totalMem << std::endl;
 
 
+
+    // std::cout << Cin.read_d_data() << std::endl;
+    // std::cout << Cout.d_data() << std::endl;
+
+    // TensorGPU test({10, 10}, "test", false); 
+    // std::cout << Cin.read_d_data() << std::endl;
+    // std::cout << Cout.d_data() << std::endl;
 
     apply_individual_nbody1_accumulate_wrapper(
         cu_coeff, 
@@ -1568,13 +1646,13 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate_gpu(
         throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
     }
 
-    std::cout<< "i am here GPU" <<std::endl;
-    Cout.to_cpu();
+    // std::cout<< "end apply wrapper and kernel call\n\n" <<std::endl;
+    // Cout.to_cpu();
     // Cin.to_cpu();
     // std::cout << "Cin GPU version: " << Cin.str() << std::endl;
-    std::cout<< "Cout GPU version: " << Cout.str() << std::endl;
+    // std::cout<< "Cout GPU version: " << Cout.str() << std::endl;
     // Cin.to_gpu();
-    Cout.to_gpu();
+    // Cout.to_gpu();
 
 
 }
@@ -1694,8 +1772,8 @@ void FCIComputerGPU::apply_individual_nbody_accumulate(
         parityb);
 
 
-    std::cout << "Cin CPU version " << Cin.str() << std::endl;
-    std::cout << "Cout CPU version " << Cout.str() << std::endl;
+    // std::cout << "Cin CPU version " << Cin.str() << std::endl;
+    // std::cout << "Cout CPU version " << Cout.str() << std::endl;
 }
 
 void FCIComputerGPU::apply_individual_nbody_accumulate_gpu(
@@ -1825,11 +1903,11 @@ void FCIComputerGPU::apply_individual_sqop_term(
 /// NICK: Check out  accumulation, don't need to do it this way..
 void FCIComputerGPU::apply_sqop(const SQOperator& sqop){
 
-    C_.gpu_error();
-    TensorGPU Cin(C_.shape(), "Cin", true);
-    Cin.copy_in_gpu(C_);
+    // C_.gpu_error();
+    TensorGPU Cin(C_.shape(), "Cin", false);
+    // Cin.copy_in_gpu(C_);
 
-    C_.zero_gpu();
+    // C_.zero_gpu();
 
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
@@ -1976,6 +2054,11 @@ void FCIComputerGPU::apply_sqop_gpu(const SQOperator& sqop){
             std::complex<double> coeff = pow(-1, nswaps) * std::get<0>(term);
 
             cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
+            
+            // size_t free_memory, total_memory;
+            // cudaMemGetInfo(&free_memory, &total_memory);
+            // std::cout << "free memory: " << free_memory << std::endl;
+            // std::cout << "total_memory: " << total_memory << std::endl;
 
             apply_individual_nbody1_accumulate_wrapper(
                 cu_coeff, 
