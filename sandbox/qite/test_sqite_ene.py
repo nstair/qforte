@@ -92,7 +92,7 @@ alg = qf.QITE(
         )
 
 alg.run(
-        beta=5.0,            # for given t-thresh, should converge at beta = 16.900
+        beta=5.0,             # 
         db=0.1,               #
         dt=0.01,              #
         use_diis=0,           #
