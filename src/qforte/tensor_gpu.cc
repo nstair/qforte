@@ -83,24 +83,24 @@ TensorGPU::TensorGPU()
 
     // allocate device memory
     // cudaError_t err = cudaMalloc((void**) & d_data_, size_ * sizeof(std::complex<double>));
-    cudaError_t err = cudaMalloc(&d_data_, size_ * sizeof(cuDoubleComplex));
+    // cudaError_t err = cudaMalloc(&d_data_, size_ * sizeof(cuDoubleComplex));
     // std::cout << "created " << name_ << " at " << this << " with size of " << size_ * sizeof(cuDoubleComplex) << " and " << d_data_ << std::endl;
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA malloc failed\n" << std::endl;
-    }
+    // if (err != cudaSuccess) {
+        // std::cerr << "CUDA malloc failed\n" << std::endl;
+    // }
 }
 
 /// Destructor
 TensorGPU::~TensorGPU()
 {
     // std::cout << "destroying: " << name_ << " at " << this << " and " << d_data_ << std::endl;
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
     // Ed's special memory thing
     total_memory__ -= h_data_.size() * sizeof(std::complex<double>);
 
     // free the device memory
 
-    cudaFree(d_data_);
+    // cudaFree(d_data_);
 }
 
 
