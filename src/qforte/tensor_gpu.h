@@ -6,10 +6,16 @@
 #include <string>
 #include <vector>
 #include <iterator>
+#include <complex>
 
 #include <cuda_runtime.h>
 #include <cuComplex.h>
 
+
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <thrust/device_ptr.h>
+#include <thrust/copy.h>
 
 #include "qforte-def.h"
 #include "tensor.h"
@@ -46,13 +52,17 @@ void zero();
 
 void zero_gpu();
 
-std::vector<std::complex<double>>& h_data() { return h_data_; }
+// std::vector<std::complex<double>>& h_data() { return h_data_; }
+// const std::vector<std::complex<double>>& read_h_data() const { return h_data_; }
 
-const std::vector<std::complex<double>>& read_h_data() const { return h_data_; }
+thrust::host_vector<std::complex<double>>& h_data() { return h_data_; }
+const thrust::host_vector<std::complex<double>>& read_h_data() const { return h_data_; }
 
-cuDoubleComplex* d_data() { return d_data_; }
 
-const cuDoubleComplex* read_d_data() const { return d_data_; }
+// cuDoubleComplex* d_data() { return d_data_; }
+// const cuDoubleComplex* read_d_data() const { return d_data_; }
+cuDoubleComplex* d_data() { return thrust::raw_pointer_cast(d_data_.data()); }
+const cuDoubleComplex* read_d_data() const { return thrust::raw_pointer_cast(d_data_.data()); }
 
 void add2(const TensorGPU& other);
 
@@ -81,8 +91,11 @@ void set(const std::vector<size_t>& idxs,
 
 void ndim_error(size_t) const;
 
-void fill_from_nparray(std::vector<std::complex<double>>, std::vector<size_t>);
+// void fill_from_nparray(std::vector<std::complex<double>>, std::vector<size_t>);
+// void fill_from_nparray(thrust::host_vector<std::complex<double>> data,
+//             std::vector<size_t> shape);
 
+// commenting out above since i dont think i need it right now
 
 std::string str(
     bool print_data = true,
@@ -108,8 +121,8 @@ const bool initialized() const { return initialized_; }
  *
  * @return a reference to the vector data of this tensor
  **/
-std::vector<std::complex<double>>& data() { return h_data_; }
-
+// std::vector<std::complex<double>>& data() { return h_data_; }
+thrust::host_vector<std::complex<double>>& data() { return h_data_; }
 // => Setters <= //
 
 /// Set this Tensor's name to @param name
@@ -346,12 +359,16 @@ size_t size_;
 bool initialized_ = 0;
 
 // The host side data
-std::vector<std::complex<double>> h_data_;
+// std::vector<std::complex<double>> h_data_;
+thrust::host_vector<std::complex<double>> h_data_;
 
 // The device side data pointer
 // std::complex<double>* d_data_; 
+// above was already commented out ^
+thrust::device_vector<cuDoubleComplex> d_data_;
 
-cuDoubleComplex* d_data_;
+// below was not though
+// cuDoubleComplex* d_data_;
 
 bool on_gpu_;
 

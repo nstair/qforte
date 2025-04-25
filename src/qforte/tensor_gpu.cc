@@ -52,12 +52,17 @@ TensorGPU::TensorGPU(
 
     // allocate device memory
     // cudaError_t err = cudaMalloc((void**) & d_data_, size_ * sizeof(std::complex<double>));
-    cudaError_t err = cudaMalloc(&d_data_, size_ * sizeof(cuDoubleComplex));
+
+
+    // cudaError_t err = cudaMalloc(&d_data_, size_ * sizeof(cuDoubleComplex));
+    // CHANGE - i guess we don't need this anymore
+
     // std::cout << "created " << name_ << " at " << this << " with size of " << size_ * sizeof(cuDoubleComplex) << " and " << &d_data_ << std::endl;
 
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA malloc failed\n" << std::endl;
-    }
+    // CHANGE - this wasn't commented out 
+    // if (err != cudaSuccess) {
+    //     std::cerr << "CUDA malloc failed\n" << std::endl;
+    // }
     
 
 }
@@ -99,6 +104,26 @@ TensorGPU::~TensorGPU()
 }
 
 
+// void TensorGPU::to_gpu()
+// {
+//     cpu_error();
+//     if (initialized_ == 0) {
+//         std::cerr << "Tensor not initialized" << std::endl;
+//         return;
+//     }
+
+//     on_gpu_ = 1;
+
+//     cudaError_t error_status = cudaMemcpy(d_data_, h_data_.data(), size_ * sizeof(cuDoubleComplex), cudaMemcpyHostToDevice);
+
+//     if (error_status != cudaSuccess) {
+//         std::cerr << "Failed to transfer data to GPU. Error msg: " << cudaGetErrorString(error_status) << std::endl;
+//     }
+
+// }
+
+// CHANGE - new verison of to_gpu
+
 void TensorGPU::to_gpu()
 {
     cpu_error();
@@ -109,15 +134,31 @@ void TensorGPU::to_gpu()
 
     on_gpu_ = 1;
 
-    cudaError_t error_status = cudaMemcpy(d_data_, h_data_.data(), size_ * sizeof(cuDoubleComplex), cudaMemcpyHostToDevice);
-
-    if (error_status != cudaSuccess) {
-        std::cerr << "Failed to transfer data to GPU. Error msg: " << cudaGetErrorString(error_status) << std::endl;
-    }
+    thrust::copy(h_data_.begin(), h_data_.end(), d_data_.begin());
 
 }
 
 // change to 'to_cpu'
+// void TensorGPU::to_cpu()
+// {
+//     gpu_error();
+//     if (initialized_ == 0) {
+//         std::cerr << "Tensor not initialized" << std::endl;
+//         return;
+//     }
+
+//     on_gpu_ = 0;
+
+//     cudaError_t error_status = cudaMemcpy(h_data_.data(), d_data_, size_ * sizeof(std::complex<double>), cudaMemcpyDeviceToHost);
+
+//     if (error_status != cudaSuccess) {
+//         std::cerr << "Failed to transfer data to CPU. Error msg: " << cudaGetErrorString(error_status) << std::endl;
+//     }
+
+// }
+
+// CHANGE - new version of to_cpu
+
 void TensorGPU::to_cpu()
 {
     gpu_error();
@@ -128,11 +169,7 @@ void TensorGPU::to_cpu()
 
     on_gpu_ = 0;
 
-    cudaError_t error_status = cudaMemcpy(h_data_.data(), d_data_, size_ * sizeof(std::complex<double>), cudaMemcpyDeviceToHost);
-
-    if (error_status != cudaSuccess) {
-        std::cerr << "Failed to transfer data to CPU. Error msg: " << cudaGetErrorString(error_status) << std::endl;
-    }
+    thrust::copy(d_data.begin(), d_data_.end(), h_data_.begin());
 
 }
 
@@ -151,6 +188,27 @@ void TensorGPU::add(const TensorGPU& other) {
     }
 }
 
+// void TensorGPU::add2(const TensorGPU& other) {
+
+//     if (shape_ != other.shape_) {
+//         throw std::runtime_error("Tensor shapes are not compatible for addition.");
+//     }
+
+//     gpu_error();
+//     other.gpu_error();
+//     add_wrapper2(d_data_, other.read_d_data(), size_, 256);
+
+    
+
+//     cudaError_t error = cudaGetLastError();
+//     if (error != cudaSuccess) {
+//         std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
+//         throw std::runtime_error("Failed to execute the add operation on the GPU.");
+//     }
+// }
+
+// CHANGE - new version of add2
+
 void TensorGPU::add2(const TensorGPU& other) {
 
     if (shape_ != other.shape_) {
@@ -159,15 +217,19 @@ void TensorGPU::add2(const TensorGPU& other) {
 
     gpu_error();
     other.gpu_error();
-    add_wrapper2(d_data_, other.read_d_data(), size_, 256);
 
-    
+    thrust::transform(d_data_.begin(), d_data_.end(),
+                        other.d_data_.begin(),
+                        d_data_.begin(),
+                        thrust::plus<cuDoubleComplex>());
+    // i feel like we shouldn't be using cudoublecomplex but not sure    
 
     cudaError_t error = cudaGetLastError();
     if (error != cudaSuccess) {
         std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
         throw std::runtime_error("Failed to execute the add operation on the GPU.");
     }
+
 }
 
 void TensorGPU::gpu_error() const {
@@ -186,21 +248,40 @@ void TensorGPU::cpu_error() const {
 
 }
 
+// void TensorGPU::zero()
+// {
+//     cpu_error();
+//     memset(h_data_.data(), '\0', sizeof(std::complex<double>) * size_);
+// }
+
+// CHANGE - new version of zero
+
 void TensorGPU::zero()
 {
     cpu_error();
-    memset(h_data_.data(), '\0', sizeof(std::complex<double>) * size_);
+    std::fill(h_data_.begin(), h_data_.end(), 0.0);
 }
+
+// void TensorGPU::zero_gpu()
+// {
+//     gpu_error();
+//     cudaError_t err = cudaMemset(d_data_, '\0', sizeof(cuDoubleComplex) * size_);
+
+//     if (err != cudaSuccess) {
+//         fprintf(stderr, "cudaMemset failed: %s\n", cudaGetErrorString(err));
+//     }
+// }
+
+// CHANGE - new version of zero_gpu()
 
 void TensorGPU::zero_gpu()
 {
     gpu_error();
-    cudaError_t err = cudaMemset(d_data_, '\0', sizeof(cuDoubleComplex) * size_);
 
-    if (err != cudaSuccess) {
-        fprintf(stderr, "cudaMemset failed: %s\n", cudaGetErrorString(err));
-    }
+    thrust::fill(d_data_.begin(), d_data_.end(), cuDoubleComplex{0.0, 0.0});
+    // also dont know if we should be using cudoublecomplex here
 }
+
 
 void TensorGPU::set(
     const std::vector<size_t>& idxs,
