@@ -865,15 +865,6 @@ class QITE(Algorithm):
                         A.add(-1.0j * self._db * x[I], SigI[1].terms()[0][1])
                         self._n_classical_params += 1
 
-        # # screen x for small contributions
-        # if(self._computer_type=='fci'):
-        #     A = qf.SQOpPool()
-            
-        #     for I, SigI in enumerate(self._sig.terms()):
-        #         if np.abs(x[I]) > self._x_thresh:
-        #             A.add(-1.0j * self._db * x[I], SigI[1].terms()[0][1])
-        #             self._n_classical_params += 1
-
         if(self._verbose):
             print('\nbtot:\n ', btot)
             print('\n S:  \n')
@@ -1148,16 +1139,9 @@ class QITE(Algorithm):
 
                         total_pool_cnot = 0
 
-                        # if(len(self._sig.terms()) == 0):
-                        #     print(f'SELECTED QITE HAS CONVEREGED FOR THRESHOLD {self._t_thresh}')
-
                         for term in self._sig.terms():
                             self._total_pool.add_term(term[0], term[1])
                             total_pool_cnot += term[1].count_cnot_for_exponential()
-                            
-                        # for term in self._total_pool.terms():
-                        #     total_pool_cnot += term[1].count_cnot_for_exponential()
-                        #     # total_pool_pauli += term[1].count_unique_pauli_products()
 
                         total_pool_cnot *= 2
                         self._n_cnot += total_pool_cnot
@@ -1209,15 +1193,7 @@ class QITE(Algorithm):
                         1)
 
                     res_coeffs = qc_res.get_state_deep()
-                    # print(res_coeffs)
-
                     self._sig = qf.SQOpPool()
-
-
-                    #qc res CNOT estimate
-
-
-                    # qite_cnot = 0
 
                     if(self._cumulative_t): 
 
@@ -1289,31 +1265,8 @@ class QITE(Algorithm):
                             if(i>0):
                                 if(np.real(res_coeffs.get([state_idx[0],state_idx[1]])**2) > self._t_thresh):
                                     self._sig.add_term(1.0, self._full_pool.terms()[i][1])
-                                    # qite_cnot += self._full_pool.terms()[i][1].count_cnot_for_exponential()
-
-                    # for i in range(res_coeffs.shape()[0]):
-                    #     for j in range(res_coeffs.shape()[1]):
-
-                    #         if((i,j) == (0,0)):
-                    #             continue
-
-                    #         if(np.real(res_coeffs.get([i,j])**2) > self._t_thresh):
-                    #             state_idx = (i, j)
-                    #             mu = self._state_idx_to_pool_idx[state_idx]
-                    #             self._sig.add_term(1.0, self._full_pool.terms()[mu][1])
 
                     self._NI = len(self._sig.terms())
-
-                    #do CNOT estimation here
-                    # n_res_m = 1
-                    # self._n_cnot += (n_res_m*total_pool_cnot + qite_cnot)
-                    # self._n_pauli_trm_measures += n_res_m*total_pool_pauli
-                
-                # qite_cnot = 0
-                # for term in self._sig.terms():
-                #     qite_cnot += term[1].count_cnot_for_exponential()
-
-                # self._n_cnot += qite_cnot
 
                 self.do_qite_step()
 
