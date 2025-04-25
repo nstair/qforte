@@ -128,7 +128,8 @@ class QITE_OLD(Algorithm):
             b_thresh=1.0e-6,
             x_thresh=1.0e-10,
             do_lanczos=False,
-            lanczos_gap=2):
+            lanczos_gap=2,
+            output_path=None):
 
         self._beta = beta
         self._db = db
@@ -146,6 +147,10 @@ class QITE_OLD(Algorithm):
 
         self._do_lanczos = do_lanczos
         self._lanczos_gap = lanczos_gap
+        self._output_path = output_path
+
+        if(self._output_path is None):
+            self._output_path = ''
 
         qc_ref = qf.Computer(self._nqb)
         qc_ref.apply_circuit(self._Uprep)
@@ -402,7 +407,7 @@ class QITE_OLD(Algorithm):
         print(f' {0.0:7.3f}    {self._Ekb[0]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}')
 
         if (self._print_summary_file):
-            f = open("summary.dat", "w+", buffering=1)
+            f = open(f"{self._output_path}qite_beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_summary.dat", "w+", buffering=1)
             f.write(f"#{'beta':>7}{'E(beta)':>18}{'N(params)':>14}{'N(CNOT)':>18}{'N(measure)':>20}\n")
             f.write('#-------------------------------------------------------------------------------\n')
             f.write(f'  {0.0:7.3f}    {self._Ekb[0]:+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}\n')

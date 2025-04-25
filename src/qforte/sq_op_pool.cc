@@ -7,11 +7,18 @@
 #include "sq_op_pool.h"
 #include "df_hamiltonian.h"
 #include "tensor.h"
+#include "fci_computer.h"
 
 #include "qubit_basis.h"
 
 #include <stdexcept>
 #include <algorithm>
+#include <tuple>
+// #include <functional>
+#include <unordered_set>
+// #include <bitset>
+// #include <cstdint>
+// #include <math>
 
 void SQOpPool::add_term(std::complex<double> coeff, const SQOperator& sq_op ){
     terms_.push_back(std::make_pair(coeff, sq_op));
@@ -67,6 +74,425 @@ void SQOpPool::add_hermitian_pairs(std::complex<double> coeff, const SQOperator&
         } 
     }
 }
+
+// The code below is a helper function to add_connection_pairs
+namespace {
+    struct TupleHash {
+        std::size_t operator()(const std::tuple<uint64_t, uint64_t, uint64_t, uint64_t>& t) const {
+            uint64_t a = std::get<0>(t);
+            uint64_t b = std::get<1>(t);
+            uint64_t c = std::get<2>(t);
+            uint64_t d = std::get<3>(t);
+
+            std::size_t seed = 0;
+            
+            // Boost-style hash combination function
+            auto combine = [](std::size_t& seed, uint64_t value) {
+                seed ^= std::hash<uint64_t>{}(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            };
+
+            combine(seed, a);
+            combine(seed, b);
+            combine(seed, c);
+            combine(seed, d);
+
+            return seed;
+        }
+    };
+}
+
+void SQOpPool::add_connection_pairs(
+      const FCIComputer& residual, 
+      const FCIComputer& reference,
+      const double threshold)
+{
+    // Check that the residual and reference states have the same dimensions.
+    if (residual.get_state().shape() != reference.get_state().shape()) {
+        throw std::invalid_argument("Dimension of residual must have the same shape as reference.");
+    }
+
+    size_t n_alpha_str = residual.get_state().shape()[0];
+    size_t n_beta_str  = residual.get_state().shape()[1];
+    size_t Nfci = n_alpha_str * n_beta_str;
+
+    // std::cout << "n_alpha_str = " << n_alpha_str << ", n_beta_str = " << n_beta_str
+    //           << ", total determinants = " << Nfci << std::endl;
+    // std::cout << "Threshold = " << threshold << std::endl;
+
+    // 1. Create a vector of tuples (r_mu^2, alpha_index, beta_index) for the residual,
+    //    but skip the HF determinant (assumed to be at (0,0)).
+    std::vector<std::tuple<double, int, int>> res_sqs;
+    res_sqs.reserve(Nfci);
+    for (size_t I = 0; I < n_alpha_str; ++I) {
+        for (size_t J = 0; J < n_beta_str; ++J) {
+            // Skip the HF determinant at (0,0)
+            if (I == 0 && J == 0) 
+                continue;
+
+            std::complex<double> r_mu = residual.get_state().get({I, J});
+            double r_mu_sq = std::norm(r_mu);
+            // res_sqs.push_back(std::make_tuple(r_mu_sq, static_cast<int>(I), static_cast<int>(J)));
+            res_sqs.push_back(std::make_tuple(r_mu_sq, I, J));
+        }
+    }
+
+    // Sort in ascending order by weight (smallest r^2 first).
+    std::sort(res_sqs.begin(), res_sqs.end(),
+              [](auto a, auto b) { return std::get<0>(a) < std::get<0>(b); });
+
+    // Print the bottom 5 residual entries for debugging.
+    // std::cout << "\n\nTop 5 residual determinants (r^2, alpha idx, beta idx):" << std::endl;
+    // for (size_t i = res_sqs.size()-1; i > std::max(size_t(5), res_sqs.size()) - 5; --i) {
+    //     std::cout << "  (" << std::get<0>(res_sqs[i]) << ", " 
+    //               << std::get<1>(res_sqs[i]) << ", " << std::get<2>(res_sqs[i]) << ")" 
+    //               << std::endl;
+    // }
+
+    // Select residual determinants until the cumulative squared amplitude reaches the threshold.
+    double cumulative = 0.0;
+    size_t num_keep = 0;
+    for (const auto& tup : res_sqs) {
+        cumulative += std::get<0>(tup);
+        // ++num_keep;
+        if (cumulative >= threshold) ++num_keep;
+    }
+    // std::cout << "Cumulative r^2 threshold reached with " << num_keep 
+    //           << " residual determinants (excluding HF)." << std::endl;
+
+    std::vector<std::tuple<double, int, int>> selected_res(res_sqs.end() - num_keep, res_sqs.end());
+
+    // 2. Build the reference indices, screening out those with coefficient magnitude < 1e-6.
+    std::vector<std::tuple<int, int>> ref_indices;
+    for (size_t I = 0; I < n_alpha_str; ++I) {
+        for (size_t J = 0; J < n_beta_str; ++J) {
+            std::complex<double> c_ref = reference.get_state().get({I, J});
+            if (std::abs(c_ref) < 1e-6)
+                continue;
+            ref_indices.push_back(std::make_tuple(static_cast<int>(I), static_cast<int>(J)));
+        }
+    }
+
+    // std::cout << "\nReference state contains " << ref_indices.size() 
+    //           << " determinants with |coeff| >= 1e-6." << std::endl;
+
+    // // Print the bottom 5 residual entries for debugging.
+    // std::cout << "\nTop 5 (or less) ref determinants (alpha idx, beta idx):" << std::endl;
+    // for (size_t i = 0; i < ref_indices.size(); ++i) {
+    //     std::cout << "  (" 
+    //               << std::get<0>(ref_indices[i]) << ", " << std::get<1>(ref_indices[i]) << ")" 
+    //               << std::endl;
+    // }
+
+    // 3. Build unique excitation operators as Hermitian combinations.
+    // Each operator is represented as a tuple: (cre_alpha, cre_beta, ann_alpha, ann_beta),
+    // where the masks are over spatial orbitals.
+    std::unordered_set<std::tuple<uint64_t, uint64_t, uint64_t, uint64_t>, TupleHash> op_set;
+
+    for (const auto& res_tup : selected_res) {
+    // for (auto it = selected_res.rbegin(); it != selected_res.rend(); ++it) {
+    //     const auto& res_tup = *it;
+
+
+        int res_alpha_idx = std::get<1>(res_tup);
+        int res_beta_idx  = std::get<2>(res_tup);
+        uint64_t res_astr = residual.get_graph().get_astr_at_idx(res_alpha_idx);
+        uint64_t res_bstr = residual.get_graph().get_bstr_at_idx(res_beta_idx);
+
+        // Debug: Print the residual bit strings (in hexadecimal).
+        // std::cout << "Residual det (" << res_alpha_idx << ", " << res_beta_idx << ") - "
+        //           << "alpha: 0x" << std::hex << res_astr << std::dec 
+        //           << ", beta: 0x" << std::hex << res_bstr << std::dec << std::endl;
+
+        for (const auto& ref_tup : ref_indices) {
+            int ref_alpha_idx = std::get<0>(ref_tup);
+            int ref_beta_idx  = std::get<1>(ref_tup);
+            uint64_t ref_astr = reference.get_graph().get_astr_at_idx(ref_alpha_idx);
+            uint64_t ref_bstr = reference.get_graph().get_bstr_at_idx(ref_beta_idx);
+
+            uint64_t cre_mask_alpha = 0;
+            uint64_t ann_mask_alpha = 0;
+            uint64_t cre_mask_beta  = 0;
+            uint64_t ann_mask_beta  = 0;
+
+            // Loop over spatial orbitals (assume up to 64).
+            for (int i = 0; i < 64; ++i) {
+                bool ref_bit = (ref_astr >> i) & 1ULL;
+                bool res_bit = (res_astr >> i) & 1ULL;
+                if (!ref_bit && res_bit) {
+                    cre_mask_alpha |= (1ULL << i);
+                }
+                if (ref_bit && !res_bit) {
+                    ann_mask_alpha |= (1ULL << i);
+                }
+            }
+            for (int i = 0; i < 64; ++i) {
+                bool ref_bit = (ref_bstr >> i) & 1ULL;
+                bool res_bit = (res_bstr >> i) & 1ULL;
+                if (!ref_bit && res_bit) {
+                    cre_mask_beta |= (1ULL << i);
+                }
+                if (ref_bit && !res_bit) {
+                    ann_mask_beta |= (1ULL << i);
+                }
+            }
+
+            // Skip operators with repeated indices.
+            if ((cre_mask_alpha & ann_mask_alpha) != 0ULL || (cre_mask_beta & ann_mask_beta) != 0ULL)
+                continue;
+
+            auto op_term = std::make_tuple(cre_mask_alpha, cre_mask_beta, ann_mask_alpha, ann_mask_beta);
+            op_set.insert(op_term);
+        }
+    }
+
+    // std::cout << "Number of unique excitation operators (pre-spin mapping): " 
+    //           << op_set.size() << std::endl;
+
+    // 4. Convert the spatial masks to spin-orbital index lists and form the Hermitian operator T - T†.
+    for (const auto& op_term : op_set) {
+    // for (auto it = op_set.rbegin(); it != op_set.rend(); ++it) {
+        // const auto& op_term = *it;
+        uint64_t cre_mask_alpha = std::get<0>(op_term);
+        uint64_t cre_mask_beta  = std::get<1>(op_term);
+        uint64_t ann_mask_alpha = std::get<2>(op_term);
+        uint64_t ann_mask_beta  = std::get<3>(op_term);
+
+        std::vector<std::size_t> cre_idxs;
+        std::vector<std::size_t> ann_idxs;
+
+        // Map alpha: spatial orbital i -> spin orbital 2*i (even indices).
+        for (int i = 0; i < 64; ++i) {
+            if ((cre_mask_alpha >> i) & 1ULL)
+                cre_idxs.push_back(2 * i);
+            if ((ann_mask_alpha >> i) & 1ULL)
+                ann_idxs.push_back(2 * i);
+        }
+        // Map beta: spatial orbital i -> spin orbital 2*i+1 (odd indices).
+        for (int i = 0; i < 64; ++i) {
+            if ((cre_mask_beta >> i) & 1ULL)
+                cre_idxs.push_back(2 * i + 1);
+            if ((ann_mask_beta >> i) & 1ULL)
+                ann_idxs.push_back(2 * i + 1);
+        }
+
+        // Debug: Print the mapped spin-orbital indices.
+        // std::cout << "Excitation operator:" << std::endl;
+        // std::cout << "  Creation indices: ";
+        // for (auto idx : cre_idxs) std::cout << idx << " ";
+        // std::cout << std::endl;
+        // std::cout << "  Annihilation indices: ";
+        // for (auto idx : ann_idxs) std::cout << idx << " ";
+        // std::cout << std::endl;
+
+        // Create the excitation operator T.
+        SQOperator T;
+        T.add_term(1.0, cre_idxs, ann_idxs);
+
+        // Form the Hermitian combination: T - T†.
+        // To obtain T†, reverse the order of the indices.
+        std::vector<std::size_t> cre_idxs_rev = cre_idxs;
+        std::vector<std::size_t> ann_idxs_rev = ann_idxs;
+        std::reverse(cre_idxs_rev.begin(), cre_idxs_rev.end());
+        std::reverse(ann_idxs_rev.begin(), ann_idxs_rev.end());
+        T.add_term(-1.0, ann_idxs_rev, cre_idxs_rev);
+        T.simplify();
+        terms_.push_back(std::make_pair(1.0, T));
+    }
+    
+    // std::cout << "Total number of terms added to the pool: " << terms_.size() << std::endl;
+}
+
+
+
+
+// from victor
+// void SQOpPool::add_connection_pairs(
+//       const FCIComputer& residual, 
+//       const FCIComputer& reference,
+//       const double threshold)
+// {
+//     // 1. Do the sort of the residual vector and 'keep' residual determinants above threshold
+
+//     // Need to ensure residual and reference have the same shape
+//     if (residual.get_state().shape() != reference.get_state().shape()) {  // Condition to throw an error
+//         throw std::invalid_argument( "Dimension of residual must have the same shape as reference." );
+//     }
+
+//     size_t n_alfa_str = residual.get_state().shape()[0];
+//     size_t n_beta_str = residual.get_state().shape()[1];
+//     size_t Nfci = n_alfa_str * n_beta_str;
+
+//     // Need a temporary container to store r_mu, I_mu, J_mu that is std::sort(able), size of Nfci
+//     std::vector<std::tuple<double, int, int>> res_sqs(Nfci);
+
+//     for (size_t I_mu=0; I_mu < n_alfa_str; ++I_mu) {
+//         for (size_t J_mu=0; J_mu < n_beta_str; ++J_mu) {
+//             std::complex<double> r_mu = residual.get_state().get({I_mu, J_mu});
+//             double r_mu_sq = std::real(r_mu * std::conj(r_mu));
+
+//             size_t IJ_mu = n_beta_str * I_mu + J_mu;
+
+//             res_sqs[IJ_mu] = std::make_tuple(r_mu_sq, I_mu, J_mu);
+//         }
+//     } 
+
+//     // Sorting the vector
+//     std::sort(res_sqs.begin(), res_sqs.end());
+
+//     size_t n_start = 0;
+//     double sum = 0.0;
+
+//     for(size_t IJ_mu = 0; IJ_mu < Nfci; ++IJ_mu){
+//         sum += std::get<0>(res_sqs[IJ_mu]);
+//         ++n_start;
+
+//         if(sum > threshold){
+//             break;
+//         }
+
+//     }
+
+//     // 2. Initialize (hash?) map of bitstrings, masks will represent alph and beta transitions
+//     std::unordered_set<std::tuple<uint64_t, uint64_t, uint64_t, uint64_t>, TupleHash> str_set;    
+
+//     // Loop over residual strings
+//     for(size_t IJ_mu = n_start; IJ_mu < Nfci; ++IJ_mu){
+
+//         int I_mu = std::get<1>(res_sqs[IJ_mu]);
+//         int J_mu = std::get<2>(res_sqs[IJ_mu]);
+        
+//         uint64_t res_astr = residual.get_graph().get_astr_at_idx(I_mu);
+//         uint64_t res_bstr = residual.get_graph().get_bstr_at_idx(J_mu);
+
+//         // Loop over reference strings...
+//         for(size_t IJ_mu = n_start; IJ_mu < Nfci; ++IJ_mu){
+
+//             int I_mu = std::get<1>(res_sqs[IJ_mu]);
+//             int J_mu = std::get<2>(res_sqs[IJ_mu]);
+
+//             uint64_t ref_astr = reference.get_graph().get_astr_at_idx(I_mu);
+//             uint64_t ref_bstr = reference.get_graph().get_bstr_at_idx(J_mu);
+
+//             uint64_t ann_mask_alfa = 0;
+//             uint64_t ann_mask_beta = 0;
+//             uint64_t cre_mask_alfa = 0;
+//             uint64_t cre_mask_beta = 0;
+
+//             // alfa
+//             for (int i = 0; i < 64; ++i) {
+//                 bool ref = (ref_astr >> i) & 1; 
+//                 bool res = (res_astr >> i) & 1;
+
+//                 if (ref == 0 and res == 1) {
+//                     cre_mask_alfa ^= (1ULL << i);
+//                 }
+
+//                 if (ref == 1 and res == 0) {
+//                     ann_mask_alfa ^= (1ULL << i);
+//                 }
+//             }
+
+//             // beta
+//             for (int i = 0; i < 64; ++i) {
+//                 bool ref = (ref_bstr >> i) & 1; 
+//                 bool res = (res_bstr >> i) & 1;
+
+//                 if (ref == 0 and res == 1) {
+//                     cre_mask_beta ^= (1ULL << i);
+//                 }
+
+//                 if (ref == 1 and res == 0) {
+//                     ann_mask_beta ^= (1ULL << i);
+//                 }
+//             }
+
+//             std::tuple<uint64_t, uint64_t, uint64_t, uint64_t> op_str = std::make_tuple(cre_mask_alfa, 
+//                                                                                         cre_mask_beta, 
+//                                                                                         ann_mask_alfa, 
+//                                                                                         ann_mask_beta);
+
+//             // add new bitstring pair to our hash map
+//             if (str_set.find(op_str) == str_set.end()) {
+//                 str_set.insert(op_str);
+//             }
+//         }
+//     }
+
+//     // // 3. add_term(s) based on bitmaks 
+//     // SQOperator temp1a;
+//     // temp1a.add_term(+1.0, {aa}, {ia});
+//     for (const auto& t : str_set) {
+
+//         uint64_t crea = std::get<0>(t);
+//         uint64_t creb = std::get<1>(t);
+//         uint64_t anna = std::get<2>(t);
+//         uint64_t annb = std::get<3>(t);
+
+//         std::vector<std::size_t> ann_idxs;
+//         std::vector<std::size_t> cre_idxs;
+
+//         for (int i = 0; i < 32; ++i) {
+
+//             if (bool (crea >> i) & 1) {
+//                 cre_idxs.push_back(2*i);
+//             }
+
+//             if (bool (creb >> i) & 1) {
+//                 cre_idxs.push_back(2*i + 1);
+//             }
+
+//             if (bool (anna >> i) & 1) {
+//                 ann_idxs.push_back(2*i);
+//             }
+
+//             if (bool (annb >> i) & 1) {
+//                 ann_idxs.push_back(2*i + 1);
+//             }
+//         }
+
+//         SQOperator temp;
+//         temp.add_term(1.0, cre_idxs, ann_idxs);
+//         terms_.push_back(std::make_pair(1.0, temp));
+        
+//     }
+// }
+
+            // // calculate bitmask
+            // uint64_t amask = ref_astr ^ res_astr;  // Compute the masks (bits that differ)
+            // uint64_t bmask = ref_bstr ^ res_bstr;
+
+            
+
+            // for (size_t i = 0; i < bit_length; ++i) {
+            //     uint64_t apos = 1ULL << i;  // Single-bit mask for position i
+            //     uint64_t bpos = 1ULL << i;
+
+            //     if (amask & apos) {  // Check if mask has a 1 at this position
+            //         if ((res_astr & apos) == 0) {
+            //             anna.push_back(apos);  // Add to "anna" (annihilation)
+            //         } else {
+            //             crea.push_back(apos);  // Add to "crea" (creation)
+            //         }
+            //     }
+
+            //     if (bmask & bpos) {  // Check if mask has a 1 at this position
+            //         if ((res_astr & bpos) == 0) {
+            //             anna.push_back(bpos);  // Add to "anna" (annihilation)
+            //         } else {
+            //             crea.push_back(bpos);  // Add to "crea" (creation)
+            //         }
+            //     }
+            // }
+            // ASTR and BSTR from the same index need to be combined into the same SQOP, so need to make unordered map of masks
+
+            // std::tuple<uint64_t, uint64_t> ab_str = std::make_tuple(new_astr, new_bstr);
+            
+            // // add new bitstring pair to our hash map
+            // if (str_set.find(ab_str) == str_set.end()) {
+            //     str_set.insert(ab_str);
+
+            // }
+
 
 void SQOpPool::set_coeffs(const std::vector<std::complex<double>>& new_coeffs){
     if(new_coeffs.size() != terms_.size()){

@@ -10,6 +10,7 @@ class QubitOperator;
 class QubitOpPool;
 class DFHamiltonian;
 class Tensor;
+class FCIComputer;
 
 // Represents an arbitrary linear combination of second quantized operators.
 // May also represent an array of second quantized operators by ignoring
@@ -39,6 +40,13 @@ class SQOpPool {
     /// for an operator, splits the operator into hermitan pairs where each pair becomes a term
     /// in the pool vector
     void add_hermitian_pairs(std::complex<double> coeff, const SQOperator& sq_op );
+
+    /// A function that will construct an operator pool that connects (by excitaiton/de-excitation operators) all determinants
+    /// in reference to all relevant determinants (based on the cumulative threshold) in residual.
+    void add_connection_pairs(
+      const FCIComputer& residual, 
+      const FCIComputer& reference,
+      const double threshold);
 
     /// returns a QubitOpPool object with one term for each term in terms_
     QubitOpPool get_qubit_op_pool();

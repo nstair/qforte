@@ -58,6 +58,9 @@ PYBIND11_MODULE(qforte, m) {
         .def("simplify", &SQOperator::simplify)
         .def("jw_transform", &SQOperator::jw_transform, py::arg("qubit_excitation") = false)
         .def("split_by_rank", &SQOperator::split_by_rank)
+        .def("count_unique_pauli_products", &SQOperator::count_unique_pauli_products, 
+            py::arg("B") = nullptr)
+        .def("count_cnot_for_exponential", &SQOperator::count_cnot_for_exponential)
         .def("str", &SQOperator::str)
         .def("__str__", &SQOperator::str)
         .def("__repr__", &SQOperator::str);
@@ -141,6 +144,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("fill_pool_df_trotter", &SQOpPool::fill_pool_df_trotter)
         .def("append_givens_ops_sector", &SQOpPool::append_givens_ops_sector)
         .def("append_diagonal_ops_all", &SQOpPool::append_diagonal_ops_all)
+        .def("add_connection_pairs", &SQOpPool::add_connection_pairs)
         .def("str", &SQOpPool::str)
         .def("__getitem__", [](const SQOpPool &pool, size_t i) { return pool.terms()[i]; })
         .def("__iter__", [](const SQOpPool &pool) { return py::make_iterator(pool.terms()); },
