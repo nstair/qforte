@@ -9,10 +9,10 @@ geom = [
     ('H', (0., 0., 4.00)),
     ('H', (0., 0., 5.00)),
     ('H', (0., 0., 6.00)),
-    ('H', (0., 0., 7.00)),
-    ('H', (0., 0., 8.00)),
-    ('H', (0., 0., 9.00)),
-    ('H', (0., 0., 10.00))
+    # ('H', (0., 0., 7.00)),
+    # ('H', (0., 0., 8.00)),
+    # ('H', (0., 0., 9.00)),
+    # ('H', (0., 0., 10.00))
     ]
 
 mol = qf.system_factory(
@@ -40,7 +40,7 @@ alg_fci = qf.UCCNVQE(
     computer_type = 'fci',
     )
 
-alg_fci.run(opt_thresh=1.0e-2, 
+alg_fci.run(opt_thresh=1.0e-3, 
             pool_type='SD',
             optimizer='BFGS')
             

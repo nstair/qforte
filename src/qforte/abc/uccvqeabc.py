@@ -465,8 +465,20 @@ class UCCVQE(VQE, UCC):
         self._res_vec_evals += 1
         self._res_m_evals += len(self._tamps)
 
+        # Track Pauli term measurements per iteration
+        measures_this_iter = 0
+
+        if(self._use_analytic_grad):
+            measures_this_iter += int(2 * self._Nl * self._res_m_evals)
+
+        measures_this_iter += int(self._Nl * self._res_vec_evals)
+
+        if not hasattr(self, '_pauli_measures_per_iter'):
+            self._pauli_measures_per_iter = []
+        self._pauli_measures_per_iter.append(measures_this_iter)
+
         return np.asarray(grads)
-    
+
     def gradient_ary_feval_fci(self, params):
         grads = self.measure_gradient(params)
 
@@ -477,6 +489,18 @@ class UCCVQE(VQE, UCC):
         self._res_vec_evals += 1
         self._res_m_evals += len(self._tamps)
 
+        # Track Pauli term measurements per iteration
+        measures_this_iter = 0
+
+        if(self._use_analytic_grad):
+            measures_this_iter += int(2 * self._Nl * self._res_m_evals)
+
+        measures_this_iter += int(self._Nl * self._res_vec_evals)
+
+        if not hasattr(self, '_pauli_measures_per_iter'):
+            self._pauli_measures_per_iter = []
+        self._pauli_measures_per_iter.append(measures_this_iter)
+
         return np.asarray(grads)
 
     def report_iteration(self, x):
@@ -484,21 +508,21 @@ class UCCVQE(VQE, UCC):
         self._k_counter += 1
 
         if(self._k_counter == 1):
-            print('\n    k iteration         Energy               dE           Ngvec ev      Ngm ev*         ||g||')
-            print('--------------------------------------------------------------------------------------------------')
+            print('\n    k iteration         Energy               dE           Ngvec ev      Ngm ev*         ||g||          N(measure)')
+            print('--------------------------------------------------------------------------------------------------------------')
             if (self._print_summary_file):
                 f = open("summary.dat", "w+", buffering=1)
-                f.write('\n#    k iteration         Energy               dE           Ngvec ev      Ngm ev*         ||g||')
-                f.write('\n#--------------------------------------------------------------------------------------------------')
+                f.write('\n#    k iteration         Energy               dE           Ngvec ev      Ngm ev*         ||g||          N(measure)')
+                f.write('\n#--------------------------------------------------------------------------------------------------------------')
                 f.close()
 
-        # else:
         dE = self._curr_energy - self._prev_energy
-        print(f'     {self._k_counter:7}        {self._curr_energy:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.10f}')
+        pauli_terms = self._pauli_measures_per_iter[-1] if hasattr(self, '_pauli_measures_per_iter') and self._pauli_measures_per_iter else 0
+        print(f'     {self._k_counter:7}        {self._curr_energy:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.10f}      {pauli_terms:7}')
 
         if (self._print_summary_file):
             f = open("summary.dat", "a", buffering=1)
-            f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.12f}      {dE:+12.12f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.12f}')
+            f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.12f}      {dE:+12.12f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.12f}      {pauli_terms:7}')
             f.close()
 
         self._prev_energy = self._curr_energy

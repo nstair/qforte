@@ -66,6 +66,8 @@ class UCCNVQE(UCCVQE):
         self._res_m_evals = 0
         self._k_counter = 0
 
+        self._pauli_measures_per_iter =[]
+
         self._curr_grad_norm = 0.0
 
         # Print options banner (should done for all algorithms).
@@ -178,6 +180,8 @@ class UCCNVQE(UCCVQE):
         print('Number of non-zero parameters used:          ', self._n_nonzero_params)
         print('Number of CNOT gates in deepest circuit:     ', self._n_cnot)
         print('Number of Pauli term measurements:           ', self._n_pauli_trm_measures)
+        print('Cumulative Pauli measures (new estimate):    ', sum(self._pauli_measures_per_iter))
+        # print('Nl:                                          ', self._Nl)
 
         print('Number of grad vector evaluations:           ', self._res_vec_evals)
         print('Number of individual grad evaluations:       ', self._res_m_evals)
