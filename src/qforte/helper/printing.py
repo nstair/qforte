@@ -6,19 +6,36 @@ A module for pretty printing functions for matricies
 structures in qforte.
 """
 
-# TODO: Edit format to print only 3 or 4 digits.
-def matprint(mat, fmt="g"):
-    """Prints (2 X 2) numpy arrays in an intelligable fashion.
+import numpy as np
 
-        Arguments
-        ---------
-
-        mat : ndarray
-            A real (or complex) 2 X 2 numpt array to be printed.
-
+def matprint(arr, fmt="g"):
     """
-    col_maxes = [max([len(("{:"+fmt+"}").format(x)) for x in col]) for col in mat.T]
-    for x in mat:
-        for i, y in enumerate(x):
-            print(("{:"+str(col_maxes[i])+fmt+"}").format(y), end="  ")
-        print("")
+    Print a 1D or 2D numpy array in an intelligible, column-aligned fashion.
+
+    Parameters
+    ----------
+    arr : array-like
+        A real or complex 1D (vector) or 2D (matrix) array.
+    fmt : str, optional
+        A numpy format specifier (default "g", e.g. ".2f", "e").
+    """
+    a = np.array(arr)
+    if a.ndim == 1:
+        # treat as single-row matrix
+        a = a[np.newaxis, :]
+    elif a.ndim != 2:
+        raise ValueError(f"matprint: expected 1D or 2D array, got {a.ndim}D")
+
+    # find max width per column
+    col_maxes = []
+    for col in a.T:
+        # format each entry without padding, measure its length
+        lengths = [len(("{:"+fmt+"}").format(x)) for x in col]
+        col_maxes.append(max(lengths))
+
+    # print each row with padding
+    for row in a:
+        for i, x in enumerate(row):
+            width = col_maxes[i]
+            print(("{:"+str(width)+fmt+"}").format(x), end="  ")
+        print()

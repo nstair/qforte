@@ -79,6 +79,19 @@ class SQOperator {
     // 2*(r-1), with r being the size of the contiguous qubit support.
     int count_cnot_for_exponential();
 
+    /**
+     * @brief Count the number of Pauli‐product terms resulting from the Jordan–Wigner
+     *        transform of this two‐term anti‐Hermitian operator K = g – g† or i(g + g†).
+     *
+     * For a k‐body excitation g (with k creation and k annihilation operators), the
+     * JW expansion of g±g† yields exactly 2^(2k-1) Pauli strings.
+     *
+     * @throws std::invalid_argument if this operator does not consist of exactly two terms
+     *         or if the creation/annihilation ranks mismatch.
+     * @return The number of distinct Pauli‐product strings in the JW mapping.
+     */
+    int count_pauli_terms_ex_deex() const;
+
     /// Return the QubitOperator object corresponding the the Jordan-Wigner
     /// transform of this sq operator. Calls simplify as a side-effect.
     /// If qubit_excitation = true, replace fermionic creation/annihilation
