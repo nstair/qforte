@@ -19,6 +19,12 @@ from scipy.linalg import lstsq
 
 from qforte.maths.eigsolve import canonical_geig_solve
 
+from qforte.helper.df_ham_helper import time_scale_first_leaf
+
+# Trying new multi-threading/processing approaches
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+
 ### Throughout this file, we'll refer to DOI 10.1038/s41567-019-0704-4 as Motta.
 
 class QITE(Algorithm):
@@ -141,6 +147,7 @@ class QITE(Algorithm):
             x_thresh=1.0e-10,
             conv_thresh=1.0e-3,
             physical_r = False,
+            use_df_ham_selection = False,
             folded_spectrum = False,
             BeH2_guess = False,
             e_shift = None,
@@ -176,9 +183,13 @@ class QITE(Algorithm):
         self._sparseSb = sparseSb
         self._low_memorySb = low_memorySb
         self._second_order = second_order
+
+        # Selcted QITE options
         self._selected_pool = selected_pool
+        self._use_df_ham_selection = use_df_ham_selection
         self._t_thresh = t_thresh
         self._cumulative_t = cumulative_t
+
         self._total_phase = 1.0 + 0.0j
         self._Uqite = qf.Circuit()
         self._b_thresh = b_thresh
@@ -223,22 +234,38 @@ class QITE(Algorithm):
 
         self._sz = 0
 
+        self._pauli_count_timer = qf.local_timer()
+
+        if hasattr(self._sys, 'df_ham'):
+            self._df_ham = self._sys.df_ham
+            time_scale_first_leaf(self._df_ham, self._dt)
+
         if(self._computer_type=='fci'):
             self._qc_ref = qf.FCIComputer(self._nel, self._sz, self._norb)
 
             self._n_pauli_ham = self._sq_ham.count_unique_pauli_products()
 
+            # ===> from f(H) as prodct of ham unitaires, or via DF <=== #
             if(selected_pool):
-                cnot_pool = qf.SQOpPool()
-                cnot_pool.add_hermitian_pairs(1.0, self._sq_ham)
+                if self._use_df_ham_selection:
+                    # Throw an error if self._df_ham is not an attribute
+                    if not hasattr(self, '_df_ham'):
+                        raise AttributeError("The attribute '_df_ham' must be defined when '_use_df_ham_selection' is enabled.")
+                    
+                    self._exp_df_ham_cnot = self._df_ham.count_cnot_for_exponential()
 
-                ham_cnot = 0
-                for term in cnot_pool.terms():
-                    ham_cnot += term[1].count_cnot_for_exponential()
+                    self._n_cnot += self._exp_df_ham_cnot
 
-                self._exp_ham_cnot = ham_cnot
-                # self._exp_ham_cnot = 0
-                # print(f'cnots in exp ham: {self._exp_ham_cnot}')
+                else:
+                    self._sq_ham_pool = qf.SQOpPool()
+                    self._sq_ham_pool.add_hermitian_pairs(self._dt, self._sq_ham)
+
+                    ham_cnot = 0
+                    for term in self._sq_ham_pool.terms():
+                        ham_cnot += term[1].count_cnot_for_exponential()
+
+                    self._exp_ham_cnot = ham_cnot
+                    self._n_cnot += ham_cnot
 
             if(self._random_state):
                 comp_shape = self._qc_ref.get_state_deep().shape()
@@ -392,8 +419,9 @@ class QITE(Algorithm):
         timer.record('Total evolution time')
         print(f"\n\n{timer}\n\n")
 
-        if(self._selected_pool and self._cumulative_t):
-            print(f"\n\n{self._nt}\n\n")
+        # if(self._selected_pool and self._cumulative_t):
+            # print(f"\n\n{self._nt}\n\n")
+            # print(f"\n\n{self._pauli_count_timer}\n\n")
 
         # Print summary banner (should done for all algorithms).
         self.print_summary_banner()
@@ -456,9 +484,13 @@ class QITE(Algorithm):
         
             print('Use selected pool:                       ',  self._selected_pool)
             if self._selected_pool:
+                print('Selection threshold:                     ',  self._t_thresh)
                 print('Use cumulative selection:                ',  self._cumulative_t)
                 print('Use physical selection:                  ',  self._physical_r)
                 print('Selection time step (dt):                ',  self._dt)
+                print('Use physical selection via e^-iHdf:      ',  self._use_df_ham_selection)
+                if self._use_df_ham_selection:
+                    print('Number of Hdf 2-body terms:              ',  self._df_ham.get_nleaves())
 
         
             print('x value threshold:                       ',  self._x_thresh)
@@ -646,6 +678,12 @@ class QITE(Algorithm):
                 else:
                     Hpsi_qc.apply_sqop(self._sq_ham)
 
+
+        # New idea, make a list of Npailis for each term rho_i based on _sig
+        self._pauli_count_timer.reset()
+        Npauli_vec = self._sig.get_count_pauli_terms_ex_deex()
+        self._pauli_count_timer.accumulate('Pauli count time')
+
         if(self._low_memorySb):
             for i in range(Idim):
                 S[i][i] = 1.0 # With Pauli strings, this is always the inner product
@@ -660,12 +698,12 @@ class QITE(Algorithm):
                     exp_val = Hpsi_qc.get_state_deep().vector_dot(Ipsi_mu)
                     b[i] = prefactor * exp_val
 
-                    self._n_pauli_trm_measures += self._n_pauli_ham
-
                 # build b (original)
                 else:
                     exp_val = Ipsi_mu.vector_dot(Hpsi_qc.get_state_deep())
                     b[i] = prefactor * exp_val
+
+                self._n_pauli_trm_measures += self._n_pauli_ham * Npauli_vec[i]
 
                 # populate lower triangle of S and copy conjugate to upper triangle
                 for j in range(i):
@@ -675,7 +713,7 @@ class QITE(Algorithm):
                     S[i][j] = Ipsi_mu.vector_dot(Ipsi_qc.get_state_deep())
                     S[j][i] = S[i][j].conj()
 
-                    self._n_pauli_trm_measures += self._sig.terms()[i][1].count_unique_pauli_products(self._sig.terms()[j][1])
+                    self._n_pauli_trm_measures += Npauli_vec[i] * Npauli_vec[j]
 
             return S_factor * np.real(S), np.real(b)
 
@@ -694,7 +732,7 @@ class QITE(Algorithm):
                     exp_val = Hpsi_qc.get_state_deep().vector_dot(rho_psi[i])
                     b[i] = prefactor * exp_val
 
-                    self._n_pauli_trm_measures += self._n_pauli_ham
+                    self._n_pauli_trm_measures += self._n_pauli_ham * Npauli_vec[i]
 
                 # build b (original)
                 else:
@@ -706,10 +744,123 @@ class QITE(Algorithm):
                     S[i][j] = rho_psi[i].vector_dot(rho_psi[j])
                     S[j][i] = S[i][j].conj()
 
-                    self._n_pauli_trm_measures += self._sig.terms()[i][1].count_unique_pauli_products(self._sig.terms()[j][1])
+                    self._n_pauli_trm_measures += Npauli_vec[i] * Npauli_vec[j]
 
             return S_factor * np.real(S), np.real(b)
 
+
+
+    def build_S_b_FCI_threaded(self):
+        """Construct the matrix S and vector b using ThreadPoolExecutor for parallelization."""
+        Idim = self._NI
+
+        # Allocate outputs
+        S = np.zeros((Idim, Idim), dtype=complex)
+        b = np.zeros(Idim, dtype=complex)
+
+        # Determine prefactors
+        if self._second_order:
+            prefactor = -2.0
+            S_factor = 2.0
+        else:
+            denom = np.sqrt(1.0 - 2.0 * self._db * self._Ekb[-1])
+            prefactor = -1.0 / denom
+            S_factor = 1.0
+
+        # 1) Build Hpsi_vec once (shared read-only)
+        psi0 = self._qc.get_state_deep()
+        Hpsi_worker = qf.FCIComputer(self._nel, self._sz, self._norb)
+        Hpsi_worker.set_state(psi0)
+        if self._evolve_dfham:
+            Hpsi_worker.apply_sqop_pool(self._d0)
+        else:
+            if self._folded_spectrum:
+                if self._apply_ham_as_tensor:
+                    Hpsi_worker.apply_tensor_spat_012bdy(
+                        self._shifted_0_body, self._mo_oeis,
+                        self._mo_teis, self._mo_teis_einsum, self._norb)
+                    Hpsi_worker.apply_tensor_spat_012bdy(
+                        self._shifted_0_body, self._mo_oeis,
+                        self._mo_teis, self._mo_teis_einsum, self._norb)
+                else:
+                    Hpsi_worker.apply_sqop(self._Ofs)
+                    Hpsi_worker.apply_sqop(self._Ofs)
+            else:
+                if self._apply_ham_as_tensor:
+                    Hpsi_worker.apply_tensor_spat_012bdy(
+                        self._zero_body_energy, self._mo_oeis,
+                        self._mo_teis, self._mo_teis_einsum, self._norb)
+                else:
+                    Hpsi_worker.apply_sqop(self._sq_ham)
+
+        Hpsi_vec = Hpsi_worker.get_state_deep()
+
+        # 2) Extract the list of SQOperator terms up‐front
+        sig_terms = [term for term in self._sig.terms()]
+
+        # 3) Define a pure‐function worker that only uses its args + local Ipsi_qc
+        def compute_row(i, psi0, Hpsi_vec, sig_terms, second_order, prefactor):
+            # thread‐local computer
+            local_fc = qf.FCIComputer(self._nel, self._sz, self._norb)
+            local_fc.set_state(psi0)
+
+            # apply the i-th term and grab Ipsi_mu
+            local_fc.apply_sqop(sig_terms[i][1])
+            Ipsi_mu = local_fc.get_state_deep()
+
+            # build b_i
+            if second_order:
+                exp_val = Hpsi_vec.vector_dot(Ipsi_mu)
+            else:
+                exp_val = Ipsi_mu.vector_dot(Hpsi_vec)
+            row_b = prefactor * exp_val
+
+            # build S[i, :i]
+            row_S = np.zeros(Idim, dtype=complex)
+
+            # lol, add diagonal term
+            # row_S[i] = 1.0
+
+            for j in range(i):
+                local_fc.set_state(psi0)
+                local_fc.apply_sqop(sig_terms[j][1])
+                row_S[j] = Ipsi_mu.vector_dot(local_fc.get_state_deep())
+
+            return i, row_S, row_b
+
+        # 4) Bind the shared data into our worker
+        worker = partial(
+            compute_row,
+            psi0=psi0,
+            Hpsi_vec=Hpsi_vec,
+            sig_terms=sig_terms,
+            second_order=self._second_order,
+            prefactor=prefactor
+        )
+
+        # 5) Launch threads
+        with ThreadPoolExecutor() as executor:
+            results = list(executor.map(worker, range(Idim)))
+
+        # 6) Scatter back into S & b
+        for i, row_S, row_b in results:
+            S[i, :i] = row_S[:i]
+            S[:i, i] = row_S[:i].conj()
+            b[i]      = row_b
+
+        # **enforce unit diagonal on S before scaling**
+        np.fill_diagonal(S, 1.0)
+
+        self._pauli_count_timer.reset()
+        Npauli_vec = self._sig.get_count_pauli_terms_ex_deex()
+        self._pauli_count_timer.accumulate('Pauli count time')
+
+        for i in range(Idim):
+            for j in range(i):
+                self._n_pauli_trm_measures += Npauli_vec[i] * Npauli_vec[j]
+
+        return S_factor * np.real(S), np.real(b)
+    
 
     def build_S(self):
         """Construct the matrix S (eq. 5a) of Motta.
@@ -792,12 +943,15 @@ class QITE(Algorithm):
         if(self._folded_spectrum and self._update_e_shift):
             self.update_e_shift()
 
+        # ===> First form S and b arrays <=== #
+
         if(self._computer_type=='fci'):
             if(self._sparseSb):
                 print(f"Warning, build sparseSb method isn't supported for FCI computer, setting option to false")
                 self._sparseSb = False
 
             S, btot = self.build_S_b_FCI()
+            # S, btot = self.build_S_b_FCI_threaded()
 
         if(self._computer_type=='fock'):
             if(self._low_memorySb):
@@ -812,6 +966,7 @@ class QITE(Algorithm):
             else:
                 S = self.build_S()
 
+        # ===> Formation of new coefficeints x from S and b <=== #
         x = lstsq(S, btot)[0]
         x = np.real(x)
         x_list = x.tolist()
@@ -834,11 +989,12 @@ class QITE(Algorithm):
             
             self._NI = len(self._sig.terms())
 
-        qite_cnot = 0
-        for term in self._sig.terms():
-            qite_cnot += term[1].count_cnot_for_exponential()
+            qite_cnot = 0
+            for term in self._sig.terms():
+                qite_cnot += term[1].count_cnot_for_exponential()
 
-        self._n_cnot += qite_cnot
+            self._n_cnot += qite_cnot
+
         self._n_classical_params += len(x_list)
 
         if(self._folded_spectrum):
@@ -882,6 +1038,8 @@ class QITE(Algorithm):
 
             self._n_cnot += eiA_kb.get_num_cnots()
 
+
+        # ===> Use U(x) to update the current QITE wfn  <=== #
         if(self._computer_type=='fci'):
             if(self._evolve_dfham):
                 self._qc.evolve_pool_trotter(
@@ -1037,8 +1195,11 @@ class QITE(Algorithm):
                 if(not self._selected_pool):
                     f_pool.write(f'Initial SQOP Pool:\n{self._sig}\n')
 
+        # ===> Where the general qite iterations take place <=== #
         for kb in range(1, self._nbeta):
+            # ===> Do Exact Evolution (EE) <=== #
             if(self._use_exact_evolution):
+                # ===> Do Folded Specturm (with EE) <=== #
                 if(self._folded_spectrum):
 
                     if(self._update_e_shift):
@@ -1085,7 +1246,8 @@ class QITE(Algorithm):
                         # print(f'norm after scaling: {self._qc.get_state().norm()}')
 
                         self._Ekb.append(np.real(self._qc.get_exp_val(self._sq_ham)))
-
+                
+                # ===> Don't do Folded Specturm (with EE)  <=== #
                 else:
                     if(self._apply_ham_as_tensor):
                         self._qc.evolve_tensor_taylor(
@@ -1128,23 +1290,38 @@ class QITE(Algorithm):
                         # print(f'norm after scaling: {self._qc.get_state().norm()}')
 
                         self._Ekb.append(np.real(self._qc.get_exp_val(self._sq_ham)))
-
+            
+            
+            # ===> Don't do Exact Evolution, just QITE <=== #
             else:
+
+                # ===> Find the pool for A if using selection <=== #
                 if(self._selected_pool):
 
-                    if(kb==1):
-                        self._n_cnot += self._exp_ham_cnot
 
+                    # if(kb==1):
+                    #     # ===> Add CNOT count for DF ham <=== #
+                    #     if(self._use_df_ham_selection):
+                    #         self._n_cnot += self._exp_df_ham_cnot
+
+                    #     # ===> Otherwise, add CNOT count for full ham <=== #
+                    #     else:
+                    #         self._n_cnot += self._exp_ham_cnot
+
+                    # NOTE(Nick): this really should be at the end of the function,
+                    # currently N classical-params at iteration k does not correspond to the
+                    # circuit depth at the same iteration, need to fix
+                    
                     if(kb>=2):
 
-                        total_pool_cnot = 0
+                        # total_pool_cnot = 0
 
                         for term in self._sig.terms():
                             self._total_pool.add_term(term[0], term[1])
-                            total_pool_cnot += term[1].count_cnot_for_exponential()
+                            # total_pool_cnot += term[1].count_cnot_for_exponential()
 
-                        total_pool_cnot *= 2
-                        self._n_cnot += total_pool_cnot
+                        # total_pool_cnot *= 2
+                        # self._n_cnot += total_pool_cnot
 
 
                     qc_res = qf.FCIComputer(self._nel, self._sz, self._norb)
@@ -1155,27 +1332,48 @@ class QITE(Algorithm):
                         1,
                         0)
 
+                    # ===> form |R> = e^-iHdt |phi> (from unitary) <=== #
                     if(self._physical_r):
-                        if(self._apply_ham_as_tensor):
-                            qc_res.evolve_tensor_taylor(
-                                self._zero_body_energy, 
-                                self._mo_oeis, 
-                                self._mo_teis, 
-                                self._mo_teis_einsum, 
-                                self._norb,
-                                self._dt,
-                                1.0e-15,
-                                30,
-                                False)
-                        else:
-                            qc_res.evolve_op_taylor(
-                                self._sq_ham,
-                                self._dt,
-                                1.0e-15,
-                                30,
-                                False)
+                        
 
-                    # unphysical for QC!
+                        # evolve the ham by cnot pool...
+                        if self._use_df_ham_selection:
+                            qc_res.evolve_df_ham_trotter(
+                                self._df_ham,
+                                self._dt)
+                            
+                        else:
+                            qc_res.evolve_pool_trotter_basic(
+                                self._sq_ham_pool, # fromed with dt baked in
+                                False, # not anit-herm
+                                False) # not adjoint
+
+
+                        # NOTE(for Victor): I'm commenting out the code below, we probably want to use the tensor application
+                        # for efficiency purpouses but if we are reporting CNOT estimates, we absolutely want to 
+                        # evolve the real time via trotterization NOT via exact evolution, likely we have to re-run anyting
+                        # that used this, sorry :(
+
+                        # if(self._apply_ham_as_tensor):
+                        #     qc_res.evolve_tensor_taylor(
+                        #         self._zero_body_energy, 
+                        #         self._mo_oeis, 
+                        #         self._mo_teis, 
+                        #         self._mo_teis_einsum, 
+                        #         self._norb,
+                        #         self._dt,
+                        #         1.0e-15,
+                        #         30,
+                        #         False)
+                        # else:
+                        #     qc_res.evolve_op_taylor(
+                        #         self._sq_ham,
+                        #         self._dt,
+                        #         1.0e-15,
+                        #         30,
+                        #         False)
+
+                    # ===> form |R> = e^-iHdt |phi> (non unitary/phisical for QC) <=== #
                     else:
                         if(self._apply_ham_as_tensor):
                             qc_res.apply_tensor_spat_012bdy(
@@ -1210,13 +1408,13 @@ class QITE(Algorithm):
                             self._qc_ref, 
                             self._t_thresh)
                         
-                        self._nt.record("c++ selection")
+                        self._nt.accumulate("c++ selection")
                         
                         # print(self._sig)                        
                         
                         # ====> Old Version <==== #
 
-                        self._nt.reset()
+                        # self._nt.reset()
 
                         # for i in range(len(self._full_pool.terms())):
                         #     state_idx = self._pool_idx_to_state_idx[i]
@@ -1238,7 +1436,7 @@ class QITE(Algorithm):
                         #         self._sig_ind.append(j)
                         #         self._sig.add_term(1.0, self._full_pool.terms()[j][1])
 
-                        self._nt.record("python selection")
+                        # self._nt.record("python selection")
 
 
                         # counter = 0
@@ -1253,9 +1451,6 @@ class QITE(Algorithm):
                         #     qite_cnot += term[1].count_cnot_for_exponential()
 
 
-
-
-
                     else:
                         for i in range(len(self._full_pool.terms())):
                             state_idx = self._pool_idx_to_state_idx[i]
@@ -1267,6 +1462,18 @@ class QITE(Algorithm):
                                     self._sig.add_term(1.0, self._full_pool.terms()[i][1])
 
                     self._NI = len(self._sig.terms())
+
+
+                    if(kb>=1):
+
+                        total_pool_cnot = 0
+
+                        for term in self._sig.terms():
+                            # self._total_pool.add_term(term[0], term[1])
+                            total_pool_cnot += term[1].count_cnot_for_exponential()
+
+                        total_pool_cnot *= 2
+                        self._n_cnot += total_pool_cnot
 
                 self.do_qite_step()
 

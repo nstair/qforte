@@ -86,6 +86,9 @@ class SQOpPool {
       const Tensor& V, 
       const std::complex<double> coeff);
 
+    /// return the number paulit products needed for each term
+    std::vector<int> get_count_pauli_terms_ex_deex() const;
+
     /// return a vector of string representing this sq operator pool
     std::string str() const;
 

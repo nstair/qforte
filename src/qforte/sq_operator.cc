@@ -417,6 +417,51 @@ int SQOperator::count_cnot_for_exponential() {
     return (r > 1) ? 2 * (r - 1) : 0;
 }
 
+/**
+ * @brief Count how many Pauli‐product strings appear after Jordan–Wigner
+ *        mapping of a two‐term anti‐Hermitian operator
+ *        K = g – g†  or  K = i(g + g†).
+ *
+ * For a k-body fermionic excitation g (with k creation and k annihilation ops),
+ * the JW transform of g + g† (or g – g†) expands into
+ *   2^(2k)  total terms from the product of 2k JW factors,
+ * but half of these cancel when summing g and g†, leaving
+ *   2^(2k-1)
+ * distinct Pauli strings.
+ *
+ * @return Number of individual Pauli‐product operators in the JW expansion.
+ * @throws std::invalid_argument if this SQOperator does not consist of exactly
+ *         two terms or if the two terms have mismatched ranks.
+ */
+int SQOperator::count_pauli_terms_ex_deex() const {
+    // Must be two‐term anti‐Hermitian
+    if (terms_.size() != 2) {
+        throw std::invalid_argument(
+            "SQOperator::count_pauli_terms(): requires exactly 2 terms.");
+    }
+
+    // Extract creation/annihilation index lists from first term
+    const auto& term = terms_[0];
+    const auto& creation = std::get<1>(term);
+    const auto& annih    = std::get<2>(term);
+
+    // Ranks must match
+    if (creation.size() != annih.size()) {
+        throw std::invalid_argument(
+            "SQOperator::count_pauli_terms(): creation/annihilation rank mismatch.");
+    }
+
+    size_t k = creation.size();
+    if (k == 0) {
+        // No fermionic action → identity
+        return 0;
+    }
+
+    // Number of Pauli strings = 2^(2k - 1)
+    // (Use a bit‐shift; safe for small k)
+    return static_cast<int>(1) << (2 * k - 1);
+}
+
 
 std::string SQOperator::str() const {
     std::vector<std::string> s;

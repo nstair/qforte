@@ -127,6 +127,13 @@ class DFHamiltonian {
 
     size_t get_norb() const {return norb_;}
 
+    /// Return the number of leaves in the DF hamiltonaoin,
+    /// will be effected by choice of threshold, ultimately determines quantum resource
+    /// cost for trotterization and Hdf measurement. 
+    size_t get_nleaves()  const {
+      return scaled_density_density_matrices_.size();
+    }
+    
     /// Will just return copies for now...
     Tensor get_ff_eigenvalues() const {return ff_eigenvalues_;}
 
@@ -147,6 +154,19 @@ class DFHamiltonian {
     std::vector<Tensor> get_trotter_basis_change_matrices() const {
       return trotter_basis_change_matrices_;
     }
+
+    /**
+     * @brief Count the number of CNOT gates required to implement the trotterizerd exponential 
+     *        of the DFHamiltonian operator.
+     *
+     * This function calculates the number of CNOT gates needed to implement the 
+     * exponential of the DFHamiltonian operator in a quantum circuit. The calculation 
+     * is based on the structure of the operator and its decomposition into terms 
+     * that can be implemented using quantum gates.
+     *
+     * @return size_t The total number of CNOT gates required.
+     */
+    size_t count_cnot_for_exponential() const;
     
   private:
     /// the number of electrons

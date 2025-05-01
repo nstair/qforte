@@ -1231,6 +1231,17 @@ void SQOpPool::append_diagonal_ops_all(
     }
 }
 
+std::vector<int> SQOpPool::get_count_pauli_terms_ex_deex() const
+{
+    std::vector<int> counts(size(terms_));
+    for (size_t i = 0; i < terms_.size(); ++i) {
+        counts[i] = terms_[i].second.count_pauli_terms_ex_deex();
+    }
+    
+    return counts;
+
+}
+
 std::string SQOpPool::str() const{
     std::vector<std::string> s;
     s.push_back("");
