@@ -17,6 +17,17 @@ class local_timer {
 
     /// return the elapsed time in seconds
     void record(std::string name);
+    
+    /**
+     * @brief Accumulate the time for a specific task in the timer.
+     *
+     * If the task name already exists in the timer, this function adds the elapsed
+     * time to the existing total. If the task name does not exist, it creates a
+     * new entry with the elapsed time.
+     *
+     * @param name The name of the task to accumulate time for.
+     */
+    void accumulate(std::string name);
 
     /// returns a string representing a timings table
     std::string str_table(); 
