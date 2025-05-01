@@ -205,3 +205,63 @@ std::tuple<
     return std::make_tuple(i_vector, j_vector, theta_vector, phi_vector, diagonal);
 }
 
+
+/**
+ * @brief Estimate the total CNOT count for one first-order Trotter step of the
+ *        double-factorized (DF) electronic‐structure Hamiltonian exponential.
+ *
+ * We decompose
+ *   H = H₁ + H₂,
+ *   H₁ = ∑_{pq} h_{pq}\,a_p† a_q,                   (one-body)
+ *   H₂ ≈ ∑_{ℓ=1}^L λ_ℓ Γ_ℓ²,                         (DF two-body)
+ *
+ * and approximate
+ *   U(dt) ≈ e^{-iH₁ dt} ∏_{ℓ=1}^L e^{-iλ_ℓ Γ_ℓ² dt}.
+ *
+ * ––– One-body term H₁ –––
+ * • Diagonalize H₁ = U_h† D_h U_h with two n×n Givens‐based basis changes.
+ * • Number of Givens rotations per n×n unitary:  n(n–1)/2
+ * • Each Givens rotation ⇒ 2 CNOTs
+ * • Two basis changes (forward + inverse) ⇒
+ *     2 × [ n(n–1)/2 rotations × 2 CNOT/rotation ]
+ *   = 2 n(n–1) CNOT
+ *
+ * ––– DF two-body terms H₂ –––
+ * For each factor ℓ:
+ * • Basis-change matrix V_ℓ is r_ℓ×r_ℓ.  #rotations = r_ℓ(r_ℓ–1)/2
+ * • Each rotation ⇒ 2 CNOT  ⇒ one V_ℓ (forward) costs r_ℓ(r_ℓ–1) CNOT
+ * • Apply forward + inverse ⇒ 2 × r_ℓ(r_ℓ–1)
+ * • Diagonal block exp(–i λ_ℓ Λ_ℓ² dt) is r_ℓ single-qubit R_z ⇒ 0 CNOT
+ * Summing over ℓ gives
+ *   C₂ = ∑ₗ 2 r_ℓ(r_ℓ–1).
+ *
+ * ––– Total per Trotter step –––
+ *   C_step = C₁ + C₂ = 2 n(n–1) + ∑ₗ 2 r_ℓ(r_ℓ–1).
+ *
+ * This function assumes a single Trotter step (N_step = 1).  To get the full
+ * evolution for N steps, multiply the result by N.
+ */
+size_t DFHamiltonian::count_cnot_for_exponential() const {
+    // Number of spin-orbitals
+    const size_t n = static_cast<size_t>(norb_);
+
+    // 1) One-body term H1:
+    //    2 * n * (n – 1) CNOT per step
+    size_t cnot_H1 = 2 * n * (n - 1);
+
+    // 2) DF two-body terms H2:
+    //    Sum over each factor ℓ of:
+    //      2 * r_ℓ * (r_ℓ – 1)
+    //    where r_ℓ = dimension of basis_change_matrices_[ℓ].
+    size_t cnot_H2 = 0;
+    for (const auto& V : basis_change_matrices_) {
+        size_t r = V.shape()[0];
+        if (r >= 2) {
+            cnot_H2 += 2 * r * (r - 1);
+        }
+    }
+
+    // 3) Total CNOTs per (single) Trotter step
+    return cnot_H1 + cnot_H2;
+}
+

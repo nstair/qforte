@@ -58,6 +58,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("simplify", &SQOperator::simplify)
         .def("jw_transform", &SQOperator::jw_transform, py::arg("qubit_excitation") = false)
         .def("split_by_rank", &SQOperator::split_by_rank)
+        .def("count_pauli_terms_ex_deex", &SQOperator::count_pauli_terms_ex_deex)
         .def("count_unique_pauli_products", &SQOperator::count_unique_pauli_products, 
             py::arg("B") = nullptr)
         .def("count_cnot_for_exponential", &SQOperator::count_cnot_for_exponential)
@@ -88,6 +89,7 @@ PYBIND11_MODULE(qforte, m) {
             "trotter_basis_change_matrices"_a, 
             "Make a DFHamiltonian with with all intermediats pre-computed with numpy")
         .def("set_trotter_first_leaf_basis_chage", &DFHamiltonian::set_trotter_first_leaf_basis_chage)
+        .def("get_nleaves", &DFHamiltonian::get_nleaves)
         .def("get_ff_eigenvalues", &DFHamiltonian::get_ff_eigenvalues)
         .def("get_one_body_squares", &DFHamiltonian::get_one_body_squares)
         .def("get_one_body_ints", &DFHamiltonian::get_one_body_ints)
@@ -95,7 +97,9 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_scaled_density_density_matrices", &DFHamiltonian::get_scaled_density_density_matrices)
         .def("get_basis_change_matrices", &DFHamiltonian::get_basis_change_matrices)
         .def("get_trotter_basis_change_matrices", &DFHamiltonian::get_trotter_basis_change_matrices)
+        .def("count_cnot_for_exponential", &DFHamiltonian::count_cnot_for_exponential)
         .def_static("givens_decomposition_square", &DFHamiltonian::givens_decomposition_square);
+        
 
     py::class_<TensorOperator>(m, "TensorOperator")
         .def(py::init<size_t, size_t, bool, bool>(), 
@@ -138,6 +142,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_qubit_op_pool", &SQOpPool::get_qubit_op_pool)
         .def("get_qubit_operator", &SQOpPool::get_qubit_operator, py::arg("order_type"),
              py::arg("combine_like_terms") = true, py::arg("qubit_excitations") = false)
+        .def("get_count_pauli_terms_ex_deex", &SQOpPool::get_count_pauli_terms_ex_deex)
         .def("fill_pool", &SQOpPool::fill_pool)
         .def("fill_pool_kUpCCGSD", &SQOpPool::fill_pool_kUpCCGSD)
         .def("fill_pool_sq_hva", &SQOpPool::fill_pool_sq_hva)
@@ -437,6 +442,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("reset", &local_timer::reset)
         .def("get", &local_timer::get)
         .def("record", &local_timer::record)
+        .def("accumulate", &local_timer::accumulate, "Accumulate the elapsed time for a specific task.")
         .def("__str__", &local_timer::str_table);
 
     m.def(

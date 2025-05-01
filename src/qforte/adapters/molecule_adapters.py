@@ -915,7 +915,8 @@ def create_pyscf_mol(**kwargs):
         # builds the df_ham from the stored mo_oeis and mo_teis rather than building it when pyscf 
         # is initially run!
         if kwargs['build_df_ham']:
-            raise NotImplementedError("WARNING: Building DF Hamiltonain using pyscf is not tested")
+            if not kwargs['use_avas']:
+                raise NotImplementedError("WARNING: Building DF Hamiltonain using pyscf without AVAS is not tested")
             # keep ordering consistant with openfermion eri tensors
             pyscf_mo_teis = np.asarray(pyscf_mo_teis.transpose(0, 2, 3, 1), order='C')
 
@@ -1027,8 +1028,8 @@ def create_pyscf_mol(**kwargs):
                 )
 
             qforte_mol._df_ham = qforte.DFHamiltonian(
-                nel=nel,
-                norb=nmo,
+                nel=num_active_electrons,
+                norb=num_active_orbitals,
                 eigenvalues = qf_ff_eigenvalues,
                 one_body_squares = qf_one_body_squares,
                 one_body_ints = qf_one_body_ints,

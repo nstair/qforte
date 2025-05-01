@@ -19,6 +19,23 @@ void local_timer::record(std::string name) {
     timings_.push_back(std::make_pair(name, time));
 }
 
+void local_timer::accumulate(std::string name) {
+    // Calculate the elapsed time
+    double elapsed_time = get();
+
+    // Check if the task name already exists in the timings_ vector
+    for (auto& timing : timings_) {
+        if (timing.first == name) {
+            // If it exists, add the elapsed time to the existing total
+            timing.second += elapsed_time;
+            return;
+        }
+    }
+
+    // If the task name does not exist, add a new entry
+    timings_.emplace_back(name, elapsed_time);
+}
+
 std::string local_timer::str_table() {
     std::stringstream result;
 
