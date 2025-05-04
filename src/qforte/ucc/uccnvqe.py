@@ -62,11 +62,11 @@ class UCCNVQE(UCCVQE):
         self._n_classical_params = 0
         self._n_cnot = 0
         self._n_pauli_trm_measures = 0
+        self._n_pauli_trm_measures_2 = 0
+        self._energy_evals = 0
         self._res_vec_evals = 0
         self._res_m_evals = 0
         self._k_counter = 0
-
-        self._pauli_measures_per_iter =[]
 
         self._curr_grad_norm = 0.0
 
@@ -179,8 +179,8 @@ class UCCNVQE(UCCVQE):
         print('Number of classical parameters used:         ', self._n_classical_params)
         print('Number of non-zero parameters used:          ', self._n_nonzero_params)
         print('Number of CNOT gates in deepest circuit:     ', self._n_cnot)
-        print('Number of Pauli term measurements:           ', self._n_pauli_trm_measures)
-        print('Cumulative Pauli measures (new estimate):    ', sum(self._pauli_measures_per_iter))
+        print('Number of Pauli term measurements (old):     ', self._n_pauli_trm_measures)
+        print('Number of Pauli term measurements (new):     ', self._n_pauli_trm_measures_2)
         # print('Nl:                                          ', self._Nl)
 
         print('Number of grad vector evaluations:           ', self._res_vec_evals)

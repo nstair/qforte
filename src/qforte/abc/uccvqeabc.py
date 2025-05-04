@@ -465,17 +465,8 @@ class UCCVQE(VQE, UCC):
         self._res_vec_evals += 1
         self._res_m_evals += len(self._tamps)
 
-        # Track Pauli term measurements per iteration
-        measures_this_iter = 0
-
         if(self._use_analytic_grad):
-            measures_this_iter += int(2 * self._Nl * self._res_m_evals)
-
-        measures_this_iter += int(self._Nl * self._res_vec_evals)
-
-        if not hasattr(self, '_pauli_measures_per_iter'):
-            self._pauli_measures_per_iter = []
-        self._pauli_measures_per_iter.append(measures_this_iter)
+            self._n_pauli_trm_measures_2 += int(2 * self._Nl * self._res_m_evals)
 
         return np.asarray(grads)
 
@@ -489,17 +480,8 @@ class UCCVQE(VQE, UCC):
         self._res_vec_evals += 1
         self._res_m_evals += len(self._tamps)
 
-        # Track Pauli term measurements per iteration
-        measures_this_iter = 0
-
         if(self._use_analytic_grad):
-            measures_this_iter += int(2 * self._Nl * self._res_m_evals)
-
-        measures_this_iter += int(self._Nl * self._res_vec_evals)
-
-        if not hasattr(self, '_pauli_measures_per_iter'):
-            self._pauli_measures_per_iter = []
-        self._pauli_measures_per_iter.append(measures_this_iter)
+            self._n_pauli_trm_measures_2 += int(2 * self._Nl * self._res_m_evals)
 
         return np.asarray(grads)
 
@@ -517,12 +499,11 @@ class UCCVQE(VQE, UCC):
                 f.close()
 
         dE = self._curr_energy - self._prev_energy
-        pauli_terms = self._pauli_measures_per_iter[-1] if hasattr(self, '_pauli_measures_per_iter') and self._pauli_measures_per_iter else 0
-        print(f'     {self._k_counter:7}        {self._curr_energy:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.10f}      {pauli_terms:7}')
+        print(f'     {self._k_counter:7}        {self._curr_energy:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.10f}      {self._n_pauli_trm_measures_2:7}')
 
         if (self._print_summary_file):
             f = open("summary.dat", "a", buffering=1)
-            f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.12f}      {dE:+12.12f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.12f}      {pauli_terms:7}')
+            f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.12f}      {dE:+12.12f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.12f}      {self._n_pauli_trm_measures_2:7}')
             f.close()
 
         self._prev_energy = self._curr_energy
