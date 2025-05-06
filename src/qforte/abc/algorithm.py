@@ -479,7 +479,7 @@ class AnsatzAlgorithm(Algorithm):
         self._curr_energy = Energy
 
         self._energy_evals += 1
-        self._n_pauli_trm_measures_2 += int(self._Nl * self._energy_evals)
+        self._n_pauli_trm_measures += int(self._Nl * self._energy_evals)
 
         return Energy
     
@@ -519,6 +519,6 @@ class AnsatzAlgorithm(Algorithm):
             self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
 
         self._energy_evals += 1
-        self._n_pauli_trm_measures_2 += int(self._Nl * self._energy_evals)
+        self._n_pauli_trm_measures += int(self._Nl * self._energy_evals)
         
         return self._curr_energy
