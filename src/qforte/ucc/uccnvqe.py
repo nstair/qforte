@@ -62,11 +62,11 @@ class UCCNVQE(UCCVQE):
         self._n_classical_params = 0
         self._n_cnot = 0
         self._n_pauli_trm_measures = 0
+        self._n_pauli_trm_measures_2 = 0
+        self._energy_evals = 0
         self._res_vec_evals = 0
         self._res_m_evals = 0
         self._k_counter = 0
-
-        self._pauli_measures_per_iter =[]
 
         self._curr_grad_norm = 0.0
 
@@ -179,8 +179,8 @@ class UCCNVQE(UCCVQE):
         print('Number of classical parameters used:         ', self._n_classical_params)
         print('Number of non-zero parameters used:          ', self._n_nonzero_params)
         print('Number of CNOT gates in deepest circuit:     ', self._n_cnot)
-        print('Number of Pauli term measurements:           ', self._n_pauli_trm_measures)
-        print('Cumulative Pauli measures (new estimate):    ', sum(self._pauli_measures_per_iter))
+        print('Number of Pauli term measurements (old):     ', self._n_pauli_trm_measures_2)
+        print('Number of Pauli term measurements (new):     ', self._n_pauli_trm_measures)
         # print('Nl:                                          ', self._Nl)
 
         print('Number of grad vector evaluations:           ', self._res_vec_evals)
@@ -235,9 +235,9 @@ class UCCNVQE(UCCVQE):
 
             for tmu in res.x:
                 if(np.abs(tmu) > 1.0e-12):
-                    self._n_pauli_trm_measures += int(2 * self._Nl * res.njev)
+                    self._n_pauli_trm_measures_2 += int(2 * self._Nl * res.njev)
 
-            self._n_pauli_trm_measures += int(self._Nl * res.nfev)
+            self._n_pauli_trm_measures_2 += int(self._Nl * res.nfev)
 
 
         else:
@@ -249,7 +249,7 @@ class UCCNVQE(UCCVQE):
                                     callback=self.report_iteration)
 
             # account for pauli term measurement for energy evaluations
-            self._n_pauli_trm_measures += self._Nl * res.nfev
+            self._n_pauli_trm_measures_2 += self._Nl * res.nfev
 
         if(res.success):
             print('  => Minimization successful!')
