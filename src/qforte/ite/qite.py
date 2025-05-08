@@ -161,6 +161,7 @@ class QITE(Algorithm):
             use_cis_reference=False,
             target_root=0,
             cis_target_root=0,
+            threaded=0,
             ):
         
         # TODO(Nick): Remove BeH2 specific stuff..
@@ -183,6 +184,7 @@ class QITE(Algorithm):
         self._sparseSb = sparseSb
         self._low_memorySb = low_memorySb
         self._second_order = second_order
+        self._threaded = threaded
 
         # Selcted QITE options
         self._selected_pool = selected_pool
@@ -951,8 +953,11 @@ class QITE(Algorithm):
                 print(f"Warning, build sparseSb method isn't supported for FCI computer, setting option to false")
                 self._sparseSb = False
 
-            S, btot = self.build_S_b_FCI()
-            # S, btot = self.build_S_b_FCI_threaded()
+            if(self._threaded):
+                S, btot = self.build_S_b_FCI_threaded()
+
+            else:
+                S, btot = self.build_S_b_FCI()
 
         if(self._computer_type=='fock'):
             if(self._low_memorySb):
