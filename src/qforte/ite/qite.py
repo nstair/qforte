@@ -227,7 +227,8 @@ class QITE(Algorithm):
             if(self._use_exact_evolution):
                 self._fname = f'beta_{self._beta}_db_{self._db}_EXACT_EVOLUTION'
             else:
-                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_folded_spectrum_{self._folded_spectrum}_e_shift_{self._e_shift}_selected_pool_{self._selected_pool}_t_{self._t_thresh}_physical_r_{self._physical_r}_dfham_{self._evolve_dfham}'
+                # self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_folded_spectrum_{self._folded_spectrum}_e_shift_{self._e_shift}_selected_pool_{self._selected_pool}_t_{self._t_thresh}_physical_r_{self._physical_r}_dfham_{self._evolve_dfham}'
+                self._fname = f'{self._expansion_type}_selected_pool_{self._selected_pool}_t_{self._t_thresh}_dfham_{self._use_df_ham_selection}'
 
         if(self._output_path is None):
             self._output_path = ''

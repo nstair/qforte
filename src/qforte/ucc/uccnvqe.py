@@ -44,7 +44,8 @@ class UCCNVQE(UCCVQE):
             pool_type='SD',
             optimizer='BFGS',
             use_analytic_grad = True,
-            noise_factor = 0.0):
+            noise_factor = 0.0,
+            output_path=None):
 
         self._opt_thresh = opt_thresh
         self._opt_ftol = opt_ftol
@@ -53,6 +54,7 @@ class UCCNVQE(UCCVQE):
         self._optimizer = optimizer
         self._pool_type = pool_type
         self._noise_factor = noise_factor
+        self._output_path = output_path
 
         self._tops = []
         self._tamps = []

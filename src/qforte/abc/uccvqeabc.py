@@ -493,7 +493,7 @@ class UCCVQE(VQE, UCC):
             print('\n    k iteration         Energy               dE           Ngvec ev      Ngm ev*         ||g||          N(measure)')
             print('--------------------------------------------------------------------------------------------------------------')
             if (self._print_summary_file):
-                f = open("summary.dat", "w+", buffering=1)
+                f = open(f"{self._output_path}vqe_summary.dat", "w+", buffering=1)
                 f.write('\n#    k iteration         Energy               dE           Ngvec ev      Ngm ev*         ||g||          N(measure)')
                 f.write('\n#--------------------------------------------------------------------------------------------------------------')
                 f.close()
