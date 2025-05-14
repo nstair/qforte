@@ -150,6 +150,9 @@ PYBIND11_MODULE(qforte, m) {
         .def("append_givens_ops_sector", &SQOpPool::append_givens_ops_sector)
         .def("append_diagonal_ops_all", &SQOpPool::append_diagonal_ops_all)
         .def("add_connection_pairs", &SQOpPool::add_connection_pairs)
+        .def("get_commutativity_graph", &SQOpPool::get_commutativity_graph)
+        .def("reorder_terms_from_graph", &SQOpPool::reorder_terms_from_graph)
+        .def("shuffle_terms_random", &SQOpPool::shuffle_terms_random)
         .def("str", &SQOpPool::str)
         .def("__getitem__", [](const SQOpPool &pool, size_t i) { return pool.terms()[i]; })
         .def("__iter__", [](const SQOpPool &pool) { return py::make_iterator(pool.terms()); },

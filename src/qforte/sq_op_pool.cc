@@ -14,6 +14,8 @@
 #include <stdexcept>
 #include <algorithm>
 #include <tuple>
+#include <random>
+
 // #include <functional>
 #include <unordered_set>
 // #include <bitset>
@@ -1240,6 +1242,186 @@ std::vector<int> SQOpPool::get_count_pauli_terms_ex_deex() const
     
     return counts;
 
+}
+
+/**
+ * @brief Construct the commutativity‐graph tensor for the current operator pool.
+ *
+ * This function builds and returns an N×N real‐valued Tensor W, where N is the
+ * number of second‐quantized operators in the pool (i.e., terms_.size()).  W encodes
+ * a simple proxy for the leading Trotter error between any two operators: smaller
+ * off‐diagonal entries signal more commuting (or weakly non‐commuting) pairs.
+ *
+ * In more detail:
+ *  - We label each pool operator by an index i∈[0,N).  Each operator is itself a
+ *    linear combination of k subterms:
+ *      SQOperator op_i = ∑ₖ α_{i,k} · ( creation indices cre_{i,k},
+ *                                       annihilation indices ann_{i,k} )
+ *  - Each subterm k of operator i is retrieved via op_i.terms(), which returns
+ *    tuples (α_{i,k}, cre_{i,k}, ann_{i,k}).
+ *  - For any two subterms (α_{i,k},cre_{i,k},ann_{i,k}) and (α_{j,ℓ},cre_{j,ℓ},ann_{j,ℓ}),
+ *    define the match‐count M by summing over the four set‐intersections:
+ *      M = |ann_{i,k} ∩ cre_{j,ℓ}|
+ *        + |ann_{i,k} ∩ ann_{j,ℓ}|
+ *        + |cre_{i,k} ∩ cre_{j,ℓ}|
+ *        + |cre_{i,k} ∩ ann_{j,ℓ}|
+ *  - The pairwise contribution of those two subterms to W(i,j) is
+ *      |α_{i,k}| · |α_{j,ℓ}| · M.
+ *  - We sum this quantity over all k,ℓ to obtain the symmetric weight W(i,j).
+ *
+ * The resulting Tensor W can be interpreted as the adjacency‐matrix of an
+ * undirected “commutativity graph” whose edge‐weights approximate the Frobenius
+ * norm of the commutator between any two pool operators.  Lower weights imply
+ * smaller commutators and hence reduced Trotter error when those terms are
+ * placed adjacent in a product‐formula ordering.
+ *
+ * Usage:
+ *   Tensor W = my_pool.commutativity_graph();
+ *   // then feed W to reorder_terms(W) or to any TSP / graph‐ordering heuristic.
+ *
+ * @return Tensor  An N×N real matrix of nonnegative weights W(i,j).
+ *
+ * @throws std::invalid_argument if the Tensor cannot be allocated or if
+ *         terms_.size() == 0 (N==0).
+ */
+Tensor SQOpPool::get_commutativity_graph() const {
+    size_t N = terms_.size();
+    // construct an N×N tensor filled with zeros
+    Tensor W({N, N});
+    W.zero();
+
+    // Helper to compute M for two (cre,ann) pairs
+    auto count_matches = [&](auto const& cre1, auto const& ann1,
+                             auto const& cre2, auto const& ann2) {
+        size_t M = 0;
+        // |ann1 ∩ cre2|
+        for (auto i : ann1)
+            for (auto j : cre2)
+                if (i == j) ++M;
+        // |ann1 ∩ ann2|
+        for (auto i : ann1)
+            for (auto j : ann2)
+                if (i == j) ++M;
+        // |cre1 ∩ cre2|
+        for (auto i : cre1)
+            for (auto j : cre2)
+                if (i == j) ++M;
+        // |cre1 ∩ ann2|
+        for (auto i : cre1)
+            for (auto j : ann2)
+                if (i == j) ++M;
+        return M;
+    };
+
+    // Loop over all distinct pairs i<j
+    for (size_t i = 0; i < N; ++i) {
+        auto const& [coeff_i, op_i] = terms_[i];
+        // gather subterms of operator i
+        auto const& sub_i = op_i.terms();  
+        for (size_t j = i + 1; j < N; ++j) {
+            auto const& [coeff_j, op_j] = terms_[j];
+            auto const& sub_j = op_j.terms();
+
+            double w_ij = 0.0;
+            // sum over all subterms k∈i, ℓ∈j
+            for (auto const& s_i : sub_i) {
+                double alfa_ik = std::abs(std::get<0>(s_i)) * std::abs(coeff_i);
+                auto const& cre_i = std::get<1>(s_i);
+                auto const& ann_i = std::get<2>(s_i);
+                for (auto const& s_j : sub_j) {
+                    double alfa_jl = std::abs(std::get<0>(s_j)) * std::abs(coeff_j);
+                    auto const& cre_j = std::get<1>(s_j);
+                    auto const& ann_j = std::get<2>(s_j);
+                    size_t M = count_matches(cre_i, ann_i, cre_j, ann_j);
+                    w_ij += alfa_ik * alfa_jl * static_cast<double>(M);
+                }
+            }
+            W.set({i, j}, w_ij);
+            W.set({j, i}, w_ij);  // enforce symmetry
+        }
+    }
+    return W;
+}
+
+/**
+ * Reorder the pool’s terms to minimize Trotter error by placing
+ * weakly non-commuting operators next to one another.
+ *
+ * This implements a simple greedy “nearest-neighbor” tour on the
+ * commutativity graph W: at each step, pick the as-yet-unused operator
+ * whose edge-weight to the last-placed operator is minimal.
+ *
+ * How it works:
+ * 1. Verify that W is an N×N matrix matching the number of terms.
+ * 2. Maintain a boolean array `used[]` marking which terms have been placed.
+ * 3. Seed the ordering at index 0 (or any heuristic choice).
+ * 4. For each subsequent position, scan all unused indices `j` and select
+ *    the one that minimizes W[current,j], i.e. the operator that commutes
+ *    best (smallest commutator norm) with the last one placed.
+ * 5. After selecting N operators, overwrite `terms_` with the new sequence.
+ */
+void SQOpPool::reorder_terms_from_graph(const Tensor &W) {
+    size_t N = terms_.size();
+    // 1) Sanity-check: W must be N×N
+    auto shape = W.shape();
+    if (shape.size() != 2 || shape[0] != N || shape[1] != N) {
+        throw std::invalid_argument(
+            "reorder_terms: W must be an N×N tensor matching terms_.size()");
+    }
+
+    // 2) Track which terms have been placed
+    std::vector<bool> used(N, false);
+    std::vector<std::pair<std::complex<double>, SQOperator>> new_terms;
+    new_terms.reserve(N);
+
+    // 3) Seed the tour at index 0 (could also pick the term with smallest total weight)
+    size_t current = 0;
+    used[current] = true;
+    new_terms.push_back(terms_[current]);
+
+    // 4) Greedy nearest-neighbor: build the rest of the tour
+    for (size_t step = 1; step < N; ++step) {
+        double best_w = std::numeric_limits<double>::infinity();
+        size_t best_j = N;  // sentinel for “none found”
+        // Scan all unused terms and pick the one minimizing W[current,j]
+        for (size_t j = 0; j < N; ++j) {
+            if (!used[j]) {
+                double w = std::real(W.get({current, j})); 
+                if (w < best_w) {
+                    best_w = w;
+                    best_j = j;
+                }
+            }
+        }
+        // Mark and append the chosen operator
+        if (best_j >= N) {
+            // No unused terms left (should only happen if N==0)
+            break;
+        }
+        used[best_j] = true;
+        new_terms.push_back(terms_[best_j]);
+        current = best_j;
+    }
+
+    // 5) Replace the old term order with the new low-commutator sequence
+    terms_ = std::move(new_terms);
+}
+
+/**
+ * @brief Randomly shuffle the order of the SQOpPool terms.
+ *
+ * This uses a reproducible pseudo‐random number generator (std::mt19937)
+ * initialized with the provided integer seed.  Calling this function with
+ * the same seed will always produce the same permutation of `terms_`.
+ *
+ * @param seed  An integer seed for the random number generator.
+ */
+void SQOpPool::shuffle_terms_random(int seed) {
+    // Initialize a Mersenne Twister RNG with the user‐provided seed
+    std::mt19937 rng(seed);
+
+    // Perform an in‐place Fisher–Yates shuffle of the terms_ vector
+    std::shuffle(terms_.begin(), terms_.end(), rng);
 }
 
 std::string SQOpPool::str() const{
