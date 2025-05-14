@@ -89,6 +89,15 @@ class SQOpPool {
     /// return the number paulit products needed for each term
     std::vector<int> get_count_pauli_terms_ex_deex() const;
 
+    /// return the matrix W, of 
+    Tensor get_commutativity_graph() const;
+
+    /// reorder the terms in the pool based on the graph W
+    void reorder_terms_from_graph(const Tensor &W);
+
+    /// reorder the terms in the pool randomly based on the seed
+    void shuffle_terms_random(int seed);
+
     /// return a vector of string representing this sq operator pool
     std::string str() const;
 
