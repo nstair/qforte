@@ -417,6 +417,78 @@ int SQOperator::count_cnot_for_exponential() {
     return (r > 1) ? 2 * (r - 1) : 0;
 }
 
+int SQOperator::count_cnot_for_exponential_full() const {
+    // 1) Ensure you have exactly K = g - g† or i(g+g†)
+    if (terms_.size() != 2)
+        throw std::invalid_argument("…requires exactly 2 terms.");
+
+    // 2) Compute single-string support length
+    const auto& term = terms_[0];
+    std::vector<size_t> indices = std::get<1>(term);
+    indices.insert(indices.end(),
+                   std::get<2>(term).begin(),
+                   std::get<2>(term).end());
+    if (indices.empty()) return 0;
+    auto [min_it, max_it] = std::minmax_element(indices.begin(), indices.end());
+    int r = static_cast<int>(*max_it - *min_it + 1);
+
+    // 3) Count how many Pauli strings arise: 2^(2k-1)
+    int num_strings = count_pauli_terms_ex_deex();  // your existing helper
+
+    // 4) Total CNOTs = #strings × 2(r-1)
+    return num_strings * (r > 1 ? 2*(r-1) : 0);
+}
+
+/**
+ * @brief Estimate the number of T-gates required to implement
+ *        U = exp[K] for a two-term anti-Hermitian operator
+ *        K = g – g†  or  K = i(g + g†),
+ *        under a surface-code, to approximation error ε.
+ *
+ * @param epsilon  Target diamond-norm (or spectral-norm) error for each Rₙ(φ) synthesis.
+ *                 Typical values: 1e-3 … 1e-6.
+ * @return Total T-gate count across all Pauli strings in the JW expansion.
+ * @throws std::invalid_argument if this SQOperator does not have exactly two terms.
+ *
+ * @details
+ *  - A k-body excitation g expands under Jordan–Wigner into 2^(2k−1) Pauli strings.
+ *  - Each Pauli string rotation Rₙ(φ) with φ = 2·h (h = real part of the first term’s coefficient)
+ *    can be approximated ancilla-free with
+ *      T(φ,ε) ≈ 2·⌈log₂(2π/ε)⌉ + ⌈|φ|/(π/4)⌉ − 2
+ *    non-Clifford T-gates.
+ *  - Total T-count = (# Pauli strings) × T(φ,ε).
+ */
+int SQOperator::count_T_for_exponential_full(double epsilon) const {
+    // must be exactly K = g − g† or i(g + g†)
+    if (terms_.size() != 2) {
+        throw std::invalid_argument(
+            "SQOperator::estimate_T_count(): requires exactly 2 terms.");
+    }
+
+    // 1) count how many Pauli strings result from JW of g±g†
+    int num_pauli = count_pauli_terms_ex_deex();
+
+    // 2) extract the real coefficient h from the first term
+    double h = std::real(std::get<0>(terms_[0]));
+
+    // 3) compute rotation angle φ = 2 h
+    double phi = 2.0 * h;
+
+    // 4) precompute the base T-cost = 2 * ceil(log2(2π/ε))
+    std::size_t k     = static_cast<std::size_t>(std::ceil(std::log2(2.0 * M_PI / epsilon)));
+    std::size_t baseT = 2 * k;
+
+    // 5) T-gates for one Rₙ(φ): baseT + ⌈|φ|/(π/4)⌉ − 2
+    std::size_t singleT = baseT
+                        + static_cast<std::size_t>(std::ceil(std::abs(phi) / (M_PI / 4.0)))
+                        - 2;
+
+    // 6) scale by the number of Pauli strings
+    return num_pauli * singleT;
+}
+
+
+
 /**
  * @brief Count how many Pauli‐product strings appear after Jordan–Wigner
  *        mapping of a two‐term anti‐Hermitian operator

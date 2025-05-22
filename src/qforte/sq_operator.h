@@ -71,13 +71,33 @@ class SQOperator {
     // If B is nullptr, it computes products for A only.
     size_t count_unique_pauli_products(const SQOperator* B = nullptr) const;
 
+    // Returns the number of CNOT gates required to implement a single exponential
+    // Pauli rotations assuming linear connectivity, where the number of CNOTs is
+    // 2*(r-1), with r being the size of the contiguous qubit support.
+    int count_cnot_for_exponential();
+
     // Returns the number of CNOT gates required to implement the exponential
     // of a two-term anti-Hermitian SQOperator K of the form:
     //   K = i (g + g^)   or   K = g - g^
     // The circuit implementation is based on a standard decomposition for multi-qubit
     // Pauli rotations assuming linear connectivity, where the number of CNOTs is
     // 2*(r-1), with r being the size of the contiguous qubit support.
-    int count_cnot_for_exponential();
+    int count_cnot_for_exponential_full() const;
+
+    /**
+     * @brief Estimate the total number of T-gates required to implement
+     *        U = exp[K] for a two-term anti-Hermitian operator
+     *        K = g – g†  or  K = i(g + g†) under a surface-code,
+     *        to within approximation error ε.
+     *
+     * @param epsilon  Target diamond-norm (or spectral-norm) error for each
+     *                 single-qubit Rₙ(φ) synthesis. Typical values: 1e-3 … 1e-6.
+     * @return         Total T-gate count across all Pauli strings in the
+     *                 Jordan–Wigner expansion of g±g†.
+     * @throws std::invalid_argument if this SQOperator does not consist of exactly
+     *         two terms (i.e., K ≠ g±g†).
+     */
+    int count_T_for_exponential_full(double epsilon) const;
 
     /**
      * @brief Count the number of Pauli‐product terms resulting from the Jordan–Wigner
