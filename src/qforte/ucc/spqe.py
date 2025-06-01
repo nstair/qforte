@@ -59,7 +59,8 @@ class SPQE(UCCPQE):
             opt_maxiter = 30,
             use_cumulative_thresh=True,
             max_excit_rank = None,
-            optimizer = 'Jacobi'):
+            optimizer = 'Jacobi',
+            output_path = None):
         """
         spqe_thresh: float
             The convergence threshold against which the norm of the residual is compared
@@ -103,6 +104,8 @@ class SPQE(UCCPQE):
         self._opt_thresh = opt_thresh
         self._opt_maxiter = opt_maxiter
 
+        self._output_path = output_path
+
         # _nbody_counts: list that contains the numbers of singles, doubles, etc. incorporated in the final ansatz
         self._nbody_counts = []
         self._n_classical_params_lst = []
@@ -116,6 +119,7 @@ class SPQE(UCCPQE):
         self._converged = False
         self._res_vec_evals = 0
         self._res_m_evals = 0
+        self._energy_evals = 0
 
         self._curr_energy = 0.0
 
@@ -231,7 +235,7 @@ class SPQE(UCCPQE):
         self._spqe_iter = 1
 
         if(self._print_summary_file):
-            f = open("summary.dat", "w+", buffering=1)
+            f = open(f"{self._output_path}spqe_summary.dat", "w+", buffering=1)
             f.write(f"#{'Iter(k)':>8}{'E(k)':>14}{'N(params)':>17}{'N(CNOT)':>18}{'N(measure)':>20}\n")
             f.write('#-------------------------------------------------------------------------------\n')
 

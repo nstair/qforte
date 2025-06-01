@@ -46,10 +46,10 @@ def jacobi_solver(self):
     Ek0 = self.energy_feval(self._tamps)
 
     if self.__class__.__name__ in ['UCCNPQE', 'SPQE']:
-        print('\n    k iteration         Energy               dE           Nrvec ev      Nrm ev*         ||r||')
+        print('\n    k iteration         Energy               dE           Nrvec ev      Nrm ev*         ||r||          N(measure)')
     elif self.__class__.__name__ in ['UCCNVQE', 'ADAPTVQE']:
-        print('\n    k iteration         Energy               dE           Ngvec ev      Ngm ev*         ||g||')
-    print('---------------------------------------------------------------------------------------------------', flush=True)
+        print('\n    k iteration         Energy               dE           Ngvec ev      Ngm ev*         ||g||          N(measure)')
+    print('----------------------------------------------------------------------------------------------------------------------', flush=True)
 
     for k in range(1, self._opt_maxiter+1):
 
@@ -64,17 +64,21 @@ def jacobi_solver(self):
 
         self._tamps = list(np.add(self._tamps, r_k))
 
+        # n_pauli_this_iter = self._Nl * (2 * len(self._tamps) + 1) + self._Nl*k
+        n_pauli_this_iter = 0
+
+
         Ek = self.energy_feval(self._tamps)
         dE = Ek - Ek0
         Ek0 = Ek
 
         if self.__class__.__name__ in ['UCCNPQE', 'SPQE']:
-            print(f'     {k:7}        {Ek:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}')
+            print(f'     {k:7}        {Ek:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}        {n_pauli_this_iter:8}')
             if(self._res_vec_norm < self._opt_thresh):
                 self._Egs = Ek
                 break
         elif self.__class__.__name__ in ['UCCNVQE', 'ADAPTVQE']:
-            print(f'     {k:7}        {Ek:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.10f}')
+            print(f'     {k:7}        {Ek:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.10f}        {n_pauli_this_iter:8}')
             if(self._curr_grad_norm < self._opt_thresh):
                 self._Egs = Ek
                 break
