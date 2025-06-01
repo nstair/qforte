@@ -265,7 +265,7 @@ class QITE(Algorithm):
 
                     ham_cnot = 0
                     for term in self._sq_ham_pool.terms():
-                        ham_cnot += term[1].count_cnot_for_exponential()
+                        ham_cnot += term[1].count_cnot_for_exponential_full()
 
                     self._exp_ham_cnot = ham_cnot
                     self._n_cnot += ham_cnot
@@ -997,7 +997,7 @@ class QITE(Algorithm):
 
             qite_cnot = 0
             for term in self._sig.terms():
-                qite_cnot += term[1].count_cnot_for_exponential()
+                qite_cnot += term[1].count_cnot_for_exponential_full()
 
             self._n_cnot += qite_cnot
 
@@ -1324,7 +1324,7 @@ class QITE(Algorithm):
 
                         for term in self._sig.terms():
                             self._total_pool.add_term(term[0], term[1])
-                            # total_pool_cnot += term[1].count_cnot_for_exponential()
+                            # total_pool_cnot += term[1].count_cnot_for_exponential_full()
 
                         # total_pool_cnot *= 2
                         # self._n_cnot += total_pool_cnot
@@ -1454,7 +1454,7 @@ class QITE(Algorithm):
 
                         # print(self._sig)
                         # for term in self._sig.terms():
-                        #     qite_cnot += term[1].count_cnot_for_exponential()
+                        #     qite_cnot += term[1].count_cnot_for_exponential_full()
 
 
                     else:
@@ -1476,7 +1476,7 @@ class QITE(Algorithm):
 
                         for term in self._sig.terms():
                             # self._total_pool.add_term(term[0], term[1])
-                            total_pool_cnot += term[1].count_cnot_for_exponential()
+                            total_pool_cnot += term[1].count_cnot_for_exponential_full()
 
                         total_pool_cnot *= 2
                         self._n_cnot += total_pool_cnot
