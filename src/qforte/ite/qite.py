@@ -1149,7 +1149,7 @@ class QITE(Algorithm):
                     print('\n')
                     print('WARNING: ESTIMATED MEMORY USAGE EXCEEDS 8GB, SWITCHING TO LOW MEMORY MODE')
                     print('\n')
-                    self._low_memorySb = True
+                    # self._low_memorySb = True
                     self._total_memory = 5.0 * 16.0 * qc_size # 5 corresponds to total # of tensors at any given time in memory
 
 
@@ -1522,6 +1522,10 @@ class QITE(Algorithm):
 
             if(self._Ekb[kb] - self._sys.fci_energy <= self._conv_thresh):
                 print(f'qite converged for convergence threshold {self._conv_thresh} Hartree')
+                break
+            
+            if(kb>=2 and self._Ekb[kb-1] - self._Ekb[kb] <= 1.0e-10):
+                print(f'qite energy has stopped changing, qite converged')
                 break
 
         self._Ets = self._Ekb[-1]

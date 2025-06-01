@@ -92,7 +92,7 @@ alg = qf.QITE(
         )
 
 alg.run(
-        beta=5.0,             # 
+        beta=10.0,             # 
         db=0.1,               #
         dt=0.01,              #
         use_diis=0,           #
@@ -105,7 +105,7 @@ alg.run(
         low_memorySb=0,       # low memory Sb resource estimation may be broken
         second_order=1,       #
         selected_pool=1,      #
-        t_thresh=1.0e-8,      # 
+        t_thresh=1.0e-6,      # 
         cumulative_t=1,       #
         b_thresh=1.0e-6,      # fock computer only
         x_thresh=1.0e-10,     # filters non-contributing operators from fixed pool types 
