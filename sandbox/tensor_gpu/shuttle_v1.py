@@ -1,27 +1,27 @@
 import qforte as qf
 
-shape = [2, 2]
+# shape = [2, 2]
 
-my_tensorGPU = qf.TensorGPU(shape, "TensorGPU 1")
-other = qf.TensorGPU(shape, "TensorGPU 2")
-# my_tensorGPU.zero()
+# my_tensorGPU = qf.TensorGPU(shape, "TensorGPU 1")
+# other = qf.TensorGPU(shape, "TensorGPU 2")
+# # my_tensorGPU.zero()
 
-my_tensorGPU.set([0,0], 1.0)
-my_tensorGPU.set([1,1], 2.0)
+# my_tensorGPU.set([0,0], 1.0)
+# my_tensorGPU.set([1,1], 2.0)
 
-other.set([0,0], 1.0)
-other.set([0,1], 1.0)
-other.set([1,1], 1.0)
+# other.set([0,0], 1.0)
+# other.set([0,1], 1.0)
+# other.set([1,1], 1.0)
 
 
-my_tensorGPU.to_gpu()
-other.to_gpu()
+# my_tensorGPU.to_gpu()
+# other.to_gpu()
 
-my_tensorGPU.add2(other)
+# my_tensorGPU.add2(other)
 
-my_tensorGPU.from_gpu()
+# my_tensorGPU.from_gpu()
 
-print(my_tensorGPU.read_data())
+# print(my_tensorGPU.read_data())
 
 
 """

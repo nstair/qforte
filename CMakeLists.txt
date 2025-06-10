@@ -35,30 +35,25 @@ find_package(CUDAToolkit REQUIRED)
 # Set source directory
 set(SOURCE_DIR "src/qforte")
 set(CUDA_SOURCES 
+    "${SOURCE_DIR}/bindings_gpu.cu"
     "${SOURCE_DIR}/tensor_gpu.cu"
-    "${SOURCE_DIR}/fci_computer_gpu.cu")
+    "${SOURCE_DIR}/fci_computer_gpu.cu"
+    "${SOURCE_DIR}/tensor_gpu_kernels.cu"
+    "${SOURCE_DIR}/fci_computer_gpu_kernels.cu")
 
 
-
-
-# Tell CMake that headers are also in SOURCE_DIR
-include_directories(${SOURCE_DIR})
-#set(SOURCES "${SOURCE_DIR}/math.cc")
-
-# Generate Python module
-add_subdirectory(lib/pybind11)
-add_subdirectory(lib/fmt)
-pybind11_add_module(qforte ${SOURCES} "${SOURCE_DIR}/bindings.cc"
+# Separate host source files
+set(CPP_SOURCES
     "${SOURCE_DIR}/helpers.cc"
     "${SOURCE_DIR}/make_gate.cc"
     "${SOURCE_DIR}/qubit_basis.cc"
     "${SOURCE_DIR}/circuit.cc"
     "${SOURCE_DIR}/computer.cc"
-    "${SOURCE_DIR}/fci_computer_gpu.cc"
+    # "${SOURCE_DIR}/fci_computer_gpu.cc"
     "${SOURCE_DIR}/fci_computer.cc"
     "${SOURCE_DIR}/fci_graph_gpu.cc"
     "${SOURCE_DIR}/fci_graph.cc"
-    "${SOURCE_DIR}/tensor_gpu.cc"
+    # "${SOURCE_DIR}/tensor_gpu.cc"
     "${SOURCE_DIR}/tensor.cc"
     "${SOURCE_DIR}/tensor_einsum.cc"
     "${SOURCE_DIR}/tensor_operator.cc"
@@ -70,13 +65,65 @@ pybind11_add_module(qforte ${SOURCES} "${SOURCE_DIR}/bindings.cc"
     "${SOURCE_DIR}/sq_op_pool.cc"
     "${SOURCE_DIR}/sparse_tensor.cc"
     "${SOURCE_DIR}/timer.cc"
-    ${CUDA_SOURCES})
+)
+
+# Tell CMake that headers are also in SOURCE_DIR
+include_directories(${SOURCE_DIR})
+#set(SOURCES "${SOURCE_DIR}/math.cc")
+
+# Generate Python module
+add_subdirectory(lib/pybind11)
+add_subdirectory(lib/fmt)
+
+pybind11_add_module(qforte ${CPP_SOURCES} ${CUDA_SOURCES})
+set_target_properties(qforte PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+
+#pybind11_add_module(qforte_host ${CPP_SOURCES})
+#pybind11_add_module(qforte_gpu ${CUDA_SOURCES})
+
+#add_library(qforte MODULE $<TARGET_FILE:qforte_host> $<TARGET_FILE:qforte_gpu>)
+
+# can remove below eventually
+
+#pybind11_add_module(qforte ${SOURCES} "${SOURCE_DIR}/bindings.cc"
+#    "${SOURCE_DIR}/helpers.cc"
+#    "${SOURCE_DIR}/make_gate.cc"
+#    "${SOURCE_DIR}/qubit_basis.cc"
+#    "${SOURCE_DIR}/circuit.cc"
+#    "${SOURCE_DIR}/computer.cc"
+    # "${SOURCE_DIR}/fci_computer_gpu.cc"
+#    "${SOURCE_DIR}/fci_computer.cc"
+#    "${SOURCE_DIR}/fci_graph_gpu.cc"
+#    "${SOURCE_DIR}/fci_graph.cc"
+    # "${SOURCE_DIR}/tensor_gpu.cc"
+#    "${SOURCE_DIR}/tensor.cc"
+#    "${SOURCE_DIR}/tensor_einsum.cc"
+#    "${SOURCE_DIR}/tensor_operator.cc"
+#    "${SOURCE_DIR}/gate.cc"
+#    "${SOURCE_DIR}/blas_math.cc" 
+#    "${SOURCE_DIR}/qubit_operator.cc"
+#    "${SOURCE_DIR}/qubit_op_pool.cc"
+#    "${SOURCE_DIR}/sq_operator.cc"
+#    "${SOURCE_DIR}/sq_op_pool.cc"
+#   "${SOURCE_DIR}/sparse_tensor.cc"
+#    "${SOURCE_DIR}/timer.cc"
+#    ${CUDA_SOURCES})
 
 set_target_properties(qforte PROPERTIES CUDA_ARCHITECTURES "52;60;61;70;75;86")
 
+#set_target_properties(qforte_gpu PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+
+#set_target_properties(qforte_host PROPERTIES CUDA_ARCHITECTURES "52;60;61;70;75;86")
+#set_target_properties(qforte_gpu PROPERTIES CUDA_ARCHITECTURES "52;60;61;70;75;86")
+
+
+
 link_directories(${BLAS_LIBRARIES})
 target_include_directories(qforte PRIVATE ${CBLAS_INCLUDE_DIR} ${CUDAToolkit_INCLUDE_DIRS})
+
+
 target_link_libraries(qforte PRIVATE fmt-header-only CUDA::cudart ${OPENBLAS_EXE} ${CUDA_EXE})
+# target_link_libraries(qforte_gpu PRIVATE fmt-header-only CUDA::cudart ${OPENBLAS_EXE} ${CUDA_EXE})
 
 
 
@@ -110,7 +157,7 @@ add_executable("${PROJECT_NAME}_benchmarks"
     "${SOURCE_DIR}/computer.cc"
     "${SOURCE_DIR}/fci_computer.cc"
     "${SOURCE_DIR}/fci_graph.cc"
-    "${SOURCE_DIR}/tensor_gpu.cc"
+    # "${SOURCE_DIR}/tensor_gpu.cc"
     "${SOURCE_DIR}/tensor.cc"
     "${SOURCE_DIR}/tensor_einsum.cc"
     "${SOURCE_DIR}/tensor_operator.cc"
