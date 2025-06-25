@@ -23,7 +23,7 @@ set(BLA_VENDOR "Generic")
 # set(CMAKE_CXX_COMPILER "/usr/bin/g++")
 
 # Use these if installing to anaconda
-set(CMAKE_PREFIX_PATH "/home/tylerpbrady/anaconda3/envs/tyler_gpu")
+set(CMAKE_PREFIX_PATH "/home/zach_gonzales/anaconda3/envs/qforte_gpu")
 set(BLAS_LIBRARIES "${CMAKE_PREFIX_PATH}/lib") 
 set(CBLAS_INCLUDE_DIR "${CMAKE_PREFIX_PATH}/include") #need
 set(OPENBLAS_EXE "${CMAKE_PREFIX_PATH}/lib/libopenblas.so") #need, may be libopenblas.so for linux
