@@ -1,0 +1,1 @@
+ "/home/zach_gonzales/anaconda3/envs/qforte_gpu/targets/x86_64-linux/lib/libcudart_static.a" -ldl  -lpthread -lcudadevrt -lcudart_static -lrt 
