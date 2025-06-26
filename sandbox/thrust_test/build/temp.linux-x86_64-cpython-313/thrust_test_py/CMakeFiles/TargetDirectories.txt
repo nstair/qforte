@@ -1,3 +1,0 @@
-/home/zach_gonzales/qforte/sandbox/thrust_test/build/temp.linux-x86_64-cpython-313/thrust_test_py/CMakeFiles/thrust_test.dir
-/home/zach_gonzales/qforte/sandbox/thrust_test/build/temp.linux-x86_64-cpython-313/thrust_test_py/CMakeFiles/edit_cache.dir
-/home/zach_gonzales/qforte/sandbox/thrust_test/build/temp.linux-x86_64-cpython-313/thrust_test_py/CMakeFiles/rebuild_cache.dir

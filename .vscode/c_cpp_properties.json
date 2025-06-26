@@ -1,0 +1,35 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/home/zach_gonzales/anaconda3/envs/qforte_gpu/include/**",
+                "/home/zach_gonzales/anaconda3/envs/qforte_gpu/targets/x86_64-linux/include/**"
+            ],
+            "defines": [],
+            "compilerPath": "/home/zach_gonzales/anaconda3/envs/qforte_gpu/bin/x86_64-conda-linux-gnu-g++",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "configurationProvider": "ms-vscode.cmake-tools"
+        },
+        {
+            "name": "CUDA",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/home/zach_gonzales/anaconda3/envs/qforte_gpu/include/**",
+                "/home/zach_gonzales/anaconda3/envs/qforte_gpu/targets/x86_64-linux/include/**"
+            ],
+            "defines": [],
+            "compilerPath": "/home/zach_gonzales/anaconda3/envs/qforte_gpu/bin/nvcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "configurationProvider": "ms-vscode.cmake-tools"
+        }
+    ],
+    "version": 4
+}

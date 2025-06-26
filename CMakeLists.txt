@@ -78,6 +78,10 @@ link_directories(${BLAS_LIBRARIES})
 target_include_directories(qforte PRIVATE ${CBLAS_INCLUDE_DIR} ${CUDAToolkit_INCLUDE_DIRS})
 target_link_libraries(qforte PRIVATE fmt-header-only CUDA::cudart ${OPENBLAS_EXE} ${CUDA_EXE})
 
+# Add explicit Thrust include directory
+include_directories(${CUDAToolkit_INCLUDE_DIRS})
+include_directories("/home/zach_gonzales/anaconda3/envs/qforte_gpu/targets/x86_64-linux/include")
+
 
 
 
