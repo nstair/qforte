@@ -144,6 +144,25 @@ void TensorGPU::add2(const TensorGPU& other) {
     }
 }
 
+void TensorGPU::addThrust(const TensorGPU& other) {
+
+    if (shape_ != other.shape_) {
+        throw std::runtime_error("Tensor shapes are not compatible for addition.");
+    }
+
+    gpu_error();
+    other.gpu_error();
+
+    // call thrust add wrapper
+    add_wrapper_thrust(d_data_, other.read_d_data(), size_);
+
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
+        throw std::runtime_error("Failed to execute the add operation on the GPU using Thrust.");
+    }
+}
+
 void TensorGPU::gpu_error() const {
 
     if (not on_gpu_) {

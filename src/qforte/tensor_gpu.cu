@@ -2,6 +2,12 @@
 #include <cuda_runtime.h>
 #include <iostream>
 
+// Thrust includes for device vector operations
+#include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
+#include <thrust/transform.h>
+#include <thrust/functional.h>
+
 
 // Kernel for adding two tensors
 __global__ void add_kernel(cuDoubleComplex* x, const cuDoubleComplex* y, size_t n) {
@@ -64,3 +70,23 @@ void add_wrapper2(cuDoubleComplex* d_x, const cuDoubleComplex* d_y, int n, int t
    
 }
 
+
+// Custom functor for complex addition
+struct complex_add {
+    __host__ __device__
+    cuDoubleComplex operator()(const cuDoubleComplex& a, const cuDoubleComplex& b) {
+        return make_cuDoubleComplex(
+            cuCreal(a) + cuCreal(b),
+            cuCimag(a) + cuCimag(b)
+        );
+    }
+};
+
+// Using Thrust's transform function with custom functor
+void add_wrapper_thrust(cuDoubleComplex* d_x, const cuDoubleComplex* d_y, size_t n) {
+    thrust::device_ptr<cuDoubleComplex> dev_x(d_x);
+    thrust::device_ptr<const cuDoubleComplex> dev_y(d_y);
+
+    // Use our custom functor instead of cuCadd (which is problematic as a functor)
+    thrust::transform(dev_x, dev_x + n, dev_y, dev_x, complex_add());
+}

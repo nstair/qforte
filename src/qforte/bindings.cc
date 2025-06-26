@@ -423,6 +423,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("to_cpu", &TensorGPU::to_cpu)
         .def("add", &TensorGPU::add)
         .def("add2", &TensorGPU::add2)
+        .def("addThrust", &TensorGPU::addThrust)
         .def("zero", &TensorGPU::zero)
         .def("shape", &TensorGPU::shape)
         .def("norm", &TensorGPU::norm)
@@ -432,7 +433,8 @@ PYBIND11_MODULE(qforte, m) {
         .def("copy_in_gpu", &TensorGPU::copy_in_gpu)
         .def("copy_in_from_tensor", &TensorGPU::copy_in_from_tensor)
         .def("subtract", &TensorGPU::subtract)
-        .def("set", &TensorGPU::set);
+        .def("set", &TensorGPU::set)
+        .def("get", &TensorGPU::get);
 
     py::class_<Gate>(m, "Gate")
         .def("target", &Gate::target)
