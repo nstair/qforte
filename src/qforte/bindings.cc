@@ -21,6 +21,7 @@
 #include "tensor_gpu.h"
 #include "tensor_operator.h"
 #include "blas_math.h"
+#include "tensor_thrust.h"
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -360,7 +361,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("transpose", &Tensor::transpose) // TODO(Tyler) Need Test (use numpy)
         .def("general_transpose", &Tensor::general_transpose) // TODO(Tyler) Need Test (use numpy)
         .def("fill_from_nparray", &Tensor::fill_from_nparray)
-        .def("copy_in_tensorgpu", &Tensor::copy_in_tensorgpu)
+        //.def("copy_in_tensorgpu", &Tensor::copy_in_tensorgpu)
         .def("zaxpy", &Tensor::zaxpy, "x"_a, "alpha"_a, "incx"_a = 1, "incy"_a = 1) // TODO(Tyler) Need Test (use numpy)
         .def("zaxpby", &Tensor::zaxpby, "x"_a, "a"_a, "b"_a, "incx"_a = 1, "incy"_a = 1)
         .def("gemm", &Tensor::gemm, "B"_a, 
@@ -468,6 +469,21 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_acc_timings", &local_timer::get_acc_timings)
         .def("__str__", &local_timer::str_table);
 
+    py::class_<TensorGPUThrust>(m, "TensorGPUThrust")
+    .def(py::init<>())
+        .def(py::init<const std::vector<size_t>&, const std::string&, bool>(),
+             py::arg("shape"),
+             py::arg("name") = "T",
+             py::arg("on_gpu") = false)
+        .def("add", &TensorGPUThrust::add, py::arg("other"))
+        .def("__repr__",
+                [](const TensorGPUThrust &a) {
+                auto v = a.get_host_data();
+                std::string val = v.empty() ? "empty" : std::to_string(v.front().real());
+                return "<TensorGPUThrust '" + val + "' ... >";
+                }
+            );
+
     m.def(
         "gate",
         [](std::string type, size_t target, std::complex<double> parameter) {
@@ -518,4 +534,10 @@ PYBIND11_MODULE(qforte, m) {
         "type"_a, "target"_a, "control"_a, "parameter"_a = 0.0, "Make a gate.");
 
     m.def("control_gate", &make_control_gate, "control"_a, "Gate"_a);
+
+    m.def(
+        "thrust_square",
+        &thrust_square,
+        "Squares a list of floats using Thrust on the GPU."
+    );
 }

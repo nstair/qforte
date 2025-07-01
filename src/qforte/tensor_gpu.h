@@ -10,6 +10,7 @@
 #include <cuda_runtime.h>
 #include <cuComplex.h>
 
+//#include <thrust/device_vector.h>
 
 #include "qforte-def.h"
 #include "tensor.h"
@@ -352,6 +353,8 @@ std::vector<std::complex<double>> h_data_;
 // std::complex<double>* d_data_; 
 
 cuDoubleComplex* d_data_;
+
+//thrust::device_vector<cuDoubleComplex> d_vec_;
 
 bool on_gpu_;
 

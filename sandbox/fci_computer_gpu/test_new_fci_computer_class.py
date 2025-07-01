@@ -10,6 +10,7 @@ fci_comp = qf.FCIComputerGPU(nel=nel, sz=sz, norb=norb)
 fci_comp2 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 # fci_comp2.hartree_fock()
 
+"""
 print(fci_comp.str(print_data=True))
 print(fci_comp2.str(print_data=True))
 
@@ -41,3 +42,4 @@ print("\n Final FCIcomp Stuff")
 print("===========================")
 print(fci_comp)
 print(fci_comp2)
+"""
