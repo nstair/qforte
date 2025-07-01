@@ -32,33 +32,28 @@ set(CUDA_EXE "${CMAKE_PREFIX_PATH}/lib/libcudart.so")
 
 find_package(CUDAToolkit REQUIRED)
 
+# For all CUDA files, enable extended lambdas
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda")
+
 # Set source directory
 set(SOURCE_DIR "src/qforte")
+
+# Compiled with nvcc
 set(CUDA_SOURCES 
-    "${SOURCE_DIR}/tensor_gpu.cu"
-    "${SOURCE_DIR}/fci_computer_gpu.cu")
+    "${SOURCE_DIR}/tensor_gpu_kernels.cu"
+    "${SOURCE_DIR}/fci_computer_gpu_kernels.cu"
+    "${SOURCE_DIR}/fci_computer_gpu.cu"
+    "${SOURCE_DIR}/tensor_thrust.cu")
 
-
-
-
-# Tell CMake that headers are also in SOURCE_DIR
-include_directories(${SOURCE_DIR})
-#set(SOURCES "${SOURCE_DIR}/math.cc")
-
-# Generate Python module
-add_subdirectory(lib/pybind11)
-add_subdirectory(lib/fmt)
-pybind11_add_module(qforte ${SOURCES} "${SOURCE_DIR}/bindings.cc"
+# Compiled with CXX
+set(SOURCES
     "${SOURCE_DIR}/helpers.cc"
     "${SOURCE_DIR}/make_gate.cc"
     "${SOURCE_DIR}/qubit_basis.cc"
     "${SOURCE_DIR}/circuit.cc"
     "${SOURCE_DIR}/computer.cc"
-    "${SOURCE_DIR}/fci_computer_gpu.cc"
     "${SOURCE_DIR}/fci_computer.cc"
     "${SOURCE_DIR}/fci_graph.cc"
-    "${SOURCE_DIR}/tensor_gpu.cc"
-    "${SOURCE_DIR}/tensor.cc"
     "${SOURCE_DIR}/tensor_einsum.cc"
     "${SOURCE_DIR}/tensor_operator.cc"
     "${SOURCE_DIR}/gate.cc"
@@ -70,6 +65,21 @@ pybind11_add_module(qforte ${SOURCES} "${SOURCE_DIR}/bindings.cc"
     "${SOURCE_DIR}/sq_op_pool.cc"
     "${SOURCE_DIR}/sparse_tensor.cc"
     "${SOURCE_DIR}/timer.cc"
+    "${SOURCE_DIR}/tensor_gpu.cc"
+    "${SOURCE_DIR}/tensor.cc"
+    "${SOURCE_DIR}/df_hamiltonian.cc")
+
+
+
+# Tell CMake that headers are also in SOURCE_DIR
+include_directories(${SOURCE_DIR})
+#set(SOURCES "${SOURCE_DIR}/math.cc")
+
+# Generate Python module
+add_subdirectory(lib/pybind11)
+add_subdirectory(lib/fmt)
+pybind11_add_module(qforte "${SOURCE_DIR}/bindings.cc"
+    ${SOURCES}
     ${CUDA_SOURCES})
 
 set_target_properties(qforte PROPERTIES CUDA_ARCHITECTURES "52;60;61;70;75;86")
@@ -107,25 +117,7 @@ add_executable("${PROJECT_NAME}_test" ${TESTS})
 
 add_executable("${PROJECT_NAME}_benchmarks"
     benchmarks/benchmarks.cc
-    "${SOURCE_DIR}/helpers.cc"
-    "${SOURCE_DIR}/make_gate.cc"
-    "${SOURCE_DIR}/qubit_basis.cc"
-    "${SOURCE_DIR}/circuit.cc"
-    "${SOURCE_DIR}/computer.cc"
-    "${SOURCE_DIR}/fci_computer.cc"
-    "${SOURCE_DIR}/fci_graph.cc"
-    "${SOURCE_DIR}/tensor_gpu.cc"
-    "${SOURCE_DIR}/tensor.cc"
-    "${SOURCE_DIR}/tensor_einsum.cc"
-    "${SOURCE_DIR}/tensor_operator.cc"
-    "${SOURCE_DIR}/gate.cc"
-    "${SOURCE_DIR}/blas_math.cc"
-    "${SOURCE_DIR}/qubit_operator.cc"
-    "${SOURCE_DIR}/sq_operator.cc"
-    "${SOURCE_DIR}/df_hamiltonian.cc"
-    "${SOURCE_DIR}/qubit_op_pool.cc"
-    "${SOURCE_DIR}/sq_op_pool.cc"
-    "${SOURCE_DIR}/sparse_tensor.cc"
-    "${SOURCE_DIR}/timer.cc")
+    "${SOURCES}"
+    "${CUDA_SOURCES}")
 
 target_link_libraries(qforte_benchmarks PRIVATE fmt-header-only ${OPENBLAS_EXE})

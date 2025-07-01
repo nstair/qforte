@@ -10,9 +10,9 @@
 
 
 #include "qforte-def.h"
-#include "tensor_gpu.h"
+//#include "tensor_gpu.h"
 
-class TensorGPU;
+//class TensorGPU;
 
 // namespace lightspeed { 
 
@@ -162,7 +162,7 @@ void scale(std::complex<double> a);
  **/
 void copy_in(const Tensor& other); 
 
-void copy_in_tensorgpu(const TensorGPU& other);
+// void copy_in_tensorgpu(const TensorGPU& other);
 
 /**
  * Update this Tensor (y) to be y = a * x + b * y
