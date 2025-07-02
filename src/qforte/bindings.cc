@@ -470,19 +470,20 @@ PYBIND11_MODULE(qforte, m) {
         .def("__str__", &local_timer::str_table);
 
     py::class_<TensorGPUThrust>(m, "TensorGPUThrust")
-    .def(py::init<>())
+        .def(py::init<>())
         .def(py::init<const std::vector<size_t>&, const std::string&, bool>(),
              py::arg("shape"),
              py::arg("name") = "T",
              py::arg("on_gpu") = false)
+        .def("to_gpu", &TensorGPUThrust::to_gpu)
+        .def("to_cpu", &TensorGPUThrust::to_cpu)
         .def("add", &TensorGPUThrust::add, py::arg("other"))
-        .def("__repr__",
-                [](const TensorGPUThrust &a) {
-                auto v = a.get_host_data();
-                std::string val = v.empty() ? "empty" : std::to_string(v.front().real());
-                return "<TensorGPUThrust '" + val + "' ... >";
-                }
-            );
+        .def("zero", &TensorGPUThrust::zero)
+        .def("get_data", &TensorGPUThrust::get_data)
+        .def("set", &TensorGPUThrust::set, "idx"_a, "value"_a)
+        .def("fill_from_nparray", &TensorGPUThrust::fill_from_nparray, "array"_a, "shape"_a)
+        .def("__repr__", &TensorGPUThrust::str);
+
 
     m.def(
         "gate",
@@ -534,10 +535,4 @@ PYBIND11_MODULE(qforte, m) {
         "type"_a, "target"_a, "control"_a, "parameter"_a = 0.0, "Make a gate.");
 
     m.def("control_gate", &make_control_gate, "control"_a, "Gate"_a);
-
-    m.def(
-        "thrust_square",
-        &thrust_square,
-        "Squares a list of floats using Thrust on the GPU."
-    );
 }
