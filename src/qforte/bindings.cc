@@ -22,6 +22,7 @@
 #include "tensor_operator.h"
 #include "blas_math.h"
 #include "tensor_thrust.h"
+#include "fci_computer_thrust.h"
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -479,11 +480,17 @@ PYBIND11_MODULE(qforte, m) {
         .def("to_cpu", &TensorGPUThrust::to_cpu)
         .def("add", &TensorGPUThrust::add, py::arg("other"))
         .def("zero", &TensorGPUThrust::zero)
-        .def("get_data", &TensorGPUThrust::get_data)
+        .def("read_data", &TensorGPUThrust::read_data)
         .def("set", &TensorGPUThrust::set, "idx"_a, "value"_a)
         .def("fill_from_nparray", &TensorGPUThrust::fill_from_nparray, "array"_a, "shape"_a)
         .def("__repr__", &TensorGPUThrust::str);
 
+    py::class_<FCIComputerThrust>(m, "FCIComputerThrust")
+        .def(py::init<int, int, int, bool>(), "nel"_a, "sz"_a, "norb"_a, "on_gpu"_a)
+        .def("set_element", &FCIComputerThrust::set_element, "idxs"_a, "value"_a)
+        .def("get_element", &FCIComputerThrust::get_element, "idxs"_a)
+        .def("apply_tensor_spin_1bdy", &FCIComputerThrust::apply_tensor_spin_1bdy)
+        .def("__repr__", &FCIComputerThrust::str);
 
     m.def(
         "gate",
