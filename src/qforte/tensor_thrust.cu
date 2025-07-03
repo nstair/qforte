@@ -69,39 +69,72 @@ void TensorGPUThrust::resize(const std::vector<size_t>& new_shape) {
 }
 
 void TensorGPUThrust::zero() {
-    // Fill the host vector with complex zeros
-    thrust::fill(h_data_.begin(), h_data_.end(), thrust::complex<double>(0, 0));
+    if (on_gpu_) {
+        thrust::fill(d_data_.begin(), d_data_.end(), thrust::complex<double>(0, 0));
+    } else {
+        thrust::fill(h_data_.begin(), h_data_.end(), thrust::complex<double>(0, 0));
+    }
 }
 
-// Set the data in the tensor given list of indices and a value for those indices.
+// Zero the tensor with a specific shape.
+void TensorGPUThrust::zero_with_shape(const std::vector<size_t>& shape, bool on_gpu) {
+    update_strides(); // Update strides based on the new shape
+    resize(shape); // Resize the tensor to the new shape
+    zero(); // Fill the tensor with zeros
+    on_gpu_ = on_gpu; // Set the on_gpu flag
+    initialized_ = true; // Mark the tensor as initialized
+}
+
+// Set the data in the tensor at the given indices to the specified complex value.
 void TensorGPUThrust::set(const std::vector<size_t>& idxs,
                           const std::complex<double> value) {
     // Check for ndim error
     if (idxs.size() != shape_.size()) {
         throw std::runtime_error("ndim error: indices size does not match tensor shape.");
     }
-    thrust::complex<double> val = thrust::complex<double>(value.real(), value.imag());
-
-    if( idxs.size() == 1 ) {
-        h_data_[idxs[0]] = val;
-    } else if (idxs.size() == 2) {
-        h_data_[shape_[1]*idxs[0] + idxs[1]] = val;
-    } else {
-        for (int i = 0; i < shape_.size(); i++) {
-            if (idxs[i] >= shape_[i]) {
-                std::cerr << "Index out of bounds for dimension " << i << std::endl;
-            }
-        }      
-        size_t vidx = 0;
-        size_t stride = 1;
-        
-        for (int i = shape_.size() - 1; i >= 0; i--) {
-            vidx += idxs[i] * stride;
-            stride *= shape_[i];
+    
+    // Check for out of bounds indices
+    for (int i = 0; i < shape_.size(); i++) {
+        if (idxs[i] >= shape_[i]) {
+            throw std::runtime_error("Index out of bounds for dimension " + std::to_string(i));
         }
-        h_data_[vidx] = val;
-        h_data_[vidx] = val;
     }
+    
+    // Convert std::complex to thrust::complex
+    thrust::complex<double> val = thrust::complex<double>(value.real(), value.imag());
+    
+    // Calculate linear index using strides_
+    size_t vidx = 0;
+    for (int i = 0; i < idxs.size(); i++) {
+        vidx += idxs[i] * strides_[i];
+    }
+    
+    // Set the value
+    h_data_[vidx] = val;
+}
+
+// Get the value at the specified indices in the tensor.
+std::complex<double> TensorGPUThrust::get(const std::vector<size_t>& idxs) const {
+    // Check for ndim error
+    if (idxs.size() != shape_.size()) {
+        throw std::runtime_error("ndim error: indices size does not match tensor shape.");
+    }
+
+    // Check for out of bounds indices
+    for (int i = 0; i < shape_.size(); i++) {
+        if (idxs[i] >= shape_[i]) {
+            throw std::runtime_error("Index out of bounds for dimension " + std::to_string(i));
+        }
+    }
+
+    // Calculate linear index using strides_
+    size_t vidx = 0;
+    for (int i = 0; i < idxs.size(); i++) {
+        vidx += idxs[i] * strides_[i];
+    }
+
+    // Get the value
+    return std::complex<double>(h_data_[vidx].real(), h_data_[vidx].imag());
 }
 
 // Fill the tensor with a numpy array.
@@ -126,13 +159,58 @@ void TensorGPUThrust::add(const TensorGPUThrust& other) {
         thrust::plus<thrust::complex<double>>());
 }
 
-std::vector<std::complex<double>> TensorGPUThrust::get_data() const {
-    std::vector<std::complex<double>> out_data(size_);
-
-    for (size_t i = 0; i < out_data.size(); ++i) {
-        out_data[i] = std::complex<double>(h_data_[i].real(), h_data_[i].imag());
+TensorGPUThrust TensorGPUThrust::slice(std::vector<std::pair<size_t, size_t>> idxs) const {
+    // Check if the number of slice specifications matches the tensor dimensions
+    if (idxs.size() != shape_.size()) {
+        throw std::runtime_error("slice error: number of slice ranges does not match tensor dimensions");
     }
-    return out_data;
+
+    // Calculate the shape of the resulting slice
+    std::vector<size_t> new_shape;
+    for (const auto& range : idxs) {
+        // Validate range
+        if (range.first >= range.second) {
+            throw std::runtime_error("slice error: invalid range (start >= end)");
+        }
+        if (range.second > shape_[new_shape.size()]) {
+            throw std::runtime_error("slice error: range exceeds dimension size");
+        }
+        
+        // Calculate size of this dimension in the result
+        new_shape.push_back(range.second - range.first);
+    }
+    
+    // Create result tensor with the new shape
+    TensorGPUThrust result(new_shape, name_ + "_slice", on_gpu_);
+    
+    // For each element in the result tensor...
+    std::vector<size_t> result_idx(new_shape.size(), 0);
+    bool done = false;
+    
+    while (!done) {
+        // Convert result indices to source tensor indices
+        std::vector<size_t> src_idx(shape_.size());
+        for (size_t i = 0; i < shape_.size(); i++) {
+            src_idx[i] = result_idx[i] + idxs[i].first;
+        }
+        
+        // Copy the value
+        result.set(result_idx, this->get(src_idx));
+        
+        // Increment indices
+        for (int i = new_shape.size() - 1; i >= 0; i--) {
+            result_idx[i]++;
+            if (result_idx[i] < new_shape[i]) {
+                break;
+            }
+            result_idx[i] = 0;
+            if (i == 0) {
+                done = true;
+            }
+        }
+    }
+    
+    return result;
 }
 
 void TensorGPUThrust::ndim_error(const std::vector<size_t>& idxs) const {
@@ -162,4 +240,28 @@ std::string TensorGPUThrust::str() const {
         oss << "(" << h_data_[i].real() << ", " << h_data_[i].imag() << ") ";
     }
     return oss.str();
+}
+
+std::vector<std::complex<double>> TensorGPUThrust::data() {
+    if (on_gpu_) {
+        throw std::runtime_error("Data is on GPU, cannot return host data.");
+    }
+
+    std::vector<std::complex<double>> result(h_data_.size());
+    for (size_t i = 0; i < h_data_.size(); ++i) {
+        result[i] = std::complex<double>(h_data_[i].real(), h_data_[i].imag());
+    }
+    return result;
+}
+
+std::vector<std::complex<double>> TensorGPUThrust::read_data() const {
+    if (on_gpu_) {
+        throw std::runtime_error("Data is on GPU, cannot return host data.");
+    }
+
+    std::vector<std::complex<double>> result(h_data_.size());
+    for (size_t i = 0; i < h_data_.size(); ++i) {
+        result[i] = std::complex<double>(h_data_[i].real(), h_data_[i].imag());
+    }
+    return result;
 }

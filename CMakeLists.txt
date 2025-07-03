@@ -32,8 +32,8 @@ set(CUDA_EXE "${CMAKE_PREFIX_PATH}/lib/libcudart.so")
 
 find_package(CUDAToolkit REQUIRED)
 
-# For all CUDA files, enable extended lambdas
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda")
+# For all CUDA files, enable extended lambdas & supress comparison warning 815,186
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda -diag-suppress 815,186 -Wno-deprecated-gpu-targets")
 
 # Set source directory
 set(SOURCE_DIR "src/qforte")
@@ -43,7 +43,8 @@ set(CUDA_SOURCES
     "${SOURCE_DIR}/tensor_gpu_kernels.cu"
     "${SOURCE_DIR}/fci_computer_gpu_kernels.cu"
     "${SOURCE_DIR}/fci_computer_gpu.cu"
-    "${SOURCE_DIR}/tensor_thrust.cu")
+    "${SOURCE_DIR}/tensor_thrust.cu"
+    "${SOURCE_DIR}/fci_computer_thrust.cu")
 
 # Compiled with CXX
 set(SOURCES
