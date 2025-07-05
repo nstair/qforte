@@ -1,63 +1,353 @@
-#pragma once
+#ifndef _tensor_thrust_h_
+#define _tensor_thrust_h_
+
+#include <memory>
+#include <cstddef>
+#include <string>
 #include <vector>
-#include <thrust/device_vector.h>
+#include <iterator>
+
+#include <cuda_runtime.h>
+#include <cuComplex.h>
 #include <thrust/host_vector.h>
-#include <thrust/complex.h>
+#include <thrust/device_vector.h>
+#include <thrust/transform.h>
+#include <thrust/functional.h>
+#include <thrust/inner_product.h>
+#include <thrust/fill.h>
+#include <thrust/copy.h>
 
-class TensorGPUThrust {
+#include "qforte-def.h"
+#include "tensor.h"
+
+class Tensor;
+
+class TensorThrust {
+
 public:
-    TensorGPUThrust(const std::vector<size_t>& shape,
-                    const std::string& name = "T",
-                    bool on_gpu = false);
-    TensorGPUThrust();
-    ~TensorGPUThrust() = default;
 
-    void to_gpu();
-    void to_cpu();
+// => Constructors <= //
 
-    void add(const TensorGPUThrust&);
+/**
+ * Constructor: Builds and initializes the Tensor to all zeros.
+ *
+ * @param shape the shape of the tensor
+ * @param name name of the tensor (for printing/filename use)
+ **/
+TensorThrust(
+    const std::vector<size_t>& shape,
+    const std::string& name = "T",
+    bool on_gpu = false
+    );
 
-    void zero();
+TensorThrust();
 
-    void set_name(const std::string& name) { name_ = name; } // Sets the name of the tensor
-    std::string get_name() const { return name_; }            // Returns the name of the tensor
-    size_t ndim() const { return shape_.size(); }            // Returns the number of dimensions of the tensor
-    size_t size() const { return size_; }                    // Returns the total number of elements in the tensor
-    const std::vector<size_t>& shape() const { return shape_; }  // Returns size in each dimension
-    bool initialized() const { return initialized_; }         // Returns true if the tensor has been initialized
-    void update_strides();                 // Updates the strides based on the shape of the tensor
+~TensorThrust();
 
-    std::vector<std::complex<double>> data();              // Returns a std copy of the data (host)
-    std::vector<std::complex<double>> read_data() const;    // Returns a std copy of the data (host)
+void to_gpu();
+void to_cpu();
+void add(const TensorThrust&);
 
-    void resize(const std::vector<size_t>& new_shape); // Resizes the tensor to the new shape, preserving data if possible
+void zero();
 
-    void set(const std::vector<size_t>&, 
-             const std::complex<double>
-             ); // Sets the value at the given index
+void zero_gpu();
 
-    std::complex<double> get(const std::vector<size_t>&) const; // Gets the value at the given index
+thrust::host_vector<std::complex<double>>& h_data() { return h_data_; }
 
-    void fill_from_nparray(std::vector<std::complex<double>>, std::vector<size_t>);
+const thrust::host_vector<std::complex<double>>& read_h_data() const { return h_data_; }
 
-    void zero_with_shape(const std::vector<size_t>& shape, bool on_gpu);
+thrust::device_vector<cuDoubleComplex>& d_data() { return d_data_; }
 
-    TensorGPUThrust slice(std::vector<std::pair<size_t, size_t>> idxs) const;
+const thrust::device_vector<cuDoubleComplex>& read_d_data() const { return d_data_; }
 
-    void ndim_error(const std::vector<size_t>&) const; // Checks if the number of indices matches the number of dimensions
+void add_thrust(const TensorThrust& other);
 
-    std::string str() const; // Returns a string representation of the tensor
+void gpu_error() const;
 
+void cpu_error() const;
 
+std::string name() const { return name_; }
+
+/// The number of dimensions of this Tensor, inferred from shape
+size_t ndim() const { return shape_.size(); }
+
+/// The total number of elements of this Tensor (the product of shape)
+size_t size() const { return size_; }
+
+double norm();
+
+/// The size in each dimension of this Tensor
+const std::vector<size_t>& shape() const { return shape_; }
+
+void set(const std::vector<size_t>& idxs,
+         const std::complex<double> val
+         );
+
+void ndim_error(size_t) const;
+
+void fill_from_nparray(std::vector<std::complex<double>>, std::vector<size_t>);
+
+std::string str(
+    bool print_data = true,
+    bool print_complex = false,
+    int maxcols = 6,
+    const std::string& data_format = "%12.7f",
+    const std::string& header_format = "%12zu"
+    ) const; 
+
+/// The offset between consecutive indices within each dimension
+const std::vector<size_t>& strides() const { return strides_; }
+
+/// Whether the tensor has been initilized or not 
+const bool initialized() const { return initialized_; }
+
+// => Data Accessors <= //
+
+/**
+ * The data of this Tensor, using C-style compound indexing. Modifying the
+ * elements of this vector will modify the data of this Tensor
+ *
+ * @return a reference to the vector data of this tensor
+ **/
+thrust::host_vector<std::complex<double>>& data() { return h_data_; }
+
+// => Setters <= //
+
+/// Set this Tensor's name to @param name
+void set_name(const std::string& name) { name_ = name; } 
+
+/// Set this Tensor's strides to @param strides
+void set_strides(const std::vector<size_t> strides) { strides_ = strides; } 
+
+/// Set this Tensor to all zeros with @param shape 
+void zero_with_shape(const std::vector<size_t>& shape, bool on_gpu);
+
+// => Clone Actions <= //
+
+/// Create a new copy of this Tensor (same size and data)
+std::shared_ptr<TensorThrust> clone();
+
+void fill_from_np(std::vector<std::complex<double>>, std::vector<size_t>);
+
+/// Set a particular element of this Tensor, specified by idxs
+void add_to_element(const std::vector<size_t>& idxs,
+         const std::complex<double> val
+         );
+
+/// Get a particular element of this Tensor, specified by idxs
+std::complex<double> get(const std::vector<size_t>& idxs) const;
+
+/// Get the vector index for this tensor based on the tensor index
+size_t tidx_to_vidx(const std::vector<size_t>& tidx) const;
+
+/// Get the vector index for this tensor based on the tensor index, and axes
+size_t tidx_to_trans_vidx(const std::vector<size_t>& tidx, const std::vector<size_t>& axes) const;
+
+/// Get the tensor index for this tensor based on the vector index
+std::vector<size_t> vidx_to_tidx(size_t vidx) const;
+
+// => Simple Core Actions <= //
+
+/**
+ * Set this 2D square Tensor to the identity matrix
+ * Throw if not 2D square
+ **/
+void identity();
+
+/**
+ * Set this 2D square Tensor T to 0.5 * (T + T')
+ * Throw if not 2D square
+ **/
+void symmetrize();
+
+/**
+ * Set this 2D square Tensor T to 0.5 * (T - T')
+ * Throw if not 2D square
+ **/
+void antisymmetrize();
+
+/**
+ * Scale this Tensor by param a
+ * @param a the scalar multiplier
+ **/
+void scale(std::complex<double> a);
+
+/**
+ * Copy the data of Tensor other to this Tensor
+ * @param other Tensor to copy data from
+ * Throw if other is not same shape 
+ **/
+void copy_in(const TensorThrust& other); 
+
+void copy_in_gpu(const TensorThrust& other);
+
+void copy_in_from_tensor(const Tensor& other);
+
+/**
+ * Update this Tensor (y) to be y = a * x + b * y
+ * Throw if x is not same shape 
+ **/
+void axpby(const std::shared_ptr<TensorThrust>& x, double a, double b);
+
+/**
+ * Subtract one tensor from another
+ * Throw if x is not same shape 
+ **/
+ void subtract(const TensorThrust& other);
+
+/**
+ * Compute the dot product between this and other Tensors,
+ * by unrolling this and other Tensor and adding sum of products of
+ * elements
+ *
+ * @param other Tensor to take dot product with
+ * @return the dot product
+ * Throw if other is not same shape 
+ **/
+std::complex<double> vector_dot(const TensorThrust& other) const;
+
+/**
+ * Compute a new copy of this Tensor which is a transpose of this. Works only
+ * for matrices. 
+ *
+ * @return a transposed copy of this
+ * Throw if not 2 ndim
+ **/
+TensorThrust transpose() const;
+
+/**
+ * Compute a new copy of this Tensor which is a transpose of this.
+ *
+ * @return a transposed copy of this according to axes
+ **/
+TensorThrust general_transpose(const std::vector<size_t>& axes) const;
+
+/**
+ * Create a new tensor based off the given sliced indexes.
+ * 
+ * @param idxs A vector of pairs with the indexes for the respective dimension.
+ * @return a new tensor with new shape, size, and data
+ * Throw if given too many indexes for the dimensions or if given invalid syntax for indexes.
+ **/
+TensorThrust slice(std::vector<std::pair<size_t, size_t>> idxs) const;
+
+std::vector<std::vector<size_t>> get_nonzero_tidxs() const;
+
+// => Printing <= //
+
+std::string print_nonzero() const;
+
+// => Error Throwers <= //
+
+/**
+ * Throw std::runtime_error if shape != shape()
+ * First calls ndim_error(shape_.size())
+ **/
+void shape_error(const std::vector<size_t>& shape) const;
+
+/**
+ * Throw std::runtime_error if not square matrix
+ * First calls ndim_error(2)
+ **/
+void square_error() const;
+
+/// ===============> MATH <===================== ///
+
+void zaxpy(
+    const TensorThrust& x, 
+    const std::complex<double> alpha,
+    const int incx,
+    const int incy);
+
+void zaxpby(
+    const TensorThrust& x,
+    std::complex<double> a,
+    std::complex<double> b,
+    const int incx,
+    const int incy);
+
+void gemm(
+    const TensorThrust& B,
+    const char transa,
+    const char transb,
+    const std::complex<double> alpha,
+    const std::complex<double> beta,
+    const bool multOnRight);
+
+// => Tensor Multiplication/Permutation <= //
+
+/**
+ * Performed the chained matrix multiplication:
+ *      
+ *  C = alpha * As[0]^trans[0] * As[1]^trans[1] * ... + beta * C
+ *      
+ *  @param As the list of A core Tensors
+ *  @param trans the list of transpose arguments
+ *  @param C the resultant matrix - if this argument is not provided, C is
+ *      allocated and set to zero in the routine
+ *  @param alpha the prefactor of the chained multiply
+ *  @param beta the prefactor of the register tensor C
+ *  @return C - the resultant tensor (for chaining and new allocation)
+ **/
+static TensorThrust chain(
+    const std::vector<TensorThrust>& As,
+    const std::vector<bool>& trans,
+    std::complex<double> alpha,
+    std::complex<double> beta);
+
+static void permute(
+    const std::vector<std::string>& Ainds,
+    const std::vector<std::string>& Cinds,
+    const TensorThrust& A,
+    TensorThrust& C2,
+    std::complex<double> alpha = 1.0,
+    std::complex<double> beta = 0.0);
+
+static void einsum(
+    const std::vector<std::string>& Ainds,
+    const std::vector<std::string>& Binds,
+    const std::vector<std::string>& Cinds,
+    const TensorThrust& A,
+    const TensorThrust& B,
+    TensorThrust& C3,
+    std::complex<double> alpha = 1.0,
+    std::complex<double> beta = 0.0);
 
 private:
-    std::string name_;
-    std::vector<size_t> shape_;
-    std::vector<size_t> strides_;
-    size_t size_;
-    bool initialized_ = 0;
-    bool on_gpu_;
 
-    thrust::host_vector<thrust::complex<double>> h_data_;
-    thrust::device_vector<thrust::complex<double>> d_data_;
+std::string name_;
+
+std::vector<size_t> shape_;
+
+std::vector<size_t> strides_;
+
+size_t size_;
+
+bool initialized_ = 0;
+
+// The host side data using thrust
+thrust::host_vector<std::complex<double>> h_data_;
+
+// The device side data using thrust
+thrust::device_vector<cuDoubleComplex> d_data_;
+
+bool on_gpu_;
+
+// => Ed's special total memory thing <= //
+
+private: 
+
+static size_t total_memory__;
+
+public:
+
+/**
+ * Current total global memory usage of Tensor in bytes. 
+ * Computes as t.size() * sizeof(double) for all tensors t that are currently
+ * in scope.
+ **/
+static size_t total_memory() { return total_memory__; }
+
 };
+
+#endif // _tensor_thrust_h_

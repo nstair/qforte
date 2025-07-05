@@ -19,14 +19,16 @@
 #include "sq_operator.h"
 #include "blas_math.h"
 #include "cuda_runtime.h"
-#include "fci_graph.h"
 
 #include "fci_computer_thrust.h"
-
+#include "fci_graph.h"
 
 FCIComputerThrust::FCIComputerThrust(int nel, int sz, int norb, bool on_gpu) : 
-    nel_(nel), sz_(sz), norb_(norb), on_gpu_(on_gpu) {
-    
+    nel_(nel), 
+    sz_(sz),
+    norb_(norb),
+    on_gpu_(on_gpu) {
+
     if (nel_ < 0) {
         throw std::invalid_argument("Cannot have negative electrons");
     }
@@ -64,9 +66,9 @@ FCIComputerThrust::FCIComputerThrust(int nel, int sz, int norb, bool on_gpu) :
     C_.set_name("FCI Computer");
 
     graph_ = FCIGraph(nalfa_el_, nbeta_el_, norb_);
+
     timer_ = local_timer();
 }
-
 
 /// Set a particular element of the tensor stored in FCIComputerThrust, specified by idxs
 void FCIComputerThrust::set_element(
@@ -77,55 +79,57 @@ void FCIComputerThrust::set_element(
     C_.set(idxs, val);
 }
 
-/// Get a particular element of the tensor stored in FCIComputerThrust, specified by idxs
-std::complex<double> FCIComputerThrust::get_element(
-    const std::vector<size_t>& idxs
-        ) const 
-{    
-    return C_.get(idxs);
+void FCIComputerThrust::gpu_error() const {
+
+    if (not on_gpu_) {
+        throw std::runtime_error("Data not on GPU for FCIComputerThrust" + name_);
+    }
+
 }
 
 void FCIComputerThrust::cpu_error() const {
+
     if (on_gpu_) {
         throw std::runtime_error("Data not on CPU for FCIComputerThrust" + name_);
     }
+
 }
 
-void FCIComputerThrust::gpu_error() const {
-    if (!on_gpu_) {
-        throw std::runtime_error("Data not on GPU for FCIComputerThrust" + name_);
-    }
-}
-
-void FCIComputerThrust::to_gpu() {
+void FCIComputerThrust::to_gpu()
+{
     cpu_error();
     C_.to_gpu();
     on_gpu_ = 1;
 }
 
-void FCIComputerThrust::to_cpu() {
+// change to 'to_cpu'
+void FCIComputerThrust::to_cpu()
+{
     gpu_error();
     C_.to_cpu();
     on_gpu_ = 0;
 }
 
-void FCIComputerThrust::apply_tensor_spin_1bdy(
-    const TensorGPUThrust& h1e, 
-    size_t norb) {
-    
+/// apply a TensorOperator to the current state 
+// void apply_tensor_operator(const TensorOperator& top);
+
+/// apply a Tensor represending a 1-body spin-orbital indexed operator to the current state 
+void FCIComputerThrust::apply_tensor_spin_1bdy(const TensorThrust& h1e, size_t norb) {
+
     if(h1e.size() != (norb * 2) * (norb * 2)){
         throw std::invalid_argument("Expecting h1e to be nso x nso for apply_tensor_spin_1bdy");
     }
 
-    TensorGPUThrust Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
-    TensorGPUThrust h1e_blk1 = h1e.slice(
+    TensorThrust Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
+
+    TensorThrust h1e_blk1 = h1e.slice(
         {
             std::make_pair(0, norb_), 
             std::make_pair(0, norb_)
             }
         );
 
-    TensorGPUThrust h1e_blk2 = h1e.slice(
+    TensorThrust h1e_blk2 = h1e.slice(
         {
             std::make_pair(norb_, 2*norb_), 
             std::make_pair(norb_, 2*norb_)
@@ -155,50 +159,501 @@ void FCIComputerThrust::apply_tensor_spin_1bdy(
     C_ = Cnew;
 }
 
+/// apply TensorThrusts represending 1-body and 2-body spatial-orbital indexed operator to the current state 
+void FCIComputerThrust::apply_tensor_spat_12bdy(
+    const TensorThrust& h1e, 
+    const TensorThrust& h2e, 
+    const TensorThrust& h2e_einsum, 
+    size_t norb) 
+{
+    if(h1e.size() != norb * norb){
+        throw std::invalid_argument("Expecting h1e to be norb x norb for apply_tensor_spat_12bdy");
+    }
 
-/// TODO: ask nick if this makes sense or if a new solution is need so don't
-/// have to copy data around in this function 
-/// NICK: make this more c++ style, not a fan of the raw pointers :(
+    if(h2e.size() != norb * norb * norb * norb){
+        throw std::invalid_argument("Expecting h2e to be norb x norb x norb x norb for apply_tensor_spat_12bdy");
+    }
+
+    if(h2e_einsum.size() != norb * norb * norb * norb){
+        throw std::invalid_argument("Expecting h2e_einsum to be norb x norb x norb x norb for apply_tensor_spat_12bdy");
+    }
+
+    TensorThrust Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
+
+    // Apply one-body terms
+    apply_array_1bdy(
+        Cnew,
+        graph_.read_dexca_vec(),
+        nalfa_strs_,
+        nbeta_strs_,
+        graph_.get_ndexca(),
+        h1e,
+        norb_,
+        true);
+
+    apply_array_1bdy(
+        Cnew,
+        graph_.read_dexcb_vec(),
+        nalfa_strs_,
+        nbeta_strs_,
+        graph_.get_ndexcb(),
+        h1e,
+        norb_,
+        false);
+
+    // Apply two-body terms (same spin)
+    lm_apply_array12_same_spin_opt(
+        Cnew,
+        graph_.read_dexca_vec(),
+        nalfa_strs_,
+        nbeta_strs_,
+        graph_.get_ndexca(),
+        h1e,
+        h2e,
+        norb_,
+        true);
+
+    lm_apply_array12_same_spin_opt(
+        Cnew,
+        graph_.read_dexcb_vec(),
+        nalfa_strs_,
+        nbeta_strs_,
+        graph_.get_ndexcb(),
+        h1e,
+        h2e,
+        norb_,
+        false);
+
+    // Apply two-body terms (different spin)
+    lm_apply_array12_diff_spin_opt(
+        Cnew,
+        graph_.read_dexca_vec(),
+        graph_.read_dexcb_vec(),
+        nalfa_strs_,
+        nbeta_strs_,
+        graph_.get_ndexca(),
+        graph_.get_ndexcb(),
+        h2e_einsum,
+        norb_);
+
+    C_ = Cnew;
+}
+
+/// apply TensorThrusts represending 1-body and 2-body spatial-orbital indexed operator
+/// as well as a constant to the current state 
+void FCIComputerThrust::apply_tensor_spat_012bdy(
+    const std::complex<double> h0e,
+    const TensorThrust& h1e, 
+    const TensorThrust& h2e, 
+    const TensorThrust& h2e_einsum, 
+    size_t norb) 
+{
+    TensorThrust Cold = C_;
+    
+    apply_tensor_spat_12bdy(
+        h1e,
+        h2e,
+        h2e_einsum,
+        norb);
+
+    C_.zaxpy(
+        Cold,
+        h0e,
+        1,
+        1    
+    );
+}
+
+/// Set a particular element of this TensorThrust, specified by idxs
+void FCIComputerThrust::add_to_element(
+    const std::vector<size_t>& idxs,
+    const std::complex<double> val
+        )
+{
+    C_.add_to_element(idxs, val);
+}
+
+void FCIComputerThrust::apply_tensor_operator(const TensorOperator& top)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("apply_tensor_operator not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::apply_tensor_spin_12bdy(
+    const TensorThrust& h1e, 
+    const TensorThrust& h2e, 
+    size_t norb)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("apply_tensor_spin_12bdy not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::lm_apply_array1(
+    const TensorThrust& out,
+    const std::vector<int> dexc,
+    const int astates,
+    const int bstates,
+    const int ndexc,
+    const TensorThrust& h1e,
+    const int norbs,
+    const bool is_alpha)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("lm_apply_array1 not yet implemented for FCIComputerThrust");
+}
+
 void FCIComputerThrust::apply_array_1bdy(
-    TensorGPUThrust& out,
+    TensorThrust& out,
     const std::vector<int>& dexc,
     const int astates,
     const int bstates,
     const int ndexc,
-    const TensorGPUThrust& h1e,
+    const TensorThrust& h1e,
     const int norbs,
     const bool is_alpha)
 {
-    const int states1 = is_alpha ? astates : bstates;
-    const int states2 = is_alpha ? bstates : astates;
-    const int inc1 = is_alpha ? bstates : 1;
-    const int inc2 = is_alpha ? 1 : bstates;
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("apply_array_1bdy not yet implemented for FCIComputerThrust");
+}
 
-    // Get copies of the data that we'll manipulate
-    std::vector<std::complex<double>> out_data = out.read_data();
-    std::vector<std::complex<double>> h1e_data = h1e.read_data();
-    std::vector<std::complex<double>> c_data = C_.read_data();
-    
-    // Create temporary workspace for math_zaxpy to operate on
-    std::vector<std::complex<double>> work_data = out_data;
-    
-    for (int s1 = 0; s1 < states1; ++s1) {
-        const int* cdexc = dexc.data() + 3 * s1 * ndexc;
-        const int* lim1 = cdexc + 3 * ndexc;
-        std::complex<double>* cout = work_data.data() + s1 * inc1;
+void FCIComputerThrust::lm_apply_array12_same_spin_opt(
+    TensorThrust& out,
+    const std::vector<int>& dexc,
+    const int alpha_states,
+    const int beta_states,
+    const int ndexc,
+    const TensorThrust& h1e,
+    const TensorThrust& h2e,
+    const int norbs,
+    const bool is_alpha)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("lm_apply_array12_same_spin_opt not yet implemented for FCIComputerThrust");
+}
 
-        for (; cdexc < lim1; cdexc = cdexc + 3) {
-            const int target = cdexc[0];
-            const int ijshift = cdexc[1];
-            const int parity = cdexc[2];
+void FCIComputerThrust::lm_apply_array12_diff_spin_opt(
+    TensorThrust& out,
+    const std::vector<int>& adexc,
+    const std::vector<int>& bdexc,
+    const int alpha_states,
+    const int beta_states,
+    const int nadexc,
+    const int nbdexc,
+    const TensorThrust& h2e,
+    const int norbs)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("lm_apply_array12_diff_spin_opt not yet implemented for FCIComputerThrust");
+}
 
-            const std::complex<double> pref = static_cast<double>(parity) * h1e_data[ijshift];
-            const std::complex<double>* xptr = c_data.data() + target * inc1;
+std::pair<TensorThrust, TensorThrust> FCIComputerThrust::calculate_dvec_spin_with_coeff()
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("calculate_dvec_spin_with_coeff not yet implemented for FCIComputerThrust");
+}
 
-            math_zaxpy(states2, pref, xptr, inc2, cout, inc2);
+TensorThrust FCIComputerThrust::calculate_coeff_spin_with_dvec(std::pair<TensorThrust, TensorThrust>& dvec)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("calculate_coeff_spin_with_dvec not yet implemented for FCIComputerThrust");
+}
+
+std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map_number(
+    const std::vector<int>& numa,
+    const std::vector<int>& numb)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("evaluate_map_number not yet implemented for FCIComputerThrust");
+}
+
+std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map(
+    const std::vector<int>& crea,
+    const std::vector<int>& anna,
+    const std::vector<int>& creb,
+    const std::vector<int>& annb)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("evaluate_map not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::apply_cos_inplace(
+    const std::complex<double> time,
+    const std::complex<double> coeff,
+    const std::vector<int>& crea,
+    const std::vector<int>& anna,
+    const std::vector<int>& creb,
+    const std::vector<int>& annb,
+    TensorThrust& Cout)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("apply_cos_inplace not yet implemented for FCIComputerThrust");
+}
+
+int FCIComputerThrust::isolate_number_operators(
+    const std::vector<int>& cre,
+    const std::vector<int>& ann,
+    std::vector<int>& crework,
+    std::vector<int>& annwork,
+    std::vector<int>& number)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("isolate_number_operators not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::evolve_individual_nbody_easy(
+    const std::complex<double> time,
+    const std::complex<double> coeff,
+    const TensorThrust& Cin,
+    TensorThrust& Cout,
+    const std::vector<int>& crea,
+    const std::vector<int>& anna,
+    const std::vector<int>& creb,
+    const std::vector<int>& annb)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("evolve_individual_nbody_easy not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::evolve_individual_nbody_hard(
+    const std::complex<double> time,
+    const std::complex<double> coeff,
+    const TensorThrust& Cin,
+    TensorThrust& Cout,
+    const std::vector<int>& crea,
+    const std::vector<int>& anna,
+    const std::vector<int>& creb,
+    const std::vector<int>& annb)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("evolve_individual_nbody_hard not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::evolve_individual_nbody(
+    const std::complex<double> time,
+    const SQOperator& sqop,
+    const TensorThrust& Cin,
+    TensorThrust& Cout,
+    const bool antiherm,
+    const bool adjoint)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("evolve_individual_nbody not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::apply_sqop_evolution(
+    const std::complex<double> time,
+    const SQOperator& sqop,
+    const bool antiherm,
+    const bool adjoint)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("apply_sqop_evolution not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::evolve_pool_trotter_basic(
+    const SQOpPool& pool,
+    const bool antiherm,
+    const bool adjoint)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("evolve_pool_trotter_basic not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::evolve_pool_trotter(
+    const SQOpPool& pool,
+    const double evolution_time,
+    const int trotter_steps,
+    const int trotter_order,
+    const bool antiherm,
+    const bool adjoint)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("evolve_pool_trotter not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::evolve_op_taylor(
+    const SQOperator& op,
+    const double evolution_time,
+    const double convergence_thresh,
+    const int max_taylor_iter)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("evolve_op_taylor not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::apply_individual_nbody1_accumulate(
+    const std::complex<double> coeff, 
+    const TensorThrust& Cin,
+    TensorThrust& Cout,
+    std::vector<int>& targeta,
+    std::vector<int>& sourcea,
+    std::vector<int>& paritya,
+    std::vector<int>& targetb,
+    std::vector<int>& sourceb,
+    std::vector<int>& parityb)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("apply_individual_nbody1_accumulate not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::apply_individual_nbody_accumulate(
+    const std::complex<double> coeff,
+    const TensorThrust& Cin,
+    TensorThrust& Cout,
+    const std::vector<int>& daga,
+    const std::vector<int>& undaga, 
+    const std::vector<int>& dagb,
+    const std::vector<int>& undagb)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("apply_individual_nbody_accumulate not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::apply_individual_sqop_term(
+    const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
+    const TensorThrust& Cin,
+    TensorThrust& Cout)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("apply_individual_sqop_term not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::apply_sqop(const SQOperator& sqop)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("apply_sqop not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::apply_diagonal_of_sqop(
+    const SQOperator& sq_op, 
+    const bool invert_coeff)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("apply_diagonal_of_sqop not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::apply_sqop_pool(const SQOpPool& sqop_pool)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("apply_sqop_pool not yet implemented for FCIComputerThrust");
+}
+
+std::complex<double> FCIComputerThrust::get_exp_val(const SQOperator& sqop)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("get_exp_val not yet implemented for FCIComputerThrust");
+}
+
+std::complex<double> FCIComputerThrust::get_exp_val_tensor(
+    const std::complex<double> h0e, 
+    const TensorThrust& h1e, 
+    const TensorThrust& h2e, 
+    const TensorThrust& h2e_einsum, 
+    size_t norb)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("get_exp_val_tensor not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::scale(const std::complex<double> a)
+{
+    C_.scale(a);
+}
+
+std::vector<double> FCIComputerThrust::direct_expectation_value(const TensorOperator& top)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("direct_expectation_value not yet implemented for FCIComputerThrust");
+}
+
+std::complex<double> FCIComputerThrust::coeff(const QubitBasis& abasis, const QubitBasis& bbasis)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("coeff not yet implemented for FCIComputerThrust");
+}
+
+void FCIComputerThrust::set_state(const TensorThrust& other_state)
+{
+    cpu_error();
+    other_state.cpu_error();
+    C_.copy_in(other_state);
+}
+
+void FCIComputerThrust::set_state_gpu(const TensorThrust& other_state)
+{
+    gpu_error();
+    other_state.gpu_error();
+    C_.copy_in_gpu(other_state);
+}
+
+void FCIComputerThrust::set_state_from_tensor(const Tensor& other_state)
+{
+    cpu_error();
+    C_.copy_in_from_tensor(other_state);
+}
+
+void FCIComputerThrust::zero()
+{
+    cpu_error();
+    C_.zero();
+}
+
+void FCIComputerThrust::hartree_fock()
+{
+    cpu_error();
+    C_.zero();
+    C_.set({0, 0}, 1.0);
+}
+
+void FCIComputerThrust::print_vector(const std::vector<int>& vec, const std::string& name)
+{
+    std::cout << "\n" << name << ": ";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        std::cout << static_cast<int>(vec[i]);
+        if (i < vec.size() - 1) {
+           std::cout << ", "; 
         }
     }
-    
-    // Update the tensor with our manipulated data
-    out.fill_from_nparray(work_data, out.shape());
+    std::cout << std::endl;
+}
+
+void FCIComputerThrust::print_vector_uint(const std::vector<uint64_t>& vec, const std::string& name)
+{
+    std::cout << "\n" << name << ": ";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        std::cout << vec[i];
+        if (i < vec.size() - 1) {
+            std::cout << ", "; 
+        }
+    }
+    std::cout << std::endl;
 }

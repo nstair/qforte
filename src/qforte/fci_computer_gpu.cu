@@ -15,7 +15,6 @@
 #include "qubit_operator.h"
 #include "tensor.h"
 #include "tensor_operator.h"
-//#include "tensor_gpu.h"
 #include "qubit_op_pool.h"
 #include "sq_op_pool.h"
 #include "timer.h"

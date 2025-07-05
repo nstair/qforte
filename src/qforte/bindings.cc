@@ -552,27 +552,19 @@ PYBIND11_MODULE(qforte, m) {
         .def("accumulate", &local_timer::accumulate, "Accumulate the elapsed time for a specific task.")
         .def("__str__", &local_timer::str_table);
 
-    py::class_<TensorGPUThrust>(m, "TensorGPUThrust")
+    py::class_<TensorThrust>(m, "TensorThrust")
         .def(py::init<>())
         .def(py::init<const std::vector<size_t>&, const std::string&, bool>(),
              py::arg("shape"),
              py::arg("name") = "T",
              py::arg("on_gpu") = false)
-        .def("to_gpu", &TensorGPUThrust::to_gpu)
-        .def("to_cpu", &TensorGPUThrust::to_cpu)
-        .def("add", &TensorGPUThrust::add, py::arg("other"))
-        .def("zero", &TensorGPUThrust::zero)
-        .def("read_data", &TensorGPUThrust::read_data)
-        .def("set", &TensorGPUThrust::set, "idx"_a, "value"_a)
-        .def("fill_from_nparray", &TensorGPUThrust::fill_from_nparray, "array"_a, "shape"_a)
-        .def("__repr__", &TensorGPUThrust::str);
-
-    py::class_<FCIComputerThrust>(m, "FCIComputerThrust")
-        .def(py::init<int, int, int, bool>(), "nel"_a, "sz"_a, "norb"_a, "on_gpu"_a)
-        .def("set_element", &FCIComputerThrust::set_element, "idxs"_a, "value"_a)
-        .def("get_element", &FCIComputerThrust::get_element, "idxs"_a)
-        .def("apply_tensor_spin_1bdy", &FCIComputerThrust::apply_tensor_spin_1bdy)
-        .def("__repr__", &FCIComputerThrust::str);
+        .def("to_gpu", &TensorThrust::to_gpu)
+        .def("to_cpu", &TensorThrust::to_cpu)
+        .def("add", &TensorThrust::add, py::arg("other"))
+        .def("zero", &TensorThrust::zero)
+        .def("set", &TensorThrust::set, "idx"_a, "value"_a)
+        .def("fill_from_nparray", &TensorThrust::fill_from_nparray, "array"_a, "shape"_a)
+        .def("__repr__", &TensorThrust::str);
 
     m.def(
         "gate",

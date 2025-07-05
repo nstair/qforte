@@ -11,8 +11,6 @@
 #include "fci_graph.h"
 #include "timer.h"
 
-#include "tensor_thrust.h"
-
 #include <cuda_runtime.h>
 #include <cuComplex.h>
 
@@ -446,8 +444,6 @@ class FCIComputerGPU {
 
     /// The coefficients of the starting state in the tensor product basis
     TensorGPU C_;
-
-    TensorGPUThrust test;
 
     /// The corresponding FCIGraph for this computer
     FCIGraph graph_;
