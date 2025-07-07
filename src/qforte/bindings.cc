@@ -566,6 +566,26 @@ PYBIND11_MODULE(qforte, m) {
         .def("fill_from_nparray", &TensorThrust::fill_from_nparray, "array"_a, "shape"_a)
         .def("__repr__", &TensorThrust::str);
 
+    py::class_<FCIComputerThrust>(m, "FCIComputerThrust")
+        .def(py::init<int, int, int>(), "nel"_a, "sz"_a, "norb"_a, "Make a FCIComputerThrust with nel, sz, and norb")
+        .def("hartree_fock", &FCIComputerThrust::hartree_fock)
+        .def("set_element", &FCIComputerThrust::set_element)
+        .def("to_gpu", &FCIComputerThrust::to_gpu)
+        .def("to_cpu", &FCIComputerThrust::to_cpu)
+        //.def("get_state", &FCIComputerThrust::get_state, py::return_value_policy::copy)
+        //.def("get_state_deep", &FCIComputerThrust::get_state_deep)
+        .def("apply_sqop", &FCIComputerThrust::apply_sqop)
+        .def("str", &FCIComputerThrust::str, 
+            py::arg("print_data") = true, 
+            py::arg("print_complex") = false)
+        .def("__str__", &FCIComputerThrust::str, 
+            py::arg("print_data") = true, 
+            py::arg("print_complex") = false)
+        .def("__repr__", &FCIComputerThrust::str, 
+            py::arg("print_data") = true, 
+            py::arg("print_complex") = false);
+
+    
     m.def(
         "gate",
         [](std::string type, size_t target, std::complex<double> parameter) {

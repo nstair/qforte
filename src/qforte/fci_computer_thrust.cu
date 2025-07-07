@@ -23,6 +23,8 @@
 #include "fci_computer_thrust.h"
 #include "fci_graph.h"
 
+#include "fci_computer_gpu_kernels.cuh"
+
 FCIComputerThrust::FCIComputerThrust(int nel, int sz, int norb, bool on_gpu) : 
     nel_(nel), 
     sz_(sz),
@@ -511,9 +513,144 @@ void FCIComputerThrust::apply_individual_nbody1_accumulate(
     std::vector<int>& sourceb,
     std::vector<int>& parityb)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("apply_individual_nbody1_accumulate not yet implemented for FCIComputerThrust");
+    // local_timer my_timer = local_timer();
+    timer_.reset();
+    if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
+        throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
+    }
+
+    if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
+        throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
+    }
+    // only part that has kernel
+
+    std::vector<cuDoubleComplex> paritya_complex(paritya.size());
+    std::vector<cuDoubleComplex> parityb_complex(parityb.size());
+
+    for (size_t i = 0; i < paritya.size(); ++i) {
+        paritya_complex[i] = make_cuDoubleComplex(paritya[i], 0.0);
+    }
+
+    for (size_t i = 0; i < parityb.size(); ++i) {
+        parityb_complex[i] = make_cuDoubleComplex(parityb[i], 0.0);
+    }
+
+    // make device pointers out of all the things coming in - use cuda mem copy to a device pointer
+    // my_timer.record("error checks");
+    // my_timer.reset();
+    int* d_sourcea;
+    int* d_sourceb;
+    int* d_targeta;
+    int* d_targetb;
+    // int* d_paritya;
+    // int* d_parityb;
+
+    cuDoubleComplex* d_paritya;
+    cuDoubleComplex* d_parityb;
+
+    // cuDoubleComplex* d_Cin;
+    // cuDoubleComplex* d_Cout;
+
+    // cumalloc for these
+
+    int sourcea_mem = sourcea.size() * sizeof(int);
+    int sourceb_mem = sourceb.size() * sizeof(int);
+    int targetb_mem = targetb.size() * sizeof(int);
+    int targeta_mem = targeta.size() * sizeof(int);
+    // int paritya_mem = paritya.size() * sizeof(int);
+    // int parityb_mem = parityb.size() * sizeof(int);
+
+    int paritya_mem = paritya.size() * sizeof(cuDoubleComplex);
+    int parityb_mem = parityb.size() * sizeof(cuDoubleComplex);
+
+    int tensor_mem = Cin.size() * sizeof(cuDoubleComplex);
+
+    timer_.acc_record("initialization in nbody1_acc");
+    timer_.reset();
+
+    // my_timer.record("making pointers");
+    // my_timer.reset();
+    cudaMalloc(&d_sourcea, sourcea_mem);
+    cudaMalloc(&d_sourceb, sourceb_mem);
+    cudaMalloc(&d_targeta, targeta_mem);
+    cudaMalloc(&d_targetb, targetb_mem);
+
+    cudaMalloc(&d_paritya, paritya_mem);
+    cudaMalloc(&d_parityb, parityb_mem);
+
+    timer_.acc_record("cuda malloc in nbody1_acc");
+    timer_.reset();
+
+    // cudaMalloc(&d_Cin,  tensor_mem);
+    // cudaMalloc(&d_Cout, tensor_mem);
+
+    // my_timer.record("cudamallocs");
+    // my_timer.reset();
+
+    cudaMemcpy(d_sourcea, sourcea.data(), sourcea_mem, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_sourceb, sourceb.data(), sourceb_mem, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_targeta, targeta.data(), targeta_mem, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_targetb, targetb.data(), targetb_mem, cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_paritya, paritya.data(), paritya_mem, cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_parityb, parityb.data(), parityb_mem, cudaMemcpyHostToDevice);
+
+    cudaMemcpy(d_paritya, paritya_complex.data(), paritya_mem, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_parityb, parityb_complex.data(), parityb_mem, cudaMemcpyHostToDevice);
+
+    timer_.acc_record("cuda memcpy in nbody1_acc");
+    timer_.reset();
+
+    // cudaMemcpy(d_Cin,  Cin.read_h_data().data(),  tensor_mem, cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_Cout, Cout.read_h_data().data(), tensor_mem, cudaMemcpyHostToDevice);
+
+    // my_timer.record("cudamemcpy");
+    // my_timer.reset();
+
+    cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
+
+    apply_individual_nbody1_accumulate_wrapper(
+        cu_coeff, 
+        thrust::raw_pointer_cast(Cin.read_d_data().data()), 
+        thrust::raw_pointer_cast(Cout.d_data().data()), 
+        d_sourcea,
+        d_targeta,
+        d_paritya,
+        d_sourceb,
+        d_targetb,
+        d_parityb,
+        nbeta_strs_,
+        targeta.size(),
+        targetb.size(),
+        tensor_mem);
+
+
+    timer_.acc_record("calling gpu function");
+    timer_.reset();
+    // my_timer.record("gpu function");
+    // my_timer.reset();
+
+
+    // cudaMemcpy(Cout.data().data(), d_Cout, tensor_mem, cudaMemcpyDeviceToHost);
+
+
+    cudaFree(d_sourcea);
+    cudaFree(d_sourceb);
+    cudaFree(d_targeta);
+    cudaFree(d_targetb);
+    cudaFree(d_paritya);
+    cudaFree(d_parityb);
+    // cudaFree(d_Cin);
+    // cudaFree(d_Cout);
+
+    timer_.acc_record("cudafree");
+    timer_.reset();
+
+
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
+        throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
+    }    
 }
 
 void FCIComputerThrust::apply_individual_nbody_accumulate(
@@ -525,9 +662,80 @@ void FCIComputerThrust::apply_individual_nbody_accumulate(
     const std::vector<int>& dagb,
     const std::vector<int>& undagb)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("apply_individual_nbody_accumulate not yet implemented for FCIComputerThrust");
+    if((daga.size() != undaga.size()) or (dagb.size() != undagb.size())){
+        throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
+    }
+
+    local_timer my_timer = local_timer();
+    timer_.reset();
+
+    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ualfamap = graph_.make_mapping_each(
+        true,
+        daga,
+        undaga);
+
+    timer_.acc_record("first 'make_mapping_each' in apply_individual_nbody_accumulate");
+    timer_.reset();
+
+    if (std::get<0>(ualfamap) == 0) {
+        return;
+    }
+
+    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ubetamap = graph_.make_mapping_each(
+        false,
+        dagb,
+        undagb);
+
+    timer_.acc_record("second 'make_mapping_each' in apply_individual_nbody_accumulate");
+    timer_.reset();
+
+    if (std::get<0>(ubetamap) == 0) {
+        return;
+    }
+
+    std::vector<int> sourcea(std::get<0>(ualfamap));
+    std::vector<int> targeta(std::get<0>(ualfamap));
+    std::vector<int> paritya(std::get<0>(ualfamap));
+    std::vector<int> sourceb(std::get<0>(ubetamap));
+    std::vector<int> targetb(std::get<0>(ubetamap));
+    std::vector<int> parityb(std::get<0>(ubetamap));
+
+    timer_.acc_record("a lot of initialization in apply_individual_nbody_accumulate");
+    timer_.reset();
+
+    /// NICK: All this can be done in the make_mapping_each fucntion.
+    /// Maybe try like a make_abbrev_mapping_each
+
+    /// NICK: Might be slow, check this out...
+    for (int i = 0; i < std::get<0>(ualfamap); i++) {
+        sourcea[i] = std::get<1>(ualfamap)[i];
+        targeta[i] = graph_.get_aind_for_str(std::get<2>(ualfamap)[i]);
+        paritya[i] = 1.0 - 2.0 * std::get<3>(ualfamap)[i];
+    }
+
+    timer_.acc_record("first for loop in apply_individual_nbody_accumulate");
+    timer_.reset();
+
+    for (int i = 0; i < std::get<0>(ubetamap); i++) {
+        sourceb[i] = std::get<1>(ubetamap)[i];
+        targetb[i] = graph_.get_bind_for_str(std::get<2>(ubetamap)[i]);
+        parityb[i] = 1.0 - 2.0 * std::get<3>(ubetamap)[i];
+    }
+
+    timer_.acc_record("second for loop in apply_individual_nbody_accumulate");
+    timer_.reset();
+    // std::cout << my_timer.str_table() << std::endl;
+    // this is where the if statement goes
+    apply_individual_nbody1_accumulate(
+        coeff, 
+        Cin,
+        Cout,
+        sourcea,
+        targeta,
+        paritya,
+        sourceb,
+        targetb,
+        parityb);    
 }
 
 void FCIComputerThrust::apply_individual_sqop_term(
@@ -535,16 +743,89 @@ void FCIComputerThrust::apply_individual_sqop_term(
     const TensorThrust& Cin,
     TensorThrust& Cout)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("apply_individual_sqop_term not yet implemented for FCIComputerThrust");
+    std::vector<int> crea;
+    std::vector<int> anna;
+
+    std::vector<int> creb;
+    std::vector<int> annb;
+
+    local_timer my_timer = local_timer();
+    timer_.reset();
+
+    for(size_t i = 0; i < std::get<1>(term).size(); i++){
+        if(std::get<1>(term)[i]%2 == 0){
+            crea.push_back(std::floor(std::get<1>(term)[i] / 2));
+        } else {
+            creb.push_back(std::floor(std::get<1>(term)[i] / 2));
+        }
+    }
+
+    timer_.acc_record("first loop in apply_individual_sqop_term");
+    timer_.reset();
+
+    for(size_t i = 0; i < std::get<2>(term).size(); i++){
+        if(std::get<2>(term)[i]%2 == 0){
+            anna.push_back(std::floor(std::get<2>(term)[i] / 2));
+        } else {
+            annb.push_back(std::floor(std::get<2>(term)[i] / 2));
+        }
+    }
+
+    timer_.acc_record("second loop in apply_individual_sqop_term");
+    timer_.reset();
+
+    if (std::get<1>(term).size() != std::get<2>(term).size()) {
+        throw std::invalid_argument("Each term must have same number of anihilators and creators");
+    }   
+
+    std::vector<size_t> ops1(std::get<1>(term));
+    std::vector<size_t> ops2(std::get<2>(term));
+    ops1.insert(ops1.end(), ops2.begin(), ops2.end());
+
+    int nswaps = parity_sort(ops1);
+    timer_.acc_record("some parity things");
+    timer_.reset();
+    // std::cout << my_timer.str_table() << std::endl;
+
+    apply_individual_nbody_accumulate(
+        pow(-1, nswaps) * std::get<0>(term),
+        Cin,
+        Cout,
+        crea,
+        anna, 
+        creb,
+        annb);
 }
 
 void FCIComputerThrust::apply_sqop(const SQOperator& sqop)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("apply_sqop not yet implemented for FCIComputerThrust");
+     C_.gpu_error();
+    TensorThrust Cin(C_.shape(), "Cin", true);
+    Cin.copy_in_gpu(C_);
+
+
+    
+    local_timer my_timer = local_timer();
+    timer_.reset();
+    
+    // cudaMemcpy(Cin.d_data(), C_.d_data(), Cin.size() * sizeof(cuDoubleComplex))
+
+    C_.zero_gpu();
+
+    timer_.acc_record("making tensor things");
+    timer_.reset();
+
+    for (const auto& term : sqop.terms()) {
+        if(std::abs(std::get<0>(term)) > compute_threshold_){
+        apply_individual_sqop_term(
+            term,
+            Cin,
+            C_);
+        }
+    }
+
+    timer_.acc_record("first for loop in apply_sqop");
+    std::cout << timer_.acc_str_table() << std::endl;
 }
 
 void FCIComputerThrust::apply_diagonal_of_sqop(
