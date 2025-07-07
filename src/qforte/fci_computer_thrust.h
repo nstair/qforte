@@ -260,6 +260,25 @@ class FCIComputerThrust {
 
     std::vector<double> direct_expectation_value(const TensorOperator& top);
 
+    /// return a string representing the state of the computer
+    /// TODO(Nick) Implement (this will be a pain :/)
+    std::string str(
+      bool print_data,
+      bool print_complex
+      ) const 
+    {
+      return C_.str(print_data, print_complex); 
+    }
+
+    /// return a tensor of the coeficients
+    TensorThrust get_state() const { return C_; }
+
+    /// return a tensor of the coeficients
+    TensorThrust get_state_deep() const { 
+      TensorThrust Cprime = C_; 
+      return Cprime; 
+    }
+
     std::complex<double> coeff(const QubitBasis& abasis, const QubitBasis& bbasis);
 
     /// return the dot product of the current FCIComputerThrust state (as the ket) and the HF state (i.e. <HF|C_>)
