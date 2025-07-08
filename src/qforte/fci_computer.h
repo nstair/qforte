@@ -42,6 +42,9 @@ class FCIComputer {
             const std::complex<double> val
             );
 
+    /// Get a particular element of tis Tensor, specified by idxs
+    std::complex<double> get_element(const std::vector<size_t>& idxs) const;
+
     /// Set a particular element of tis Tensor, specified by idxs
     void add_to_element(const std::vector<size_t>& idxs,
             const std::complex<double> val

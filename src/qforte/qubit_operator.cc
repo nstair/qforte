@@ -79,6 +79,17 @@ void QubitOperator::canonical_order() {
     }
 }
 
+double QubitOperator::get_l1_norm_sq() const {
+    double norm = 0.0;
+    for (const auto& term : terms_) {
+        if (term.second.size() == 0) {
+            continue; // skip empty circuits
+        }
+        norm += std::norm(term.first);
+    }
+    return norm * norm;
+}
+
 void QubitOperator::simplify(bool combine_like_terms) {
     canonical_order();
     std::map<Circuit, std::complex<double>> uniqe_trms;

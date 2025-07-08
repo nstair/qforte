@@ -7,6 +7,7 @@ the ansatz circut and potential supporting utility functions.
 """
 
 import qforte as qf
+import numpy as np
 
 from qforte.utils.state_prep import build_Uprep
 from qforte.utils.trotterization import trotterize
@@ -118,4 +119,71 @@ class UCC:
             resids_over_denoms.append(res_mu)
 
         return resids_over_denoms
+    
+    def get_im_res_over_mpdenom_dt(self, residuals, dt):
+        """This function returns a vector given by the residuals dividied by the
+        respective Moller Plesset denominators.
+
+        Parameters
+        ----------
+        residuals : list of floats
+            The list of (real) floating point numbers which represent the
+            residuals.
+        """
+
+        im_res_over_mpdenom_dt = []
+
+        # loop over toperators
+        for mu, m in enumerate(self._tops):
+            sq_op = self._pool_obj[m][1]
+
+            temp_idx = sq_op.terms()[0][2][-1]
+            if temp_idx < int(sum(self._ref)/2): # if temp_idx is an occupied idx
+                sq_creators = sq_op.terms()[0][1]
+                sq_annihilators = sq_op.terms()[0][2]
+            else:
+                sq_creators = sq_op.terms()[0][2]
+                sq_annihilators = sq_op.terms()[0][1]
+
+            denom = sum(self._orb_e[x] for x in sq_annihilators) - sum(self._orb_e[x] for x in sq_creators)
+
+            res_mu = np.imag(residuals[mu]) / (denom * dt)
+
+            im_res_over_mpdenom_dt.append(res_mu)
+
+        return im_res_over_mpdenom_dt
+    
+    def get_im_res_times_eidt_mpdenom(self, residuals, dt):
+        """This function returns a vector given by the residuals dividied by the
+        respective Moller Plesset denominators.
+
+        Parameters
+        ----------
+        residuals : list of floats
+            The list of (real) floating point numbers which represent the
+            residuals.
+        """
+
+        im_res_times_eidt_mpdenom = []
+
+        # loop over toperators
+        for mu, m in enumerate(self._tops):
+            sq_op = self._pool_obj[m][1]
+
+            temp_idx = sq_op.terms()[0][2][-1]
+            if temp_idx < int(sum(self._ref)/2): # if temp_idx is an occupied idx
+                sq_creators = sq_op.terms()[0][1]
+                sq_annihilators = sq_op.terms()[0][2]
+            else:
+                sq_creators = sq_op.terms()[0][2]
+                sq_annihilators = sq_op.terms()[0][1]
+
+            denom = sum(self._orb_e[x] for x in sq_annihilators) - sum(self._orb_e[x] for x in sq_creators)
+
+            res_mu = np.imag(residuals[mu] * np.exp( 1.0j * denom * dt))
+
+            im_res_times_eidt_mpdenom.append(res_mu)
+
+        return im_res_times_eidt_mpdenom
+
 

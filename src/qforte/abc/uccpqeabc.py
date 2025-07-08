@@ -63,22 +63,22 @@ class UCCPQE(PQE, UCC):
         self._k_counter += 1
 
         if(self._k_counter == 1):
-            print('\n    k iteration         Energy               dE           Nrvec ev      Nrm ev*         ||r||')
-            print('--------------------------------------------------------------------------------------------------')
+            print('\n    k iteration         Energy               dE           Nrvec ev      Nrm ev*         ||r||           Nshots')
+            print('--------------------------------------------------------------------------------------------------------------------')
             if (self._print_summary_file):
                 f = open("summary.dat", "w+", buffering=1)
-                f.write('\n#    k iteration         Energy               dE           Nrvec ev      Nrm ev*         ||r||')
-                f.write('\n#--------------------------------------------------------------------------------------------------')
+                f.write('\n#    k iteration         Energy               dE           Nrvec ev      Nrm ev*         ||r||           Nshots')
+                f.write('\n#--------------------------------------------------------------------------------------------------------------------')
                 f.close()
         if(self._computer_type == 'fock'):
             self._curr_energy = self.energy_feval(x)
         # self._curr_energy = self.energy_feval(x)
         dE = self._curr_energy - self._prev_energy
-        print(f'     {self._k_counter:7}        {self._curr_energy:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}')
+        print(f'     {self._k_counter:7}        {self._curr_energy:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}       {self._n_shots:2.3e}')
 
         if (self._print_summary_file):
             f = open("summary.dat", "a", buffering=1)
-            f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.12f}      {dE:+12.12f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.12f}')
+            f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.12f}      {dE:+12.12f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.12f}       {self._n_shots:2.3e}')
             f.close()
 
         self._prev_energy = self._curr_energy
@@ -90,7 +90,9 @@ class UCCPQE(PQE, UCC):
         return sum_residual_vector_square
 
     def solve(self):
-        if self._optimizer.lower() == 'jacobi':
+        if self._optimizer.lower() == 'rotation':
+            self.rotation_solver()
+        elif self._optimizer.lower() == 'jacobi':
             self.jacobi_solver()
         elif self._optimizer.lower() in ['nelder-mead', 'powell', 'bfgs', 'l-bfgs-b', 'cg', 'slsqp']:
             self.scipy_solver(self.get_sum_residual_square)

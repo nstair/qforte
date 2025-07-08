@@ -13,6 +13,7 @@
 #include <cstring>
 #include <utility>
 #include <algorithm>
+#include <random>
 // namespace lightspeed { 
 
 size_t Tensor::total_memory__ = 0;
@@ -589,6 +590,46 @@ std::vector<std::vector<size_t>> Tensor::get_nonzero_tidxs() const
     }
     return nonzero_tidxs;
 }
+
+std::vector<size_t> Tensor::sample_index_by_weight_normal(uint64_t seed) const {
+    // 1) Compute total weight = sum |data[i]|^2
+    // double total = 0.0;
+    // for (size_t i = 0; i < size_; ++i) {
+    //     total += std::norm(data_[i]);
+    // }
+    // if (total == 0.0) {
+    //     throw std::runtime_error("Cannot sample from all‐zero tensor");
+    // }
+
+    // // 2) Initialize RNG
+    std::mt19937_64 gen;
+    if (seed != 0) {
+        gen.seed(seed);
+    } else {
+        gen.seed(std::random_device{}());
+    }
+    // std::uniform_real_distribution<double> dist(0.0, total);
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    double r = dist(gen);
+
+    // 3) Find vector‐index vidx where cumulative weight ≥ r
+    double cum = 0.0;
+    size_t vidx = 0;
+    for (; vidx < size_; ++vidx) {
+        cum += std::norm(data_[vidx]);
+        if (cum >= r) break;
+    }
+    if (vidx == size_) vidx = size_ - 1;  // safety
+
+    // 4) Convert flat index to multi‐dimensional index
+    std::vector<size_t> tidx = vidx_to_tidx(vidx);
+    // std::vector<int> result(tidx.size());
+    // for (size_t d = 0; d < tidx.size(); ++d) {
+    //     result[d] = static_cast<int>(tidx[d]);
+    // }
+    return tidx;
+}
+
 
 // TODO(Tyler?): Column printing is a little clunky for complex
 // need to fix

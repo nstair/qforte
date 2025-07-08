@@ -43,6 +43,9 @@ class QubitOperator {
     /// and contract all pauli operators
     void canonical_order();
 
+    /// returns the squared L1 norm of the operator = (sum_k |h_k|)^2
+    double get_l1_norm_sq() const;
+
     /// Put all operators in the linear combination in canonical form AND THEN
     /// combine like terms.
     void simplify(bool combine_like_terms=true);

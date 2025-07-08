@@ -78,6 +78,13 @@ void FCIComputer::set_element(
     C_.set(idxs, val);
 }
 
+std::complex<double> FCIComputer::get_element(
+    const std::vector<size_t>& idxs
+        ) const
+{
+    return C_.get(idxs);
+}
+
 /// apply a TensorOperator to the current state 
 void apply_tensor_operator(const TensorOperator& top);
 

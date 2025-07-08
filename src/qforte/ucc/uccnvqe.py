@@ -62,6 +62,7 @@ class UCCNVQE(UCCVQE):
         self._n_classical_params = 0
         self._n_cnot = 0
         self._n_pauli_trm_measures = 0
+        self._n_shots = 0
         self._res_vec_evals = 0
         self._res_m_evals = 0
         self._k_counter = 0
@@ -135,6 +136,7 @@ class UCCNVQE(UCCVQE):
         # General algorithm options.
         print('Trial reference state:                   ',  ref_string(self._ref, self._nqb))
         print('Number of Hamiltonian Pauli terms:       ',  self._Nl)
+        print('Hamiltonian Sq L1 norm:                  ',  round(self._ham_l1_norm_sq, 4))
         print('Trial state preparation method:          ',  self._state_prep_type)
         print('Trotter order (rho):                     ',  self._trotter_order)
         print('Trotter number (m):                      ',  self._trotter_number)

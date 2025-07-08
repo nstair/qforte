@@ -221,6 +221,13 @@ Tensor slice(std::vector<std::pair<size_t, size_t>> idxs) const;
 
 std::vector<std::vector<size_t>> get_nonzero_tidxs() const;
 
+/**
+ * Sample one tensor‐index with probability ∝ |data_[i]|^2.
+ * ASSUMES THAT THE TENSOR IS NORMALIZED, i.e., sum |data_[i]|^2 = 1.
+ * If `seed` != 0, the RNG is seeded with it; otherwise uses std::random_device.
+ */
+std::vector<size_t> sample_index_by_weight_normal(uint64_t seed = 0) const;
+
 // => Printing <= //
 
 /**

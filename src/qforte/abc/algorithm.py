@@ -135,6 +135,8 @@ class Algorithm(ABC):
         self._qb_ham = system.hamiltonian
         self._sq_ham = system.sq_hamiltonian
 
+        self._ham_l1_norm_sq = self._qb_ham.get_l1_norm_sq()
+
         self._zero_body_energy = 0.0
 
         if(hasattr(system, 'nuclear_repulsion_energy')):
