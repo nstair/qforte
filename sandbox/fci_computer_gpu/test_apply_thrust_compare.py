@@ -75,28 +75,45 @@ elif(reference == 'random'):
  
 timer.reset()
 fci_comp.apply_sqop(mol.sq_hamiltonian)
-
 timer.record('normal')
-E1 = fci_comp.get_hf_dot() 
 
 fci_comp_gpu.to_gpu()
 timer.reset()
-
 fci_comp_gpu.apply_sqop(mol.sq_hamiltonian)
 timer.record('gpu')
 fci_comp_gpu.to_cpu()
 
-E2 = fci_comp_gpu.get_hf_dot() 
 
 fci_comp_thrust.to_gpu()
 timer.reset()
-
 fci_comp_thrust.apply_sqop(mol.sq_hamiltonian)
 timer.record('thrust')
 fci_comp_thrust.to_cpu()
 
-E3 = fci_comp_thrust.get_hf_dot()
- 
+# now instead of comparing enegrgies compare the norm of the difference between the states
+
+# init state tensors for each computer
+comp_state = fci_comp.get_state()
+comp_state_gpu = qf.Tensor(comp_state.shape(), "comp_state_gpu")
+comp_state_thrust = qf.Tensor(comp_state.shape(), "comp_state_thrust")
+
+# copy the state tensors to the gpu and thrust versions
+fci_comp_gpu.copy_to_tensor(comp_state_gpu)
+fci_comp_thrust.copy_to_tensor(comp_state_thrust)
+
+# subtract the original state from the gpu and thrust states
+comp_state_gpu.subtract(comp_state)
+comp_state_thrust.subtract(comp_state)
+
+# compute the norms of the differences
+norm_gpu = comp_state_gpu.norm()
+norm_thrust = comp_state_thrust.norm()
+
+# get the energies from each computer
+Ecomp = fci_comp.get_hf_dot()
+Ecomp_gpu = fci_comp_gpu.get_hf_dot()
+Ecomp_thrust = fci_comp_thrust.get_hf_dot()
+
 if(norb < 6): 
     print("\n Final FCIcomp Stuff")
     print("===========================")
@@ -115,6 +132,14 @@ print(f" Efci:               {mol.fci_energy}")
 print(f" Ehf:                {mol.hf_energy}")
 print(f" Enr:                {mol.nuclear_repulsion_energy}")
 print(f" Eelec:              {mol.hf_energy - mol.nuclear_repulsion_energy}")
-print(f" E1 (from cpu):   {E1}")
-print(f" E2 (from gpu):   {E2}")
-print(f" E3 (from thrust): {E3}")
+
+print("\n Norms of State Differences")
+print("======================================================")
+print(f" ||Cgpu - Ccomp||:           {norm_gpu}")
+print(f" ||Cthrust - Ccomp||:        {norm_thrust}")
+
+print("\n Energies")
+print("======================================================")
+print(f" Ecomp (from cpu):             {Ecomp}")
+print(f" Ecomp_gpu (from gpu):         {Ecomp_gpu}")
+print(f" Ecomp_thrust (from thrust):   {Ecomp_thrust}")

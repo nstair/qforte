@@ -403,6 +403,7 @@ class FCIComputerGPU {
 
     local_timer get_acc_timer() { return timer_; }
 
+    void copy_to_tensor(Tensor& tensor) const;
 
   private:
 

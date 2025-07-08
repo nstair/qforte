@@ -515,6 +515,15 @@ void TensorThrust::copy_in_from_tensor(const Tensor& other)
     thrust::copy(other.read_data().begin(), other.read_data().end(), h_data_.begin());
 }
 
+void TensorThrust::copy_to_tensor(Tensor& dest) const
+{
+    cpu_error();
+    dest.shape_error(shape_);
+    
+    // Copy data from TensorThrust's host vector to the Tensor
+    std::copy(h_data_.begin(), h_data_.end(), dest.data().begin());
+}
+
 void TensorThrust::subtract(const TensorThrust& other) {
     shape_error(other.shape());
     

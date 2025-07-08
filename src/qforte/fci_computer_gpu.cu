@@ -1702,5 +1702,7 @@ void FCIComputerGPU::print_vector_uint(const std::vector<uint64_t>& vec, const s
     std::cout << std::endl;
 }
 
-
-
+void FCIComputerGPU::copy_to_tensor(Tensor& tensor) const {
+    cpu_error();
+    C_.copy_to_tensor(tensor);
+}

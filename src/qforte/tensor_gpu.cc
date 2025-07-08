@@ -536,6 +536,12 @@ void TensorGPU::copy_in_from_tensor(const Tensor& other)
     std::memcpy(h_data_.data(), other.read_data().data(), sizeof(std::complex<double>)*size_);    
 }
 
+void TensorGPU::copy_to_tensor(Tensor& dest) const {
+    cpu_error();
+    dest.shape_error(shape());
+    std::memcpy(dest.data().data(), h_data_.data(), sizeof(std::complex<double>)*size_);
+}
+
 void TensorGPU::subtract(const TensorGPU& other){
 
     shape_error(other.shape());
