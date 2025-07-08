@@ -318,6 +318,12 @@ class FCIComputerThrust {
 
     void print_vector_uint(const std::vector<uint64_t>& vec, const std::string& name);
 
+    /* Below are new methods for getting tensor data out of the computer */
+
+    void copy_to_tensor(Tensor& tensor) const;
+    void copy_to_tensor_thrust_gpu(TensorThrust& tensor) const;
+    void copy_to_tensor_thrust_cpu(TensorThrust& tensor) const;
+
   private:
 
     bool on_gpu_;

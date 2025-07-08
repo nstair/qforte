@@ -183,6 +183,8 @@ void copy_in_gpu(const TensorThrust& other);
 
 void copy_in_from_tensor(const Tensor& other);
 
+void copy_to_tensor(Tensor& dest) const;
+
 /**
  * Update this Tensor (y) to be y = a * x + b * y
  * Throw if x is not same shape 

@@ -938,3 +938,22 @@ void FCIComputerThrust::print_vector_uint(const std::vector<uint64_t>& vec, cons
     }
     std::cout << std::endl;
 }
+
+/* New methods for copying out data */
+void FCIComputerThrust::copy_to_tensor(Tensor& tensor) const
+{
+    cpu_error();
+    C_.copy_to_tensor(tensor);
+}
+
+void FCIComputerThrust::copy_to_tensor_thrust_gpu(TensorThrust& tensor) const
+{
+    gpu_error();
+    tensor.copy_in_gpu(C_);
+}
+
+void FCIComputerThrust::copy_to_tensor_thrust_cpu(TensorThrust& tensor) const
+{
+    cpu_error();
+    tensor.copy_in(C_);
+}
