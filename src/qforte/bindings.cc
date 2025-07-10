@@ -570,17 +570,55 @@ PYBIND11_MODULE(qforte, m) {
     py::class_<FCIComputerThrust>(m, "FCIComputerThrust")
         .def(py::init<int, int, int>(), "nel"_a, "sz"_a, "norb"_a, "Make a FCIComputerThrust with nel, sz, and norb")
         .def("hartree_fock", &FCIComputerThrust::hartree_fock)
+        .def("get_hf_dot", &FCIComputerThrust::get_hf_dot)
         .def("set_element", &FCIComputerThrust::set_element)
         .def("to_gpu", &FCIComputerThrust::to_gpu)
         .def("to_cpu", &FCIComputerThrust::to_cpu)
+        .def("copy_to_tensor", &FCIComputerThrust::copy_to_tensor)
+        .def("get_acc_timer", &FCIComputerThrust::get_acc_timer)
+        .def("set_state", &FCIComputerThrust::set_state)
+        .def("set_state_gpu", &FCIComputerThrust::set_state_gpu)
         .def("set_state_from_tensor", &FCIComputerThrust::set_state_from_tensor)
-        .def("get_hf_dot", &FCIComputerThrust::get_hf_dot)
+        .def("apply_tensor_spin_1bdy", &FCIComputerThrust::apply_tensor_spin_1bdy)
+        // .def("apply_tensor_spin_12bdy", &FCIComputerThrust::apply_tensor_spin_12bdy)
+        // .def("apply_tensor_spin_012bdy", &FCIComputerThrust::apply_tensor_spin_012bdy)
+        .def("apply_tensor_spat_12bdy", &FCIComputerThrust::apply_tensor_spat_12bdy)
+        .def("apply_tensor_spat_012bdy", &FCIComputerThrust::apply_tensor_spat_012bdy)
+        .def("apply_individual_sqop_term", &FCIComputerThrust::apply_individual_sqop_term)
+        .def("apply_sqop", &FCIComputerThrust::apply_sqop)
+        .def("apply_diagonal_of_sqop", &FCIComputerThrust::apply_diagonal_of_sqop, 
+            py::arg("sqop"),
+            py::arg("invert_coeff") = true
+            )
+        .def("apply_sqop_pool", &FCIComputerThrust::apply_sqop_pool)
+        .def("get_exp_val", &FCIComputerThrust::get_exp_val)
+        .def("get_exp_val_tensor", &FCIComputerThrust::get_exp_val_tensor)
+        .def("evolve_op_taylor", &FCIComputerThrust::evolve_op_taylor)
+        .def("apply_sqop_evolution", &FCIComputerThrust::apply_sqop_evolution, 
+            py::arg("time"),
+            py::arg("sqop"),
+            py::arg("antiherm") = false,
+            py::arg("adjoint") = false
+            )
+        .def("evolve_pool_trotter_basic", &FCIComputerThrust::evolve_pool_trotter_basic, 
+            py::arg("sqop"),
+            py::arg("antiherm") = false,
+            py::arg("adjoint") = false
+            )
+        .def("evolve_pool_trotter", &FCIComputerThrust::evolve_pool_trotter, 
+            py::arg("sqop"),
+            py::arg("evolution_time"),
+            py::arg("trotter_steps"),
+            py::arg("trotter_order"),
+            py::arg("antiherm") = false,
+            py::arg("adjoint") = false
+            )
+        .def("set_state", &FCIComputerThrust::set_state)
+        //.def("get_state", &FCIComputerThrust::get_state)
+        //.def("get_state_deep", &FCIComputerThrust::get_state_deep)
         .def("copy_to_tensor", &FCIComputerThrust::copy_to_tensor)
         .def("copy_to_tensor_thrust_gpu", &FCIComputerThrust::copy_to_tensor_thrust_gpu)
         .def("copy_to_tensor_thrust_cpu", &FCIComputerThrust::copy_to_tensor_thrust_cpu)
-        //.def("get_state", &FCIComputerThrust::get_state, py::return_value_policy::copy)
-        //.def("get_state_deep", &FCIComputerThrust::get_state_deep)
-        .def("apply_sqop", &FCIComputerThrust::apply_sqop)
         .def("str", &FCIComputerThrust::str, 
             py::arg("print_data") = true, 
             py::arg("print_complex") = false)
@@ -590,7 +628,6 @@ PYBIND11_MODULE(qforte, m) {
         .def("__repr__", &FCIComputerThrust::str, 
             py::arg("print_data") = true, 
             py::arg("print_complex") = false);
-
     
     m.def(
         "gate",
