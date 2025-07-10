@@ -275,13 +275,17 @@ void FCIComputerThrust::add_to_element(
     C_.add_to_element(idxs, val);
 }
 
+/// TODO: Not implemented in GPU so skipping
+/*
 void FCIComputerThrust::apply_tensor_operator(const TensorOperator& top)
 {
     // Implementation would be similar to FCIComputerGPU but using TensorThrust
     // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("apply_tensor_operator not yet implemented for FCIComputerThrust");
-}
+    throw std::runtime_error("");
+}*/
 
+/// TODO: this is commented out in FCIComputerGPU, so skipping
+/*
 void FCIComputerThrust::apply_tensor_spin_12bdy(
     const TensorThrust& h1e, 
     const TensorThrust& h2e, 
@@ -289,9 +293,11 @@ void FCIComputerThrust::apply_tensor_spin_12bdy(
 {
     // Implementation would be similar to FCIComputerGPU but using TensorThrust
     // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("apply_tensor_spin_12bdy not yet implemented for FCIComputerThrust");
-}
+    throw std::runtime_error("");
+}*/
 
+/// TODO: in GPU header but not implemented in GPU source
+/*
 void FCIComputerThrust::lm_apply_array1(
     const TensorThrust& out,
     const std::vector<int> dexc,
@@ -304,8 +310,8 @@ void FCIComputerThrust::lm_apply_array1(
 {
     // Implementation would be similar to FCIComputerGPU but using TensorThrust
     // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("lm_apply_array1 not yet implemented for FCIComputerThrust");
-}
+    throw std::runtime_error("");
+}*/
 
 void FCIComputerThrust::apply_array_1bdy(
     TensorThrust& out,
@@ -317,9 +323,29 @@ void FCIComputerThrust::apply_array_1bdy(
     const int norbs,
     const bool is_alpha)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("apply_array_1bdy not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    const int states1 = is_alpha ? astates : bstates;
+    const int states2 = is_alpha ? bstates : astates;
+    const int inc1 = is_alpha ? bstates : 1;
+    const int inc2 = is_alpha ? 1 : bstates;
+
+    for (int s1 = 0; s1 < states1; ++s1) {
+        const int* cdexc = dexc.data() + 3 * s1 * ndexc;
+        const int* lim1 = cdexc + 3 * ndexc;
+        std::complex<double>* cout = out.data().data() + s1 * inc1;
+
+        for (; cdexc < lim1; cdexc = cdexc + 3) {
+            const int target = cdexc[0];
+            const int ijshift = cdexc[1];
+            const int parity = cdexc[2];
+
+            const std::complex<double> pref = static_cast<double>(parity) * h1e.read_h_data()[ijshift];
+            const std::complex<double>* xptr = C_.data().data() + target * inc1;
+
+            math_zaxpy(states2, pref, xptr, inc2, cout, inc2);
+        }
+    }
 }
 
 void FCIComputerThrust::lm_apply_array12_same_spin_opt(
@@ -333,9 +359,46 @@ void FCIComputerThrust::lm_apply_array12_same_spin_opt(
     const int norbs,
     const bool is_alpha)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("lm_apply_array12_same_spin_opt not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    const int states1 = is_alpha ? alpha_states : beta_states;
+    const int states2 = is_alpha ? beta_states : alpha_states;
+    const int inc1 = is_alpha ? beta_states : 1;
+    const int inc2 = is_alpha ? 1 : beta_states;
+
+    std::vector<std::complex<double>> temp(states1, 0.0);
+
+    for (int s1 = 0; s1 < states1; ++s1) {
+        std::fill(temp.begin(), temp.end(), 0.0);
+        const int *cdexc = dexc.data() + 3 * s1 * ndexc;
+        const int *lim1 = cdexc + 3 * ndexc;
+        std::complex<double> *cout = out.data().data() + s1 * inc1;
+
+        for (; cdexc < lim1; cdexc = cdexc + 3) {
+            const int s2 = cdexc[0];
+            const int ijshift = cdexc[1];
+            const int parity1 = cdexc[2];
+            const int *cdexc2 = dexc.data() + 3 * s2 * ndexc;
+            const int *lim2 = cdexc2 + 3 * ndexc;
+            const int h2e_id = ijshift * norbs * norbs;
+            const std::complex<double> *h2etmp = h2e.read_h_data().data() + h2e_id;
+            temp[s2] += static_cast<double>(parity1) * h1e.read_h_data()[ijshift];
+
+            for (; cdexc2 < lim2; cdexc2 += 3) {
+                const int target = cdexc2[0];
+                const int klshift = cdexc2[1];
+                const int parity = cdexc2[2] * parity1;
+                const std::complex<double> pref = static_cast<double>(parity) * h2etmp[klshift];
+                temp[target] += pref;
+            }
+        }
+        const std::complex<double> *xptr = C_.data().data();
+        for (int ii = 0; ii < states1; ii++) {
+            const std::complex<double> ttt = temp[ii];
+            math_zaxpy(states2, ttt, xptr, inc2, cout, inc2);
+            xptr += inc1;
+        }
+    }
 }
 
 void FCIComputerThrust::lm_apply_array12_diff_spin_opt(
@@ -349,17 +412,88 @@ void FCIComputerThrust::lm_apply_array12_diff_spin_opt(
     const TensorThrust& h2e,
     const int norbs)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("lm_apply_array12_diff_spin_opt not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    const int nadexc_tot = alpha_states * nadexc;
+    const int norbs2 = norbs * norbs;
+    const int one = 1;
+
+    std::vector<int> signs(nadexc_tot);
+    std::vector<int> coff(nadexc_tot);
+    std::vector<int> boff(nadexc_tot);
+
+    int nest = 0;
+    for (int s1 = 0; s1 < alpha_states; ++s1) {
+        for (int i = 0; i < nadexc; ++i) {
+            const int orbij = adexc[3 * (s1 * nadexc + i) + 1];
+            if (orbij == 0) ++nest;
+        }
+    }
+
+    std::vector<std::complex<double>> vtemp(nest);
+    std::vector<std::complex<double>> ctemp(nest * alpha_states);
+
+    for (int orbid = 0; orbid < norbs2; ++orbid) {
+        int nsig = 0;
+        for (int s1 = 0; s1 < alpha_states; ++s1) {
+            for (int i = 0; i < nbdexc; ++i) {
+                const int orbij = adexc[3 * (s1 * nadexc + i) + 1];
+                if (orbij == orbid) {
+                    signs[nsig] = adexc[3 * (s1 * nadexc + i) + 2];
+                    coff[nsig] = adexc[3 * (s1 * nadexc + i)];
+                    boff[nsig] = s1;
+                    ++nsig;
+                }
+            }
+        }
+
+        std::fill(ctemp.begin(), ctemp.end(), std::complex<double>(0.0));
+
+        for (int isig = 0; isig < nsig; ++isig) {
+            const int offset = coff[isig];
+            const std::complex<double> *cptr = C_.data().data() + offset * beta_states;
+            std::complex<double> *tptr = ctemp.data() + isig;
+            const std::complex<double> zsign = signs[isig];
+            math_zaxpy(beta_states, zsign, cptr, one, tptr, nsig);
+        }
+
+        const std::complex<double> *tmperi = h2e.read_h_data().data() + orbid * norbs2;
+
+        for (int s2 = 0; s2 < beta_states; ++s2) {
+            
+            // TODO(Tyler): need for open mp
+            // const int ithrd = 0;
+            // const std::complex<double> *vpt = vtemp.data() + ithrd * nsig;
+            // for (int kk = 0; kk < nsig; ++kk) vpt[kk] = 0.0;
+
+            std::fill(vtemp.begin(), vtemp.begin() + nsig, std::complex<double>(0.0));
+            
+
+            for (int j = 0; j < nbdexc; ++j) {
+                int idx2 = bdexc[3 * (s2 * nbdexc + j)];
+                const int parity = bdexc[3 * (s2 * nbdexc + j) + 2];
+                const int orbkl = bdexc[3 * (s2 * nbdexc + j) + 1];
+                const std::complex<double> ttt = std::complex<double>(parity, 0.0) * tmperi[orbkl];
+                const std::complex<double> *cctmp = ctemp.data() + idx2 * nsig;
+                math_zaxpy(nsig, ttt, cctmp, one, vtemp.data(), one);
+            }
+
+            std::complex<double> *tmpout = out.data().data() + s2;
+            for (int isig = 0; isig < nsig; ++isig) {
+                tmpout[beta_states * boff[isig]] += vtemp[isig];
+            }
+        }
+    }
 }
 
+/// TODO: Not implemented in GPU so skipping
+/*
 std::pair<TensorThrust, TensorThrust> FCIComputerThrust::calculate_dvec_spin_with_coeff()
 {
     // Implementation would be similar to FCIComputerGPU but using TensorThrust
     // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("calculate_dvec_spin_with_coeff not yet implemented for FCIComputerThrust");
-}
+    throw std::runtime_error("");
+}*/
 
 TensorThrust FCIComputerThrust::calculate_coeff_spin_with_dvec(std::pair<TensorThrust, TensorThrust>& dvec)
 {
