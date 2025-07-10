@@ -497,18 +497,77 @@ std::pair<TensorThrust, TensorThrust> FCIComputerThrust::calculate_dvec_spin_wit
 
 TensorThrust FCIComputerThrust::calculate_coeff_spin_with_dvec(std::pair<TensorThrust, TensorThrust>& dvec)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("calculate_coeff_spin_with_dvec not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    TensorThrust Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
+
+    for (size_t i = 0; i < norb_; ++i) {
+        for (size_t j = 0; j < norb_; ++j) {
+
+            auto alfa_mappings = graph_.get_alfa_map()[std::make_pair(j,i)];
+            auto beta_mappings = graph_.get_beta_map()[std::make_pair(j,i)];
+
+            for (const auto& mapping : alfa_mappings) {
+                size_t source = std::get<0>(mapping);
+                size_t target = std::get<1>(mapping);
+                std::complex<double> parity = static_cast<std::complex<double>>(std::get<2>(mapping));
+                for (size_t k = 0; k < dvec.first.shape()[3]; ++k) {
+                    size_t c_vidxa = k * Cnew.strides()[1] + source * Cnew.strides()[0];
+                    size_t d_vidxa = k * dvec.first.strides()[3] + target * dvec.first.strides()[2] + j * dvec.first.strides()[1] + i * dvec.first.strides()[0];
+                    Cnew.data()[c_vidxa] += parity * dvec.first.data()[d_vidxa];
+                }
+                
+            }
+            for (const auto& mapping : beta_mappings) {
+                size_t source = std::get<0>(mapping);
+                size_t target = std::get<1>(mapping);
+                std::complex<double> parity = static_cast<std::complex<double>>(std::get<2>(mapping));
+                for (size_t k = 0; k < dvec.second.shape()[2]; ++k) {
+                    size_t c_vidxb = source * Cnew.strides()[1] + k * Cnew.strides()[0];
+                    size_t d_vidxb = target * dvec.second.strides()[3] + k * dvec.second.strides()[2] + j * dvec.second.strides()[1] + i * dvec.second.strides()[0];
+                    Cnew.data()[c_vidxb] += parity * dvec.second.data()[d_vidxb];
+                }
+            }
+        }
+    }
+
+    return Cnew;
 }
 
 std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map_number(
     const std::vector<int>& numa,
     const std::vector<int>& numb)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("evaluate_map_number not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    std::vector<int> amap(nalfa_strs_);
+    std::vector<int> bmap(nbeta_strs_);
+
+    uint64_t amask = graph_.reverse_integer_index(numa);
+    uint64_t bmask = graph_.reverse_integer_index(numb);
+
+    int acounter = 0;
+    for (int index = 0; index < nalfa_strs_; ++index) {
+        int current = graph_.get_astr_at_idx(index);
+        if (((~current) & amask) == 0) {
+            amap[acounter] = index;
+            acounter++;
+        }
+    }
+
+    int bcounter = 0;
+    for (int index = 0; index < nbeta_strs_; ++index) {
+        int current = graph_.get_bstr_at_idx(index);
+        if (((~current) & bmask) == 0) {
+            bmap[bcounter] = index;
+            bcounter++;
+        }
+    }
+
+    amap.resize(acounter);
+    bmap.resize(bcounter);
+
+    return std::make_pair(amap, bmap);
 }
 
 std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map(
@@ -517,9 +576,37 @@ std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map(
     const std::vector<int>& creb,
     const std::vector<int>& annb)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("evaluate_map not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    std::vector<int> amap(nalfa_strs_);
+    std::vector<int> bmap(nbeta_strs_);
+
+    uint64_t apmask = graph_.reverse_integer_index(crea);
+    uint64_t ahmask = graph_.reverse_integer_index(anna);
+    uint64_t bpmask = graph_.reverse_integer_index(creb);
+    uint64_t bhmask = graph_.reverse_integer_index(annb);
+
+    int acounter = 0;
+    for (int index = 0; index < nalfa_strs_; ++index) {
+        int current = graph_.get_astr_at_idx(index);
+        if (((~current) & apmask) == 0 && (current & ahmask) == 0) {
+            amap[acounter] = index;
+            acounter++;
+        }
+    }
+
+    int bcounter = 0;
+    for (int index = 0; index < nbeta_strs_; ++index) {
+        int current = graph_.get_bstr_at_idx(index);
+        if (((~current) & bpmask) == 0 && (current & bhmask) == 0) {
+            bmap[bcounter] = index;
+            bcounter++;
+        }
+    }
+    amap.resize(acounter);
+    bmap.resize(bcounter);
+
+    return std::make_pair(amap, bmap);
 }
 
 void FCIComputerThrust::apply_cos_inplace(
@@ -531,9 +618,20 @@ void FCIComputerThrust::apply_cos_inplace(
     const std::vector<int>& annb,
     TensorThrust& Cout)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("apply_cos_inplace not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    const std::complex<double> cabs = std::abs(coeff);
+    const std::complex<double> factor = std::cos(time * cabs);
+
+    std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map(crea, anna, creb, annb);
+
+    if (maps.first.size() != 0 and maps.second.size() != 0){
+        for (size_t i = 0; i < maps.first.size(); i++){
+            for (size_t j = 0; j < maps.second.size(); j++){
+                Cout.data()[maps.first[i] * nbeta_strs_ +  maps.second[j]] *= factor;
+            }
+        }       
+    }
 }
 
 int FCIComputerThrust::isolate_number_operators(
@@ -543,9 +641,21 @@ int FCIComputerThrust::isolate_number_operators(
     std::vector<int>& annwork,
     std::vector<int>& number)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("isolate_number_operators not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    int par = 0;
+    for (int current : cre) {
+        if (std::find(ann.begin(), ann.end(), current) != ann.end()) {
+            auto index1 = std::find(crework.begin(), crework.end(), current);
+            auto index2 = std::find(annwork.begin(), annwork.end(), current);
+            par += static_cast<int>(crework.size()) - (index1 - crework.begin() + 1) + (index2 - annwork.begin());
+
+            crework.erase(index1);
+            annwork.erase(index2);
+            number.push_back(current);
+        }
+    }
+    return par;
 }
 
 void FCIComputerThrust::evolve_individual_nbody_easy(
@@ -558,9 +668,18 @@ void FCIComputerThrust::evolve_individual_nbody_easy(
     const std::vector<int>& creb,
     const std::vector<int>& annb)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("evolve_individual_nbody_easy not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    std::complex<double> factor = std::exp(-time * std::real(coeff) * std::complex<double>(0.0, 1.0));
+    std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number(anna, annb);
+
+    if (maps.first.size() != 0 and maps.second.size() != 0){
+        for (size_t i = 0; i < maps.first.size(); i++){
+            for (size_t j = 0; j < maps.second.size(); j++){
+                Cout.data()[maps.first[i] * nbeta_strs_ +  maps.second[j]] *= factor;
+            }
+        }       
+    }
 }
 
 void FCIComputerThrust::evolve_individual_nbody_hard(
@@ -573,9 +692,92 @@ void FCIComputerThrust::evolve_individual_nbody_hard(
     const std::vector<int>& creb,
     const std::vector<int>& annb)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("evolve_individual_nbody_hard not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    std::vector<int> dagworka(crea);
+    std::vector<int> dagworkb(creb);
+    std::vector<int> undagworka(anna);
+    std::vector<int> undagworkb(annb);
+    std::vector<int> numbera;
+    std::vector<int> numberb;
+
+    int parity = 0;
+    parity += isolate_number_operators(
+        crea,
+        anna,
+        dagworka,
+        undagworka,
+        numbera);
+
+    parity += isolate_number_operators(
+        creb,
+        annb,
+        dagworkb,
+        undagworkb,
+        numberb);
+
+    std::complex<double> ncoeff = coeff * std::pow(-1.0, parity);
+    std::complex<double> absol = std::abs(ncoeff);
+    std::complex<double> sinfactor = std::sin(time * absol) / absol;
+
+    std::vector<int> numbera_dagworka(numbera.begin(), numbera.end());
+    numbera_dagworka.insert(numbera_dagworka.end(), dagworka.begin(), dagworka.end());
+
+    std::vector<int> numberb_dagworkb(numberb.begin(), numberb.end());
+    numberb_dagworkb.insert(numberb_dagworkb.end(), dagworkb.begin(), dagworkb.end());
+
+    apply_cos_inplace(
+        time,
+        ncoeff,
+        numbera_dagworka,
+        undagworka,
+        numberb_dagworkb,
+        undagworkb,
+        Cout);
+
+    // std::cout << "\n Cout After 1st Cos Application \n" << Cout.str(true, true) << std::endl;
+
+    std::vector<int> numbera_undagworka(numbera.begin(), numbera.end());
+    numbera_undagworka.insert(numbera_undagworka.end(), undagworka.begin(), undagworka.end());
+
+    std::vector<int> numberb_undagworkb(numberb.begin(), numberb.end());
+    numberb_undagworkb.insert(numberb_undagworkb.end(), undagworkb.begin(), undagworkb.end());
+
+    apply_cos_inplace(
+        time,
+        ncoeff,
+        numbera_undagworka,
+        dagworka,
+        numberb_undagworkb,
+        dagworkb,
+        Cout);
+
+    // std::cout << "\n Cout After 2nd Cos Application \n" << Cout.str(true, true) << std::endl;
+
+    int phase = std::pow(-1, (crea.size() + anna.size()) * (creb.size() + annb.size()));
+    std::complex<double> work_cof = std::conj(coeff) * static_cast<double>(phase) * std::complex<double>(0.0, -1.0);
+
+    apply_individual_nbody_accumulate(
+        work_cof * sinfactor,
+        Cin,
+        Cout, 
+        anna,
+        crea,
+        annb,
+        creb);
+
+    // std::cout << "\n Cout After First Accumulate Application \n" << Cout.str(true, true) << std::endl;
+
+    apply_individual_nbody_accumulate(
+        coeff * std::complex<double>(0.0, -1.0) * sinfactor,
+        Cin,
+        Cout, 
+        crea,
+        anna,
+        creb,
+        annb);
+
+    // std::cout << "\n Cout After Second Accumulate Application \n" << Cout.str(true, true) << std::endl;
 }
 
 void FCIComputerThrust::evolve_individual_nbody(
@@ -586,9 +788,84 @@ void FCIComputerThrust::evolve_individual_nbody(
     const bool antiherm,
     const bool adjoint)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("evolve_individual_nbody not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    if (sqop.terms().size() != 2) {
+        std::cout << "This sqop has " << sqop.terms().size() << " terms." << std::endl;
+        throw std::invalid_argument("Individual n-body code is called with multiple terms");
+    }
+
+    /// NICK: TODO, implement a hermitian check, at least for two term SQOperators
+    // sqop.hermitian_check();
+
+    auto term = sqop.terms()[0];
+
+    if(std::abs(std::get<0>(term)) < compute_threshold_){
+        return;
+    }
+
+    if(adjoint){
+        std::get<0>(term) *= -1.0;
+    }
+
+    if(antiherm){
+        std::complex<double> onei(0.0, 1.0);
+        std::get<0>(term) *= onei;
+    }
+
+    std::vector<int> crea;
+    std::vector<int> anna;
+    std::vector<int> creb;
+    std::vector<int> annb;
+
+    for(size_t i = 0; i < std::get<1>(term).size(); i++){
+        if(std::get<1>(term)[i]%2 == 0){
+            crea.push_back(std::floor(std::get<1>(term)[i] / 2));
+        } else {
+            creb.push_back(std::floor(std::get<1>(term)[i] / 2));
+        }
+    }
+
+    for(size_t i = 0; i < std::get<2>(term).size(); i++){
+        if(std::get<2>(term)[i]%2 == 0){
+            anna.push_back(std::floor(std::get<2>(term)[i] / 2));
+        } else {
+            annb.push_back(std::floor(std::get<2>(term)[i] / 2));
+        }
+    }
+
+    std::vector<size_t> ops1(std::get<1>(term));
+    std::vector<size_t> ops2(std::get<2>(term));
+    ops1.insert(ops1.end(), ops2.begin(), ops2.end());
+
+    int nswaps = parity_sort(ops1);
+
+    std::complex<double> parity = std::pow(-1, nswaps);
+
+    if (crea == anna && creb == annb) {
+        evolve_individual_nbody_easy(
+            time,
+            parity * std::get<0>(term), 
+            Cin,
+            Cout,
+            crea,
+            anna, 
+            creb,
+            annb);
+    } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
+        evolve_individual_nbody_hard(
+            time,
+            parity * std::get<0>(term),
+            Cin,
+            Cout,
+            crea,
+            anna, 
+            creb,
+            annb);
+
+    } else {
+        throw std::invalid_argument("Evolved state must remain in spin and particle-number symmetry sector");
+    }
 }
 
 void FCIComputerThrust::apply_sqop_evolution(
@@ -597,9 +874,17 @@ void FCIComputerThrust::apply_sqop_evolution(
     const bool antiherm,
     const bool adjoint)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("apply_sqop_evolution not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    TensorThrust Cin = C_;
+    // NOTE(Nick): needs gpu treatment
+    evolve_individual_nbody(
+        time,
+        sqop,
+        Cin,
+        C_,
+        antiherm,
+        adjoint); 
 }
 
 void FCIComputerThrust::evolve_pool_trotter_basic(
@@ -607,9 +892,25 @@ void FCIComputerThrust::evolve_pool_trotter_basic(
     const bool antiherm,
     const bool adjoint)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("evolve_pool_trotter_basic not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    if(adjoint){
+        for (int i = pool.terms().size() - 1; i >= 0; --i) {
+            apply_sqop_evolution(
+                pool.terms()[i].first, 
+                pool.terms()[i].second,
+                antiherm,
+                adjoint);
+        }
+    } else {
+        for (const auto& sqop_term : pool.terms()) {
+            apply_sqop_evolution(
+                sqop_term.first, 
+                sqop_term.second,
+                antiherm,
+                adjoint);
+            }
+    }
 }
 
 void FCIComputerThrust::evolve_pool_trotter(
@@ -620,9 +921,81 @@ void FCIComputerThrust::evolve_pool_trotter(
     const bool antiherm,
     const bool adjoint)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("evolve_pool_trotter not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    if(trotter_order == 1){
+
+        std::complex<double> prefactor = evolution_time / static_cast<std::complex<double>>(trotter_steps);
+
+        if(adjoint){
+            for( int r = 0; r < trotter_steps; r++) {
+                for (int i = pool.terms().size() - 1; i >= 0; --i) {
+                    apply_sqop_evolution(
+                        prefactor * pool.terms()[i].first, 
+                        pool.terms()[i].second,
+                        antiherm,
+                        adjoint);
+                }
+            }
+                
+
+        } else {
+            for( int r = 0; r < trotter_steps; r++) {
+                for (const auto& sqop_term : pool.terms()) {
+                    apply_sqop_evolution(
+                        prefactor * sqop_term.first, 
+                        sqop_term.second,
+                        antiherm,
+                        adjoint);
+                }
+            }
+        }
+
+    } else if (trotter_order == 2 ) {
+        std::complex<double> prefactor = 0.5 * evolution_time / static_cast<std::complex<double>>(trotter_steps);
+
+        if(adjoint){
+            for( int r = 0; r < trotter_steps; r++) {
+                for (int i = pool.terms().size() - 1; i >= 0; --i) {
+                    apply_sqop_evolution(
+                        prefactor * pool.terms()[i].first, 
+                        pool.terms()[i].second,
+                        antiherm,
+                        adjoint);
+                }
+
+                for (const auto& sqop_term : pool.terms()) {
+                    apply_sqop_evolution(
+                        prefactor * sqop_term.first, 
+                        sqop_term.second,
+                        antiherm,
+                        adjoint);
+                }
+            }
+                
+
+        } else {
+            for( int r = 0; r < trotter_steps; r++) {
+                for (const auto& sqop_term : pool.terms()) {
+                    apply_sqop_evolution(
+                        prefactor * sqop_term.first, 
+                        sqop_term.second,
+                        antiherm,
+                        adjoint);
+                }
+
+                for (int i = pool.terms().size() - 1; i >= 0; --i) {
+                    apply_sqop_evolution(
+                        prefactor * pool.terms()[i].first, 
+                        pool.terms()[i].second,
+                        antiherm,
+                        adjoint);
+                }
+            }
+        }
+    } else {
+        throw std::runtime_error("Higher than 2nd order trotter not yet implemented"); 
+    }
 }
 
 void FCIComputerThrust::evolve_op_taylor(
@@ -631,9 +1004,32 @@ void FCIComputerThrust::evolve_op_taylor(
     const double convergence_thresh,
     const int max_taylor_iter)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("evolve_op_taylor not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    TensorThrust Cevol = C_;
+
+    for (int order = 1; order < max_taylor_iter; ++order) {
+
+        // std::cout << "I get here, order: " << order << std::endl;
+
+        // std::cout << "C_: " << C_.str() << std::endl;
+        // std::cout << "Cevol: " << Cevol.str() << std::endl;
+
+        std::complex<double> coeff(0.0, -evolution_time);
+        apply_sqop(op);
+        scale(coeff);
+
+        Cevol.zaxpy(
+            C_,
+            1.0 / std::tgamma(order+1),
+            1,
+            1);
+        
+        if (C_.norm() * std::abs(coeff) < convergence_thresh) {
+            break;
+        }
+    }
+    C_ = Cevol;
 }
 
 void FCIComputerThrust::apply_individual_nbody1_accumulate(
@@ -966,23 +1362,78 @@ void FCIComputerThrust::apply_diagonal_of_sqop(
     const SQOperator& sq_op, 
     const bool invert_coeff)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("apply_diagonal_of_sqop not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    TensorThrust Cin = C_;
+    C_.zero();
+
+    for(const auto& term : sq_op.terms()){
+        std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>> temp_term;
+        std::vector<size_t> ann;
+        std::vector<size_t> cre;
+        cre = std::get<1>(term);
+        ann = std::get<2>(term);
+
+        std::sort(cre.begin(), cre.end());
+        std::sort(ann.begin(), ann.end());
+
+        if(std::equal(cre.begin(), cre.end(), ann.begin(), ann.end()) && std::abs(std::get<0>(term)) > compute_threshold_){
+            std::get<1>(temp_term) = cre;
+            std::get<2>(temp_term) = ann;
+
+            if(invert_coeff){
+                std::get<0>(temp_term) = 1.0 / std::get<0>(term);
+            } else {
+                std::get<0>(temp_term) = std::get<0>(term);
+            }
+
+            apply_individual_sqop_term(
+                temp_term,
+                Cin,
+                C_);
+        }
+    }
 }
 
 void FCIComputerThrust::apply_sqop_pool(const SQOpPool& sqop_pool)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("apply_sqop_pool not yet implemented for FCIComputerThrust");
+    cpu_error();
+
+    TensorThrust Cin = C_;
+    C_.zero();
+
+    for (const auto& sqop : sqop_pool.terms()) {
+        std::complex<double> outer_coeff = sqop.first;
+        for (const auto& term : sqop.second.terms()) {
+            std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>> temp_term = term;
+
+            std::get<0>(temp_term) *= outer_coeff;
+
+            if(std::abs(std::get<0>(temp_term)) > compute_threshold_){
+                apply_individual_sqop_term(
+                    temp_term,
+                    Cin,
+                    C_);
+            }
+        }
+    }
 }
 
 std::complex<double> FCIComputerThrust::get_exp_val(const SQOperator& sqop)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("get_exp_val not yet implemented for FCIComputerThrust");
+    TensorThrust Cin = C_;
+    C_.zero();
+    for (const auto& term : sqop.terms()) {
+        if(std::abs(std::get<0>(term)) > compute_threshold_){
+        apply_individual_sqop_term(
+            term,
+            Cin,
+            C_);
+        }
+    }
+    std::complex<double> val = C_.vector_dot(Cin);
+    C_ = Cin;
+    return val;
 }
 
 std::complex<double> FCIComputerThrust::get_exp_val_tensor(
@@ -992,9 +1443,20 @@ std::complex<double> FCIComputerThrust::get_exp_val_tensor(
     const TensorThrust& h2e_einsum, 
     size_t norb)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
-    // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("get_exp_val_tensor not yet implemented for FCIComputerThrust");
+    TensorThrust Cin = C_;
+
+    apply_tensor_spat_012bdy(
+        h0e,
+        h1e, 
+        h2e, 
+        h2e_einsum, 
+        norb
+    );
+
+    std::complex<double> val = C_.vector_dot(Cin);
+
+    C_ = Cin;
+    return val;
 }
 
 void FCIComputerThrust::scale(const std::complex<double> a)
@@ -1002,19 +1464,23 @@ void FCIComputerThrust::scale(const std::complex<double> a)
     C_.scale(a);
 }
 
+/// TODO: This is commented out in TensorGPU
+/*
 std::vector<double> FCIComputerThrust::direct_expectation_value(const TensorOperator& top)
 {
     // Implementation would be similar to FCIComputerGPU but using TensorThrust
     // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("direct_expectation_value not yet implemented for FCIComputerThrust");
-}
+    throw std::runtime_error("");
+}*/
 
+/// TODO: Not implemented in TensorGPU
+/*
 std::complex<double> FCIComputerThrust::coeff(const QubitBasis& abasis, const QubitBasis& bbasis)
 {
     // Implementation would be similar to FCIComputerGPU but using TensorThrust
     // This is a placeholder - full implementation would need to be added
-    throw std::runtime_error("coeff not yet implemented for FCIComputerThrust");
-}
+    throw std::runtime_error("");
+}*/
 
 void FCIComputerThrust::set_state(const TensorThrust& other_state)
 {
