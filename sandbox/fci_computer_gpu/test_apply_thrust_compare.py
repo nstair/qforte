@@ -95,18 +95,26 @@ fci_comp_thrust.to_cpu()
 # init state tensors for each computer
 comp_state = fci_comp.get_state()
 comp_state_gpu = qf.Tensor(comp_state.shape(), "comp_state_gpu")
+comp_state_gpu2 = qf.Tensor(comp_state.shape(), "comp_state_gpu2")
 comp_state_thrust = qf.Tensor(comp_state.shape(), "comp_state_thrust")
 
 # copy the state tensors to the gpu and thrust versions
 fci_comp_gpu.copy_to_tensor(comp_state_gpu)
+fci_comp_gpu.copy_to_tensor(comp_state_gpu2)
 fci_comp_thrust.copy_to_tensor(comp_state_thrust)
 
 # subtract the original state from the gpu and thrust states
 comp_state_gpu.subtract(comp_state)
+comp_state_gpu2.subtract(comp_state_thrust)
 comp_state_thrust.subtract(comp_state)
+
+print("\n thrust - comp state")
+print("======================================================")
+print(f" {comp_state_thrust}")
 
 # compute the norms of the differences
 norm_gpu = comp_state_gpu.norm()
+norm_gpu2 = comp_state_gpu2.norm()
 norm_thrust = comp_state_thrust.norm()
 
 # get the energies from each computer
@@ -137,6 +145,7 @@ print("\n Norms of State Differences")
 print("======================================================")
 print(f" ||Cgpu - Ccomp||:           {norm_gpu}")
 print(f" ||Cthrust - Ccomp||:        {norm_thrust}")
+print(f" ||Cgpu  - Cthrust||:        {norm_gpu2}")
 
 print("\n Energies")
 print("======================================================")
