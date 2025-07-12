@@ -76,12 +76,18 @@ set(SOURCES
 include_directories(${SOURCE_DIR})
 #set(SOURCES "${SOURCE_DIR}/math.cc")
 
+# Include Python stub generation functions
+include(cmake/PythonStubs.cmake)
+
 # Generate Python module
 add_subdirectory(lib/pybind11)
 add_subdirectory(lib/fmt)
 pybind11_add_module(qforte "${SOURCE_DIR}/bindings.cc"
     ${SOURCES}
     ${CUDA_SOURCES})
+
+# Add Python type stub generation
+add_pybind11_stubs(qforte)
 
 set_target_properties(qforte PROPERTIES CUDA_ARCHITECTURES "52;60;61;70;75;86")
 

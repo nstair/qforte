@@ -1,0 +1,428 @@
+#!/usr/bin/env python3
+"""
+Complete signature database for qforte classes extracted from the current .pyi file
+"""
+
+# This file contains all the method signatures for qforte classes
+# It's used by the stub generator to create accurate type hints
+
+CLASS_SIGNATURES = {
+    'Circuit': {
+        'add': [
+            'def add(self, gate: Gate) -> None: ...',
+            'def add(self, circuit: Circuit) -> None: ...'
+        ],
+        'add_gate': 'def add_gate(self, gate: Gate) -> None: ...',
+        'add_circuit': 'def add_circuit(self, circuit: Circuit) -> None: ...',
+        'gates': 'def gates(self) -> List[Gate]: ...',
+        'sparse_matrix': 'def sparse_matrix(self) -> SparseMatrix: ...',
+        'size': 'def size(self) -> int: ...',
+        'adjoint': 'def adjoint(self) -> Circuit: ...',
+        'canonicalize_pauli_circuit': 'def canonicalize_pauli_circuit(self) -> None: ...',
+        'set_parameters': 'def set_parameters(self, parameters: List[Complex]) -> None: ...',
+        'get_num_cnots': 'def get_num_cnots(self) -> int: ...',
+        'str': 'def str(self) -> str: ...',
+        '__str__': 'def __str__(self) -> str: ...',
+        '__repr__': 'def __repr__(self) -> str: ...'
+    },
+    
+    'SQOperator': {
+        'add': [
+            'def add(self, coeff: Complex, indices: List[int], ops: List[str]) -> None: ...',
+            'def add(self, other: SQOperator) -> None: ...'
+        ],
+        'add_term': 'def add_term(self, coeff: Complex, indices: List[int], ops: List[str]) -> None: ...',
+        'add_op': 'def add_op(self, other: SQOperator) -> None: ...',
+        'set_coeffs': 'def set_coeffs(self, coeffs: List[Complex]) -> None: ...',
+        'mult_coeffs': 'def mult_coeffs(self, factor: Complex) -> None: ...',
+        'terms': 'def terms(self) -> List[Tuple[Complex, List[int], List[str]]]: ...',
+        'get_largest_alfa_beta_indices': 'def get_largest_alfa_beta_indices(self) -> Tuple[int, int]: ...',
+        'many_body_order': 'def many_body_order(self) -> int: ...',
+        'ranks_present': 'def ranks_present(self) -> List[int]: ...',
+        'canonical_order': 'def canonical_order(self) -> None: ...',
+        'simplify': 'def simplify(self) -> None: ...',
+        'jw_transform': 'def jw_transform(self, qubit_excitation: bool = False) -> QubitOperator: ...',
+        'split_by_rank': 'def split_by_rank(self) -> Dict[int, SQOperator]: ...',
+        'str': 'def str(self) -> str: ...',
+        '__str__': 'def __str__(self) -> str: ...',
+        '__repr__': 'def __repr__(self) -> str: ...'
+    },
+    
+    'TensorOperator': {
+        'add_sqop_of_rank': 'def add_sqop_of_rank(self, rank: int, sqop: SQOperator) -> None: ...',
+        'tensors': 'def tensors(self) -> Dict[int, Tensor]: ...',
+        'fill_tensor_from_np_by_rank': 'def fill_tensor_from_np_by_rank(self, rank: int, array: NDArray[np.complex128]) -> None: ...',
+        'str': 'def str(self, print_data: bool = True, print_complex: bool = False, maxcols: int = 5, data_format: str = "%12.7f", header_format: str = "%12zu") -> str: ...',
+        '__str__': 'def __str__(self, print_data: bool = True, print_complex: bool = False, maxcols: int = 5, data_format: str = "%12.7f", header_format: str = "%12zu") -> str: ...',
+        '__repr__': 'def __repr__(self, print_data: bool = True, print_complex: bool = False, maxcols: int = 5, data_format: str = "%12.7f", header_format: str = "%12zu") -> str: ...'
+    },
+    
+    'SQOpPool': {
+        'add': 'def add(self, op: SQOperator) -> None: ...',
+        'add_hermitian_pairs': 'def add_hermitian_pairs(self, op: SQOperator) -> None: ...',
+        'add_term': 'def add_term(self, op: SQOperator) -> None: ...',
+        'set_coeffs': 'def set_coeffs(self, coeffs: List[Complex]) -> None: ...',
+        'set_coeffs_to_scaler': 'def set_coeffs_to_scaler(self, coeff: Complex) -> None: ...',
+        'terms': 'def terms(self) -> List[SQOperator]: ...',
+        'set_orb_spaces': 'def set_orb_spaces(self, spaces: List[str]) -> None: ...',
+        'get_qubit_op_pool': 'def get_qubit_op_pool(self) -> QubitOpPool: ...',
+        'get_qubit_operator': 'def get_qubit_operator(self, order_type: str, combine_like_terms: bool = True, qubit_excitations: bool = False) -> QubitOperator: ...',
+        'fill_pool': 'def fill_pool(self, pool_type: str) -> None: ...',
+        'str': 'def str(self) -> str: ...',
+        '__getitem__': 'def __getitem__(self, i: int) -> SQOperator: ...',
+        '__iter__': 'def __iter__(self) -> Iterator[SQOperator]: ...',
+        '__len__': 'def __len__(self) -> int: ...',
+        '__str__': 'def __str__(self) -> str: ...',
+        '__repr__': 'def __repr__(self) -> str: ...'
+    },
+    
+    'QubitOperator': {
+        'add': [
+            'def add(self, coeff: Complex, pauli_ops: List[Tuple[int, str]]) -> None: ...',
+            'def add(self, other: QubitOperator) -> None: ...'
+        ],
+        'add_term': 'def add_term(self, coeff: Complex, pauli_ops: List[Tuple[int, str]]) -> None: ...',
+        'add_op': 'def add_op(self, other: QubitOperator) -> None: ...',
+        'set_coeffs': 'def set_coeffs(self, coeffs: List[Complex]) -> None: ...',
+        'mult_coeffs': 'def mult_coeffs(self, factor: Complex) -> None: ...',
+        'terms': 'def terms(self) -> List[Tuple[Complex, List[Tuple[int, str]]]]: ...',
+        'order_terms': 'def order_terms(self) -> None: ...',
+        'canonical_order': 'def canonical_order(self) -> None: ...',
+        'simplify': 'def simplify(self) -> None: ...',
+        'operator_product': 'def operator_product(self, other: QubitOperator) -> QubitOperator: ...',
+        'check_op_equivalence': 'def check_op_equivalence(self, other: QubitOperator, rtol: float = 1e-9) -> bool: ...',
+        'num_qubits': 'def num_qubits(self) -> int: ...',
+        'sparse_matrix': 'def sparse_matrix(self, nqubits: int) -> SparseMatrix: ...',
+        'str': 'def str(self) -> str: ...',
+        '__iter__': 'def __iter__(self) -> Iterator[Tuple[Complex, List[Tuple[int, str]]]]: ...',
+        '__str__': 'def __str__(self) -> str: ...',
+        '__repr__': 'def __repr__(self) -> str: ...'
+    },
+    
+    'QubitOpPool': {
+        'add': 'def add(self, op: QubitOperator) -> None: ...',
+        'add_term': 'def add_term(self, op: QubitOperator) -> None: ...',
+        'set_coeffs': 'def set_coeffs(self, coeffs: List[Complex]) -> None: ...',
+        'set_op_coeffs': 'def set_op_coeffs(self, op_idx: int, coeffs: List[Complex]) -> None: ...',
+        'set_terms': 'def set_terms(self, terms: List[QubitOperator]) -> None: ...',
+        'terms': 'def terms(self) -> List[QubitOperator]: ...',
+        'join_op_from_right_lazy': 'def join_op_from_right_lazy(self, other: QubitOperator) -> None: ...',
+        'join_op_from_right': 'def join_op_from_right(self, other: QubitOperator) -> None: ...',
+        'join_op_from_left': 'def join_op_from_left(self, other: QubitOperator) -> None: ...',
+        'join_as_commutator': 'def join_as_commutator(self, other: QubitOperator) -> None: ...',
+        'square': 'def square(self) -> None: ...',
+        'fill_pool': 'def fill_pool(self, pool_type: str) -> None: ...',
+        'str': 'def str(self) -> str: ...',
+        '__iter__': 'def __iter__(self) -> Iterator[QubitOperator]: ...',
+        '__str__': 'def __str__(self) -> str: ...',
+        '__repr__': 'def __repr__(self) -> str: ...'
+    },
+    
+    'QubitBasis': {
+        'str': 'def str(self) -> str: ...',
+        '__str__': 'def __str__(self) -> str: ...',
+        '__repr__': 'def __repr__(self) -> str: ...',
+        'flip_bit': 'def flip_bit(self, qubit: int) -> None: ...',
+        'set_bit': 'def set_bit(self, qubit: int) -> None: ...',
+        'add': 'def add(self, other: QubitBasis) -> QubitBasis: ...',
+        'get_bit': 'def get_bit(self, qubit: int) -> int: ...'
+    },
+    
+    'Computer': {
+        'apply_circuit_safe': 'def apply_circuit_safe(self, circuit: Circuit) -> None: ...',
+        'apply_matrix': 'def apply_matrix(self, matrix: NDArray[np.complex128], qubits: List[int]) -> None: ...',
+        'apply_sparse_matrix': 'def apply_sparse_matrix(self, matrix: SparseMatrix, qubits: List[int]) -> None: ...',
+        'apply_operator': 'def apply_operator(self, op: QubitOperator) -> None: ...',
+        'apply_circuit': 'def apply_circuit(self, circuit: Circuit) -> None: ...',
+        'apply_gate_safe': 'def apply_gate_safe(self, gate: Gate) -> None: ...',
+        'apply_gate': 'def apply_gate(self, gate: Gate) -> None: ...',
+        'apply_constant': 'def apply_constant(self, coeff: Complex) -> None: ...',
+        'measure_circuit': 'def measure_circuit(self, circuit: Circuit, shots: int) -> Dict[str, int]: ...',
+        'measure_z_readouts_fast': 'def measure_z_readouts_fast(self, shots: int) -> List[str]: ...',
+        'measure_readouts': 'def measure_readouts(self, qubits: List[int], shots: int) -> List[int]: ...',
+        'perfect_measure_circuit': 'def perfect_measure_circuit(self, circuit: Circuit) -> Dict[str, Complex]: ...',
+        'direct_oppl_exp_val': 'def direct_oppl_exp_val(self, op_pool: QubitOpPool) -> List[Complex]: ...',
+        'direct_idxd_oppl_exp_val': 'def direct_idxd_oppl_exp_val(self, op_pool: QubitOpPool, indices: List[int]) -> List[Complex]: ...',
+        'direct_oppl_exp_val_w_mults': 'def direct_oppl_exp_val_w_mults(self, op_pool: QubitOpPool, mults: List[Complex]) -> Complex: ...',
+        'direct_op_exp_val': 'def direct_op_exp_val(self, op: QubitOperator) -> Complex: ...',
+        'direct_circ_exp_val': 'def direct_circ_exp_val(self, circuit: Circuit) -> Complex: ...',
+        'direct_pauli_circ_exp_val': 'def direct_pauli_circ_exp_val(self, circuit: Circuit) -> Complex: ...',
+        'direct_gate_exp_val': 'def direct_gate_exp_val(self, gate: Gate) -> Complex: ...',
+        'apply_sq_operator': 'def apply_sq_operator(self, sqop: SQOperator) -> None: ...',
+        'z_chain': 'def z_chain(self, qubits: List[int]) -> Complex: ...',
+        'apply_2x2': 'def apply_2x2(self, matrix: NDArray[np.complex128], qubit: int) -> None: ...',
+        'coeff': 'def coeff(self, basis: QubitBasis) -> Complex: ...',
+        'get_coeff_vec': 'def get_coeff_vec(self) -> List[Complex]: ...',
+        'get_nqubit': 'def get_nqubit(self) -> int: ...',
+        'set_coeff_vec': 'def set_coeff_vec(self, coeffs: List[Complex]) -> None: ...',
+        'set_state': 'def set_state(self, state: List[Complex]) -> None: ...',
+        'zero_state': 'def zero_state(self) -> None: ...',
+        'get_timings': 'def get_timings(self) -> Dict[str, float]: ...',
+        'clear_timings': 'def clear_timings(self) -> None: ...',
+        'str': 'def str(self) -> str: ...',
+        '__str__': 'def __str__(self) -> str: ...',
+        '__repr__': 'def __repr__(self) -> str: ...'
+    },
+    
+    'FCIComputer': {
+        'hartree_fock': 'def hartree_fock(self) -> None: ...',
+        'set_element': 'def set_element(self, idx: int, value: Complex) -> None: ...',
+        'do_on_gpu': 'def do_on_gpu(self) -> None: ...',
+        'do_on_cpu': 'def do_on_cpu(self) -> None: ...',
+        'get_acc_timer': 'def get_acc_timer(self) -> local_timer: ...',
+        'apply_tensor_spin_1bdy': 'def apply_tensor_spin_1bdy(self, tensor: Tensor) -> None: ...',
+        'apply_tensor_spin_12bdy': 'def apply_tensor_spin_12bdy(self, tensor: Tensor) -> None: ...',
+        'apply_tensor_spin_012bdy': 'def apply_tensor_spin_012bdy(self, tensor: Tensor) -> None: ...',
+        'apply_tensor_spat_12bdy': 'def apply_tensor_spat_12bdy(self, tensor: Tensor) -> None: ...',
+        'apply_tensor_spat_012bdy': 'def apply_tensor_spat_012bdy(self, tensor: Tensor) -> None: ...',
+        'apply_individual_sqop_term': 'def apply_individual_sqop_term(self, coeff: Complex, indices: List[int], ops: List[str]) -> None: ...',
+        'apply_sqop': 'def apply_sqop(self, sqop: SQOperator) -> None: ...',
+        'apply_diagonal_of_sqop': 'def apply_diagonal_of_sqop(self, sqop: SQOperator, invert_coeff: bool = True) -> None: ...',
+        'apply_sqop_pool': 'def apply_sqop_pool(self, pool: SQOpPool) -> None: ...',
+        'get_exp_val': 'def get_exp_val(self, sqop: SQOperator) -> Complex: ...',
+        'get_exp_val_tensor': 'def get_exp_val_tensor(self, tensor_op: TensorOperator) -> Complex: ...',
+        'evolve_op_taylor': 'def evolve_op_taylor(self, sqop: SQOperator, time: float, order: int) -> None: ...',
+        'apply_sqop_evolution': 'def apply_sqop_evolution(self, time: float, sqop: SQOperator, antiherm: bool = False, adjoint: bool = False) -> None: ...',
+        'evolve_pool_trotter_basic': 'def evolve_pool_trotter_basic(self, sqop: SQOperator, antiherm: bool = False, adjoint: bool = False) -> None: ...',
+        'evolve_pool_trotter': 'def evolve_pool_trotter(self, sqop: SQOperator, evolution_time: float, trotter_steps: int, trotter_order: int, antiherm: bool = False, adjoint: bool = False) -> None: ...',
+        'set_state': 'def set_state(self, state: Tensor) -> None: ...',
+        'get_state': 'def get_state(self) -> Tensor: ...',
+        'get_state_deep': 'def get_state_deep(self) -> Tensor: ...',
+        'get_hf_dot': 'def get_hf_dot(self) -> Complex: ...',
+        'str': 'def str(self, print_data: bool = True, print_complex: bool = False) -> str: ...',
+        '__str__': 'def __str__(self, print_data: bool = True, print_complex: bool = False) -> str: ...',
+        '__repr__': 'def __repr__(self, print_data: bool = True, print_complex: bool = False) -> str: ...'
+    },
+    
+    'FCIComputerGPU': {
+        'hartree_fock': 'def hartree_fock(self) -> None: ...',
+        'get_hf_dot': 'def get_hf_dot(self) -> Complex: ...',
+        'set_element': 'def set_element(self, idx: int, value: Complex) -> None: ...',
+        'to_gpu': 'def to_gpu(self) -> None: ...',
+        'to_cpu': 'def to_cpu(self) -> None: ...',
+        'copy_to_tensor': 'def copy_to_tensor(self, tensor: Tensor) -> None: ...',
+        'get_acc_timer': 'def get_acc_timer(self) -> local_timer: ...',
+        'set_state': 'def set_state(self, state: Tensor) -> None: ...',
+        'set_state_gpu': 'def set_state_gpu(self, state: TensorGPU) -> None: ...',
+        'set_state_from_tensor': 'def set_state_from_tensor(self, state: Tensor) -> None: ...',
+        'apply_tensor_spin_1bdy': 'def apply_tensor_spin_1bdy(self, tensor: Tensor) -> None: ...',
+        'apply_tensor_spin_12bdy': 'def apply_tensor_spin_12bdy(self, tensor: Tensor) -> None: ...',
+        'apply_tensor_spin_012bdy': 'def apply_tensor_spin_012bdy(self, tensor: Tensor) -> None: ...',
+        'apply_tensor_spat_12bdy': 'def apply_tensor_spat_12bdy(self, tensor: Tensor) -> None: ...',
+        'apply_tensor_spat_012bdy': 'def apply_tensor_spat_012bdy(self, tensor: Tensor) -> None: ...',
+        'apply_individual_sqop_term': 'def apply_individual_sqop_term(self, coeff: Complex, indices: List[int], ops: List[str]) -> None: ...',
+        'apply_sqop': 'def apply_sqop(self, sqop: SQOperator) -> None: ...',
+        'apply_diagonal_of_sqop': 'def apply_diagonal_of_sqop(self, sqop: SQOperator, invert_coeff: bool = True) -> None: ...',
+        'apply_sqop_pool': 'def apply_sqop_pool(self, pool: SQOpPool) -> None: ...',
+        'get_exp_val': 'def get_exp_val(self, sqop: SQOperator) -> Complex: ...',
+        'get_exp_val_tensor': 'def get_exp_val_tensor(self, tensor_op: TensorOperator) -> Complex: ...',
+        'evolve_op_taylor': 'def evolve_op_taylor(self, sqop: SQOperator, time: float, order: int) -> None: ...',
+        'apply_sqop_evolution': 'def apply_sqop_evolution(self, time: float, sqop: SQOperator, antiherm: bool = False, adjoint: bool = False) -> None: ...',
+        'evolve_pool_trotter_basic': 'def evolve_pool_trotter_basic(self, sqop: SQOperator, antiherm: bool = False, adjoint: bool = False) -> None: ...',
+        'evolve_pool_trotter': 'def evolve_pool_trotter(self, sqop: SQOperator, evolution_time: float, trotter_steps: int, trotter_order: int, antiherm: bool = False, adjoint: bool = False) -> None: ...',
+        'get_state': 'def get_state(self) -> Tensor: ...',
+        'get_state_deep': 'def get_state_deep(self) -> Tensor: ...',
+        'str': 'def str(self, print_data: bool = True, print_complex: bool = False) -> str: ...',
+        '__str__': 'def __str__(self, print_data: bool = True, print_complex: bool = False) -> str: ...',
+        '__repr__': 'def __repr__(self, print_data: bool = True, print_complex: bool = False) -> str: ...'
+    },
+    
+    'FCIComputerThrust': {
+        'hartree_fock': 'def hartree_fock(self) -> None: ...',
+        'get_hf_dot': 'def get_hf_dot(self) -> Complex: ...',
+        'set_element': 'def set_element(self, idx: int, value: Complex) -> None: ...',
+        'to_gpu': 'def to_gpu(self) -> None: ...',
+        'to_cpu': 'def to_cpu(self) -> None: ...',
+        'set_state_from_tensor': 'def set_state_from_tensor(self, state: Tensor) -> None: ...',
+        'copy_to_tensor': 'def copy_to_tensor(self, tensor: Tensor) -> None: ...',
+        'copy_to_tensor_thrust_gpu': 'def copy_to_tensor_thrust_gpu(self, tensor: TensorThrust) -> None: ...',
+        'copy_to_tensor_thrust_cpu': 'def copy_to_tensor_thrust_cpu(self, tensor: TensorThrust) -> None: ...',
+        'get_acc_timer': 'def get_acc_timer(self) -> local_timer: ...',
+        'set_state': 'def set_state(self, state: Tensor) -> None: ...',
+        'set_state_gpu': 'def set_state_gpu(self, state: TensorGPU) -> None: ...',
+        'apply_tensor_spin_1bdy': 'def apply_tensor_spin_1bdy(self, tensor: Tensor) -> None: ...',
+        'apply_tensor_spin_12bdy': 'def apply_tensor_spin_12bdy(self, tensor: Tensor) -> None: ...',
+        'apply_tensor_spin_012bdy': 'def apply_tensor_spin_012bdy(self, tensor: Tensor) -> None: ...',
+        'apply_tensor_spat_12bdy': 'def apply_tensor_spat_12bdy(self, tensor: Tensor) -> None: ...',
+        'apply_tensor_spat_012bdy': 'def apply_tensor_spat_012bdy(self, tensor: Tensor) -> None: ...',
+        'apply_individual_sqop_term': 'def apply_individual_sqop_term(self, coeff: Complex, indices: List[int], ops: List[str]) -> None: ...',
+        'apply_sqop': 'def apply_sqop(self, sqop: SQOperator) -> None: ...',
+        'apply_diagonal_of_sqop': 'def apply_diagonal_of_sqop(self, sqop: SQOperator, invert_coeff: bool = True) -> None: ...',
+        'apply_sqop_pool': 'def apply_sqop_pool(self, pool: SQOpPool) -> None: ...',
+        'get_exp_val': 'def get_exp_val(self, sqop: SQOperator) -> Complex: ...',
+        'get_exp_val_tensor': 'def get_exp_val_tensor(self, tensor_op: TensorOperator) -> Complex: ...',
+        'evolve_op_taylor': 'def evolve_op_taylor(self, sqop: SQOperator, time: float, order: int) -> None: ...',
+        'apply_sqop_evolution': 'def apply_sqop_evolution(self, time: float, sqop: SQOperator, antiherm: bool = False, adjoint: bool = False) -> None: ...',
+        'evolve_pool_trotter_basic': 'def evolve_pool_trotter_basic(self, sqop: SQOperator, antiherm: bool = False, adjoint: bool = False) -> None: ...',
+        'evolve_pool_trotter': 'def evolve_pool_trotter(self, sqop: SQOperator, evolution_time: float, trotter_steps: int, trotter_order: int, antiherm: bool = False, adjoint: bool = False) -> None: ...',
+        'get_state': 'def get_state(self) -> Tensor: ...',
+        'get_state_deep': 'def get_state_deep(self) -> Tensor: ...',
+        'get_shape': 'def get_shape(self) -> List[int]: ...',
+        'str': 'def str(self, print_data: bool = True, print_complex: bool = False) -> str: ...',
+        '__str__': 'def __str__(self, print_data: bool = True, print_complex: bool = False) -> str: ...',
+        '__repr__': 'def __repr__(self, print_data: bool = True, print_complex: bool = False) -> str: ...'
+    },
+    
+    'FCIGraph': {
+        'make_mapping_each': 'def make_mapping_each(self) -> None: ...',
+        'get_nalfa': 'def get_nalfa(self) -> int: ...',
+        'get_nbeta': 'def get_nbeta(self) -> int: ...',
+        'get_lena': 'def get_lena(self) -> int: ...',
+        'get_lenb': 'def get_lenb(self) -> int: ...',
+        'get_astr': 'def get_astr(self) -> List[int]: ...',
+        'get_bstr': 'def get_bstr(self) -> List[int]: ...',
+        'get_aind': 'def get_aind(self) -> List[int]: ...',
+        'get_bind': 'def get_bind(self) -> List[int]: ...',
+        'get_alfa_map': 'def get_alfa_map(self) -> Dict[int, int]: ...',
+        'get_beta_map': 'def get_beta_map(self) -> Dict[int, int]: ...',
+        'get_dexca': 'def get_dexca(self) -> Dict[Tuple[int, int], List[Tuple[int, float]]]: ...',
+        'get_dexcb': 'def get_dexcb(self) -> Dict[Tuple[int, int], List[Tuple[int, float]]]: ...',
+        'get_dexca_vec': 'def get_dexca_vec(self) -> List[List[Tuple[int, float]]]: ...',
+        'get_dexcb_vec': 'def get_dexcb_vec(self) -> List[List[Tuple[int, float]]]: ...'
+    },
+    
+    'Tensor': {
+        'name': 'def name(self) -> str: ...',
+        'ndim': 'def ndim(self) -> int: ...',
+        'size': 'def size(self) -> int: ...',
+        'shape': 'def shape(self) -> List[int]: ...',
+        'strides': 'def strides(self) -> List[int]: ...',
+        'set': 'def set(self, indices: List[int], value: Complex) -> None: ...',
+        'copy_in': 'def copy_in(self, other: Tensor) -> None: ...',
+        'add_to_element': 'def add_to_element(self, indices: List[int], value: Complex) -> None: ...',
+        'get': 'def get(self, indices: List[int]) -> Complex: ...',
+        'fill_from_np': 'def fill_from_np(self, array: NDArray[np.complex128]) -> None: ...',
+        'add': 'def add(self, other: Tensor) -> None: ...',
+        'subtract': 'def subtract(self, other: Tensor) -> None: ...',
+        'norm': 'def norm(self) -> float: ...',
+        'scale': 'def scale(self, factor: Complex) -> None: ...',
+        'vector_dot': 'def vector_dot(self, other: Tensor) -> Complex: ...',
+        'identity': 'def identity(self) -> None: ...',
+        'zero': 'def zero(self) -> None: ...',
+        'zero_with_shape': 'def zero_with_shape(self, shape: List[int]) -> None: ...',
+        'symmetrize': 'def symmetrize(self, indices: List[int]) -> None: ...',
+        'antisymmetrize': 'def antisymmetrize(self, indices: List[int]) -> None: ...',
+        'transpose': 'def transpose(self, axes: List[int]) -> Tensor: ...',
+        'general_transpose': 'def general_transpose(self, axes: List[int]) -> Tensor: ...',
+        'fill_from_nparray': 'def fill_from_nparray(self, array: NDArray[np.complex128], shape: List[int]) -> None: ...',
+        'zaxpy': 'def zaxpy(self, x: Tensor, alpha: Complex, incx: int = 1, incy: int = 1) -> None: ...',
+        'zaxpby': 'def zaxpby(self, x: Tensor, a: Complex, b: Complex, incx: int = 1, incy: int = 1) -> None: ...',
+        'gemm': 'def gemm(self, B: Tensor, transa: str = "N", transb: str = "N", alpha: Complex = 1.0, beta: Complex = 1.0, mult_B_on_right: bool = False) -> None: ...',
+        'slice': 'def slice(self, start: List[int], end: List[int]) -> Tensor: ...',
+        'get_nonzero_tidxs': 'def get_nonzero_tidxs(self) -> List[List[int]]: ...',
+        'str': 'def str(self, print_data: bool = True, print_complex: bool = False, maxcols: int = 5, data_format: str = "%12.7f", header_format: str = "%12zu") -> str: ...',
+        '__str__': 'def __str__(self, print_data: bool = True, print_complex: bool = False, maxcols: int = 5, data_format: str = "%12.7f", header_format: str = "%12zu") -> str: ...',
+        '__repr__': 'def __repr__(self, print_data: bool = True, print_complex: bool = False, maxcols: int = 5, data_format: str = "%12.7f", header_format: str = "%12zu") -> str: ...',
+        'chain': '@staticmethod\n    def chain(As: List[Tensor], trans: List[str], alpha: Complex = 1.0, beta: Complex = 0.0) -> Tensor: ...',
+        'einsum': '@staticmethod\n    def einsum(Ainds: List[str], Binds: List[str], Cinds: List[str], A: Tensor, B: Tensor, C3: Tensor, alpha: Complex = 1.0, beta: Complex = 0.0) -> None: ...',
+        'permute': '@staticmethod\n    def permute(Ainds: List[str], Cinds: List[str], A: Tensor, C2: Tensor, alpha: Complex = 1.0, beta: Complex = 0.0) -> None: ...'
+    },
+    
+    'TensorGPU': {
+        'to_gpu': 'def to_gpu(self) -> None: ...',
+        'to_cpu': 'def to_cpu(self) -> None: ...',
+        'add': 'def add(self, other: TensorGPU) -> None: ...',
+        'add2': 'def add2(self, other: TensorGPU) -> None: ...',
+        'addThrust': 'def addThrust(self, other: TensorGPU) -> None: ...',
+        'zero': 'def zero(self) -> None: ...',
+        'shape': 'def shape(self) -> List[int]: ...',
+        'norm': 'def norm(self) -> float: ...',
+        'ndim_error': 'def ndim_error(self, expected: int) -> None: ...',
+        'fill_from_nparray': 'def fill_from_nparray(self, array: NDArray[np.complex128], shape: List[int]) -> None: ...',
+        'copy_in': 'def copy_in(self, other: TensorGPU) -> None: ...',
+        'copy_in_gpu': 'def copy_in_gpu(self, other: TensorGPU) -> None: ...',
+        'copy_in_from_tensor': 'def copy_in_from_tensor(self, other: Tensor) -> None: ...',
+        'subtract': 'def subtract(self, other: TensorGPU) -> None: ...',
+        'set': 'def set(self, indices: List[int], value: Complex) -> None: ...',
+        'get': 'def get(self, indices: List[int]) -> Complex: ...'
+    },
+    
+    'TensorThrust': {
+        'to_gpu': 'def to_gpu(self) -> None: ...',
+        'to_cpu': 'def to_cpu(self) -> None: ...',
+        'add': 'def add(self, other: TensorThrust) -> None: ...',
+        'zero': 'def zero(self) -> None: ...',
+        'set': 'def set(self, idx: int, value: Complex) -> None: ...',
+        'fill_from_nparray': 'def fill_from_nparray(self, array: NDArray[np.complex128], shape: List[int]) -> None: ...',
+        '__repr__': 'def __repr__(self) -> str: ...'
+    },
+    
+    'Gate': {
+        'target': 'def target(self) -> int: ...',
+        'control': 'def control(self) -> int: ...',
+        'gate_id': 'def gate_id(self) -> str: ...',
+        'sparse_matrix': 'def sparse_matrix(self) -> SparseMatrix: ...',
+        'adjoint': 'def adjoint(self) -> Gate: ...',
+        'str': 'def str(self) -> str: ...',
+        '__str__': 'def __str__(self) -> str: ...',
+        '__repr__': 'def __repr__(self) -> str: ...'
+    },
+    
+    'SparseVector': {
+        'get_element': 'def get_element(self, idx: int) -> Complex: ...',
+        'set_element': 'def set_element(self, idx: int, value: Complex) -> None: ...',
+        'to_map': 'def to_map(self) -> Dict[int, Complex]: ...'
+    },
+    
+    'SparseMatrix': {
+        'get_element': 'def get_element(self, row: int, col: int) -> Complex: ...',
+        'set_element': 'def set_element(self, row: int, col: int, value: Complex) -> None: ...',
+        'to_vec_map': 'def to_vec_map(self) -> List[Dict[int, Complex]]: ...',
+        'to_map': 'def to_map(self) -> Dict[Tuple[int, int], Complex]: ...'
+    },
+    
+    'local_timer': {
+        'reset': 'def reset(self) -> None: ...',
+        'get': 'def get(self) -> float: ...',
+        'record': 'def record(self, label: str) -> None: ...',
+        'get_timings': 'def get_timings(self) -> Dict[str, float]: ...',
+        'get_acc_timings': 'def get_acc_timings(self) -> Dict[str, float]: ...',
+        '__str__': 'def __str__(self) -> str: ...'
+    }
+}
+
+# Constructor signatures for each class
+CONSTRUCTOR_SIGNATURES = {
+    'Circuit': '',
+    'SQOperator': '',
+    'TensorOperator': 'max_nbody: int, dim: int, is_spatial: bool = False, is_restricted: bool = False',
+    'SQOpPool': '',
+    'QubitOperator': '',
+    'QubitOpPool': '',
+    'QubitBasis': 'n: int = 0',
+    'Computer': 'nqubits: int, print_threshold: float = 1.0e-6',
+    'FCIComputer': 'nel: int, sz: int, norb: int',
+    'FCIComputerGPU': 'nel: int, sz: int, norb: int',
+    'FCIComputerThrust': 'nel: int, sz: int, norb: int',
+    'FCIGraph': 'nalfa: int, nbeta: int, norb: int',
+    'Tensor': ['', 'shape: List[int], name: str'],  # Multiple constructors
+    'TensorGPU': ['', 'shape: List[int], name: str, on_gpu: bool'],
+    'TensorThrust': ['', 'shape: List[int], name: str = "T", on_gpu: bool = False'],
+    'Gate': '',
+    'SparseVector': '',
+    'SparseMatrix': '',
+    'local_timer': ''
+}
+
+# Class docstrings
+CLASS_DOCSTRINGS = {
+    'Circuit': 'Quantum circuit class for building and manipulating quantum circuits.',
+    'SQOperator': 'Second quantized operator class.',
+    'TensorOperator': 'Tensor operator class for multi-body operators.',
+    'SQOpPool': 'Pool of second quantized operators.',
+    'QubitOperator': 'Qubit operator class for Pauli operators.',
+    'QubitOpPool': 'Pool of qubit operators.',
+    'QubitBasis': 'Computational basis state representation.',
+    'Computer': 'Quantum computer simulator.',
+    'FCIComputer': 'Full Configuration Interaction computer (CPU version).',
+    'FCIComputerGPU': 'Full Configuration Interaction computer (GPU version).',
+    'FCIComputerThrust': 'Full Configuration Interaction computer (Thrust GPU version).',
+    'FCIGraph': 'FCI graph for determinant indexing.',
+    'Tensor': 'Multi-dimensional tensor class.',
+    'TensorGPU': 'GPU tensor class.',
+    'TensorThrust': 'Thrust GPU tensor class.',
+    'Gate': 'Quantum gate class.',
+    'SparseVector': 'Sparse vector class.',
+    'SparseMatrix': 'Sparse matrix class.',
+    'local_timer': 'Local timer for benchmarking.'
+}

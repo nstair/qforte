@@ -619,6 +619,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("copy_to_tensor", &FCIComputerThrust::copy_to_tensor)
         .def("copy_to_tensor_thrust_gpu", &FCIComputerThrust::copy_to_tensor_thrust_gpu)
         .def("copy_to_tensor_thrust_cpu", &FCIComputerThrust::copy_to_tensor_thrust_cpu)
+        .def("get_shape", &FCIComputerThrust::get_shape)
         .def("str", &FCIComputerThrust::str, 
             py::arg("print_data") = true, 
             py::arg("print_complex") = false)

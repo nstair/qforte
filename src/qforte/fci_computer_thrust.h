@@ -324,6 +324,8 @@ class FCIComputerThrust {
     void copy_to_tensor_thrust_gpu(TensorThrust& tensor) const;
     void copy_to_tensor_thrust_cpu(TensorThrust& tensor) const;
 
+    const std::vector<size_t>& get_shape() const { return C_.shape(); }
+
   private:
 
     bool on_gpu_;

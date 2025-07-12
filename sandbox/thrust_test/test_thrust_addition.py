@@ -60,7 +60,7 @@ def test_basic_thrust_addition():
     is_correct = np.allclose(result, expected_result)
     
     if is_correct:
-        print("✅ Thrust addition produces correct results!")
+        print("Thrust addition produces correct results!")
         
         # Print example values for verification
         print("\nSample values from the test:")
@@ -69,7 +69,7 @@ def test_basic_thrust_addition():
                 index = i * size + j
                 print(f"A[{i},{j}] + B[{i},{j}] = {expected_result[index]}")
     else:
-        print("❌ Thrust addition test FAILED!")
+        print("Thrust addition test FAILED!")
         
         # Print differences
         diff = np.abs(result - expected_result)
