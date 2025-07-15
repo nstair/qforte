@@ -3,20 +3,22 @@ import numpy as np
  
 import time
 
+np.random.seed(42)  # For reproducibility
+
 # Define the reference and geometry lists.
 geom = [
     ('H', (0., 0., 1.0)), 
     ('H', (0., 0., 2.0)),
     ('H', (0., 0., 3.0)), 
     ('H', (0., 0., 4.0)),
-    ('H', (0., 0., 5.0)), 
+    ('H', (0., 0., 5.0)),
     ('H', (0., 0., 6.0)),
-    ('H', (0., 0., 7.0)), 
+    ('H', (0., 0., 7.0)),
     ('H', (0., 0., 8.0)),
-    ('H', (0., 0., 9.0)), 
-    ('H', (0., 0.,10.0)),
-    ('H', (0., 0.,11.0)), 
-    ('H', (0., 0.,12.0))
+    ('H', (0., 0., 9.0)),
+    ('H', (0., 0., 10.0)),
+    ('H', (0., 0., 11.0)),
+    ('H', (0., 0., 12.0)),
     ]
 
 
@@ -71,7 +73,8 @@ elif(reference == 'random'):
     fci_comp_gpu.set_state_from_tensor(Crand)
     fci_comp_thrust.set_state_from_tensor(Crand)
 
-
+print("\n Crand State ==============")
+print(Crand)
  
 timer.reset()
 fci_comp.apply_sqop(mol.sq_hamiltonian)
@@ -82,7 +85,6 @@ timer.reset()
 fci_comp_gpu.apply_sqop(mol.sq_hamiltonian)
 timer.record('gpu')
 fci_comp_gpu.to_cpu()
-
 
 fci_comp_thrust.to_gpu()
 timer.reset()
@@ -108,9 +110,9 @@ comp_state_gpu.subtract(comp_state)
 comp_state_gpu2.subtract(comp_state_thrust)
 comp_state_thrust.subtract(comp_state)
 
-print("\n thrust - comp state")
-print("======================================================")
-print(f" {comp_state_thrust}")
+#print("\n thrust - comp state")
+#print("======================================================")
+#print(f" {comp_state_thrust}")
 
 # compute the norms of the differences
 norm_gpu = comp_state_gpu.norm()
@@ -152,3 +154,36 @@ print("======================================================")
 print(f" E (from cpu):            {Ecomp}")
 print(f" E (from gpu):            {Ecomp_gpu}")
 print(f" E (from thrust):         {Ecomp_thrust}")
+
+
+#Tensor: FCI Computer
+#  Ndim  = 2
+#  Size  = 36
+#  Shape = (6,6)
+#
+#  Data:
+#
+#                   0            1            2            3            4            5
+#      0   -0.1997705   -0.4588921   -0.1810259   -0.2179127    0.0919495   -0.0138702
+#      1    0.0852668   -0.1449795   -0.0245644   -0.1022848    0.1916274   -0.0828110
+#      2   -0.2480905    0.0858236    0.1173045    0.1084361    0.1431412    0.0710083
+#      3   -0.0759035    0.0424627   -0.0268423    0.1121411    0.1263729    0.0957732
+#      4   -0.1364915    0.0464349    0.1172260    0.0563248    0.2084580    0.1396020
+#      5   -0.1057914    0.1130906    0.1266330    0.0217731    0.1330584    0.2201510
+#
+#
+#
+#TensorGPU: FCI Computer
+#  Ndim  = 2
+#  Size  = 36
+#  Shape = (6,6)
+#
+#  Data:
+#
+#                   0            1            2            3            4            5
+#      0   -0.1997705   -0.4588921   -0.1810259   -0.2179127    0.0919495   -0.0138702
+#      1    0.0852668   -0.1449795   -0.0245644   -0.1022848    0.1916274   -0.0828110
+#      2   -0.2480905    0.0858236    0.1173045    0.1084361    0.1431412    0.0710083
+#      3   -0.0759035    0.0424627   -0.0268423    0.1121411    0.1263729    0.0957732
+#      4   -0.1364915    0.0464349    0.1172260    0.0563248    0.2084580    0.1396020
+#      5   -0.1057914    0.1130906    0.1266330    0.0217731    0.1330584    0.2201510

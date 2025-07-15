@@ -2,6 +2,18 @@
 #include <cuda_runtime.h>
 #include <iostream>
 
+// Helper function for atomic add with double precision
+__device__ double atomicAdd_double(double* address, double val) {
+    unsigned long long int* address_as_ull = (unsigned long long int*)address;
+    unsigned long long int old = *address_as_ull, assumed;
+    do {
+        assumed = old;
+        old = atomicCAS(address_as_ull, assumed,
+                        __double_as_longlong(val + __longlong_as_double(assumed)));
+    } while (assumed != old);
+    return __longlong_as_double(old);
+}
+
 
 
 // __global__ void apply_individual_nbody1_accumulate_kernel(
@@ -204,6 +216,43 @@ __global__ void apply_individual_nbody1_accumulate_kernel(
 //     }
 // }
 
+// V2_atomic - thread-safe version using atomicAdd to prevent race conditions
+__global__ void apply_individual_nbody1_accumulate_kernel_atomic(
+    const cuDoubleComplex coeff, 
+    const cuDoubleComplex* d_Cin, 
+    cuDoubleComplex* d_Cout, 
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb,
+    int nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    int tensor_size) 
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int idy = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (idx < targeta_size) {
+        int ta_idx = d_targeta[idx] * nbeta_strs_;
+        int sa_idx = d_sourcea[idx] * nbeta_strs_;
+        
+        cuDoubleComplex pref = cuCmul(coeff, d_paritya[idx]);
+
+        if (idy < targetb_size) {
+            cuDoubleComplex term = cuCmul(pref, d_parityb[idy]);
+            term = cuCmul(term, d_Cin[sa_idx + d_sourceb[idy]]);
+
+            // Thread-safe atomic accumulation
+            int output_idx = ta_idx + d_targetb[idy];
+            atomicAdd_double(&d_Cout[output_idx].x, term.x);
+            atomicAdd_double(&d_Cout[output_idx].y, term.y);
+        }
+    }
+}
+
 void apply_individual_nbody1_accumulate_wrapper(
     const cuDoubleComplex coeff, 
     const cuDoubleComplex* d_Cin, 
@@ -219,8 +268,15 @@ void apply_individual_nbody1_accumulate_wrapper(
     int targetb_size,
     int tensor_size) 
 {
-    int blocksPerGrid = (tensor_size + 256 - 1) / 256;
-    apply_individual_nbody1_accumulate_kernel<<<blocksPerGrid, 256>>>(coeff, d_Cin, d_Cout, d_sourcea, d_targeta, d_paritya, d_sourceb, d_targetb, d_parityb, nbeta_strs_, targeta_size, targetb_size, tensor_size);
+    // 2D grid configuration for the atomic kernel
+    dim3 blockSize(16, 16);  // 16x16 = 256 threads per block
+    dim3 gridSize((targeta_size + blockSize.x - 1) / blockSize.x,
+                  (targetb_size + blockSize.y - 1) / blockSize.y);
+    
+    apply_individual_nbody1_accumulate_kernel_atomic<<<gridSize, blockSize>>>(
+        coeff, d_Cin, d_Cout, d_sourcea, d_targeta, d_paritya, 
+        d_sourceb, d_targetb, d_parityb, nbeta_strs_, 
+        targeta_size, targetb_size, tensor_size);
    
 
     // Check for any errors launching the kernel
