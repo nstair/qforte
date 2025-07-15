@@ -23,7 +23,7 @@ set(BLA_VENDOR "Generic")
 # set(CMAKE_CXX_COMPILER "/usr/bin/g++")
 
 # Use these if installing to anaconda
-set(CMAKE_PREFIX_PATH "/home/zach_gonzales/anaconda3/envs/qforte_gpu")
+set(CMAKE_PREFIX_PATH "/home/zach_gonzales/anaconda3/envs/qforte")
 set(BLAS_LIBRARIES "${CMAKE_PREFIX_PATH}/lib") 
 set(CBLAS_INCLUDE_DIR "${CMAKE_PREFIX_PATH}/include") #need
 set(OPENBLAS_EXE "${CMAKE_PREFIX_PATH}/lib/libopenblas.so") #need, may be libopenblas.so for linux
@@ -95,7 +95,7 @@ target_link_libraries(qforte PRIVATE fmt-header-only CUDA::cudart ${OPENBLAS_EXE
 
 # Add explicit Thrust include directory
 include_directories(${CUDAToolkit_INCLUDE_DIRS})
-include_directories("/home/zach_gonzales/anaconda3/envs/qforte_gpu/targets/x86_64-linux/include")
+include_directories("/home/zach_gonzales/anaconda3/envs/qforte/targets/x86_64-linux/include")
 
 
 
