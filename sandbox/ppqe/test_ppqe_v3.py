@@ -8,14 +8,14 @@ import os
 
 # sys_str = 'h8'
 # sys_str = 'h2be'
-sys_str = 'h2o'
-# sys_str = 'c6h6'
+# sys_str = 'h2o'
+sys_str = 'c6h6'
 
 tord = np.inf
 
 # update_type = 'jacobi_like'
 update_type = 'two_level_rotation'
-# update_type = 'two_level_rotation_im'
+# update_type = 'two_level_rotation_im' 
 
 if(sys_str == 'h8'):
     geom = [
@@ -120,11 +120,11 @@ timer.record("Setup")
 
 
 # ===> Parameters <===
-e_opt_thresh = 0.0e-8
+e_opt_thresh = 1.0e-8
 r_g_opt_thresh = 1.0e-6
 pool_type = 'SD'
-noise_factor = 1.0e-6  # Set to zero for exact residuals
-dt = 0.1
+noise_factor = 0.0e-6  # Set to zero for exact residuals
+dt = 0.5
 
 # use_dt_from_l1_norm = False 
 
@@ -143,6 +143,8 @@ alg_ppqe = qf.UCCNPPQE(
     print_summary_file = True,
     )
 
+optimizer = 'sequential_rotation'
+# optimizer = 'rotation'
 
 alg_ppqe.run(
     pool_type=pool_type,
@@ -152,7 +154,7 @@ alg_ppqe.run(
     noise_factor = noise_factor,
     time_step = dt,
     use_dt_from_l1_norm = False,
-    optimizer = 'rotation',
+    optimizer = optimizer,
     ppqe_trotter_order = tord,
     update_type = update_type,  
     )

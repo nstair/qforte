@@ -504,11 +504,11 @@ class UCCVQE(VQE, UCC):
 
         # else:
         dE = self._curr_energy - self._prev_energy
-        print(f'     {self._k_counter:7}        {self._curr_energy:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.10f}       {self._n_shots:2.3e}')
+        print(f'     {self._k_counter:7}        {self._curr_energy:+12.14f}      {dE:+12.14f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.10f}       {self._n_shots:2.3e}')
 
         if (self._print_summary_file):
             f = open("summary.dat", "a", buffering=1)
-            f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.12f}      {dE:+12.12f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.12f}       {self._n_shots:2.3e}')
+            f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.14f}      {dE:+12.14f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.12f}       {self._n_shots:2.3e}')
             f.close()
 
         self._prev_energy = self._curr_energy

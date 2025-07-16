@@ -75,11 +75,11 @@ def jacobi_solver(self):
         Ek0 = Ek
 
         if self.__class__.__name__ in ['UCCNPQE', 'SPQE']:
-            print(f'     {k:7}        {Ek:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}       {self._n_shots:2.3e}')
+            print(f'     {k:7}        {Ek:+12.14f}      {dE:+12.14f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}       {self._n_shots:2.3e}')
 
             if (self._print_summary_file):
                 f = open("summary.dat", "a", buffering=1)
-                f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.12f}      {dE:+12.12f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.12f}       {self._n_shots:2.3e}')
+                f.write(f'\n       {k:7}        {self._curr_energy:+12.14f}      {dE:+12.14f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.12f}       {self._n_shots:2.3e}')
                 f.close()
 
             if(self._res_vec_norm < self._opt_thresh):
@@ -87,7 +87,7 @@ def jacobi_solver(self):
                 break
 
         elif self.__class__.__name__ in ['UCCNVQE', 'ADAPTVQE']:
-            print(f'     {k:7}        {Ek:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.10f}       {self._n_shots:2.3e}')
+            print(f'     {k:7}        {Ek:+12.14f}      {dE:+12.14f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.10f}       {self._n_shots:2.3e}')
             
             if (self._print_summary_file):
                 f = open("summary.dat", "a", buffering=1)
@@ -162,16 +162,11 @@ def rotation_solver(self):
 
         t_old = copy.deepcopy(self._tamps)
 
-        #do regular update
         if self.__class__.__name__ in ['UCCNPPQE', 'S3PQE']:
             c, d = self.get_propogated_residual_vector(self._tamps)
         else:
             raise ValueError('Rotation solver is not implemented for this algorithm.')
         
-        
-        # =====> IMPORTANT: Divide my MP denom?? <=====
-        # d = self.get_res_over_mpdenom(d)
-        # self._tamps = list(np.add(self._tamps, r_k))
 
         # =====> 1st, inspired by origional residual update <=====
         if(self._ppqe_update_type == 'jacobi_like'):
@@ -180,6 +175,7 @@ def rotation_solver(self):
             # self._tamps = list(np.add(self._tamps, d))
             self._tamps = list(np.subtract(self._tamps, d))
         
+
         # =====> 2nd, Two determinant subspace rotation <=====
         elif(self._ppqe_update_type == 'two_level_rotation' or self._ppqe_update_type == 'two_level_rotation_im'):
 
@@ -199,28 +195,24 @@ def rotation_solver(self):
                 # ====> Preferable becuse imaginary part is generally larger (odd terms) <=====
                 # note that it should be (+) in the equation but (-) seems to work better...
                 for r_mu_mu, r_mu in zip(r_mu_mu_vec, d):
+
+                    # arg = 2.0 * np.imag(r_mu) / (np.imag(r_mu_mu) - np.imag(c))
+                    # arg = np.clip(arg, -1.0, 1.0)
+                    # delta_t_mu = 0.5 * np.arcsin(arg)
+
                     delta_t_mu = 0.5 * np.arcsin( 2.0 * np.imag(r_mu) / (np.imag(r_mu_mu) - np.imag(c) ) )
                     delta_t.append(delta_t_mu)
 
             else:
                 raise ValueError(f"Unknown update type: {self._ppqe_update_type}")
             
-            # ====> this may be nonsense <=====
-            # for r_mu_mu, r_mu in zip(r_mu_mu_vec, d):
-            #     delta_t_mu = 0.5 * np.real( np.arctan( 4.0 * r_mu / (c - r_mu_mu) ) )
-            #     delta_t.append(delta_t_mu)
 
             # print(f"delta_t: {delta_t}\n")
 
-            # =====> New update that does no work <=====
+            # =====> Actually update the amplitudes <=====
             self._tamps = [
                 t_prev + delta_t_mu for t_prev, delta_t_mu in zip(self._tamps, delta_t)
             ]
-
-            # =====> Incorrect old update that sort-of works <=====
-            # self._tamps = [
-            #     t_prev + 0.5 * np.arctan( np.real(d_mu) ) for t_prev, d_mu in zip(self._tamps, d)
-            # ]
 
 
         else:
@@ -238,12 +230,174 @@ def rotation_solver(self):
         Ek0 = Ek
 
         if self.__class__.__name__ in ['UCCNPPQE', 'S3PQE']:
-            print(f'     {k:7}        {Ek:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}       {self._n_shots:2.3e}')
+            print(f'     {k:7}        {Ek:+12.14f}      {dE:+12.14f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}       {self._n_shots:2.3e}')
             
             if (self._print_summary_file):
                 f = open("summary.dat", "a", buffering=1)
                 # f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.12f}      {dE:+12.12f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.12f}       {self._n_shots:2.3e}')
-                f.write(f'\n     {k:7}        {Ek:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}       {self._n_shots:2.3e}')
+                f.write(f'\n     {k:7}        {Ek:+12.14f}      {dE:+12.14f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}       {self._n_shots:2.3e}')
+                f.close()
+
+            # NOTE(Nick): This is the original convergence criterion, but it is not     
+            #  working well for the rotation solver, so we are using the dE criterion 
+            # if(self._res_vec_norm < self._opt_thresh):
+            #     self._Egs = Ek
+            #     break
+
+            if(np.abs(dE) < self._opt_e_thresh):
+                self._Egs = Ek
+                break
+
+        t_diis.append(copy.deepcopy(self._tamps))
+        e_diis.append(np.subtract(copy.deepcopy(self._tamps), t_old))
+
+        if(k >= 1 and self._diis_max_dim >= 2):
+            self._tamps = diis(self._diis_max_dim, t_diis, e_diis)
+
+    #NOTE(Nick): Update resource estimates for UCCNPPQE and S3PQE
+    #NOTE(Nick): This function only gets called once for fixed ansatz, 
+
+    self._Egs = Ek
+    if k == self._opt_maxiter:
+        print("\nMaximum number of Jacobi iterations reached!")
+    if hasattr(self, '_energies'):
+        self._energies.append(Ek)
+    if hasattr(self, '_n_classical_params'):
+        self._n_classical_params = len(self._tamps)
+    #NOTE(Nick): Pauli count is fishy here, seems like we should not be multiplying by k
+    # if we are accumulating the number of measurements via +=.
+    if hasattr(self, '_n_pauli_measures_k'):
+        self._n_pauli_measures_k += self._Nl*k * (2*len(self._tamps) + 1)
+    if hasattr(self, '_n_pauli_trm_measures'):
+        self._n_pauli_trm_measures += 2*self._Nl*k*len(self._tamps) + self._Nl*k
+    if hasattr(self, '_n_pauli_trm_measures_lst'):
+        self._n_pauli_trm_measures_lst.append(self._n_pauli_measures_k)
+
+    if hasattr(self, '_n_shots_k'):
+        self._n_shots_k += self._n_shots
+
+    if hasattr(self, '_n_shots_lst'):
+        self._n_shots_lst.append(self._n_shots_k)
+
+    if hasattr(self, '_n_cnot'):
+        if(self._computer_type == 'fock'):
+            self._n_cnot = self.build_Uvqc().get_num_cnots()
+        else:
+            # TODO: Build resource estimator for FCI Case
+            self._n_cnot = 'N/A'
+    if hasattr(self, '_n_cnot_lst'):
+        if(self._computer_type == 'fock'):
+            self._n_cnot_lst.append(self.build_Uvqc().get_num_cnots())
+        else:
+            # TODO: Build resource estimator
+            self._n_cnot_lst.append('N/A')
+
+
+def sequential_rotation_solver(self):
+    """
+    This function minimizes the norm of the residual/gradient vector
+    by using a quasi-Newton update procedure for the amplitudes
+    """
+
+    t_diis = [copy.deepcopy(self._tamps)]
+    e_diis = []
+    Ek0 = self.energy_feval(self._tamps)
+
+    if self.__class__.__name__ in ['UCCNPPQE', 'S3PQE']:
+        print('\n    k iteration         Energy               dE           Nrvec ev      Nrm ev*         ||r||           Nshots')
+
+    print('--------------------------------------------------------------------------------------------------------------------', flush=True)
+
+    if (self._print_summary_file):
+        f = open("summary.dat", "w+", buffering=1)
+        f.write('\n#    k iteration         Energy               dE           Nrvec ev      Nrm ev*         ||r||           Nshots')
+        f.write('\n#--------------------------------------------------------------------------------------------------------------------')
+        f.close()
+
+    # propagated_residuals = []
+
+    for k in range(1, self._opt_maxiter+1):
+
+        c, d = self.get_propogated_residual_vector(self._tamps)
+
+        t_old = copy.deepcopy(self._tamps)
+
+        if self.__class__.__name__ not in ['UCCNPPQE', 'S3PQE']:
+            raise ValueError('Sequential rotation solver is not implemented for this algorithm.')
+            
+        
+
+        # =====> Two determinant subspace rotation <=====
+        if(self._ppqe_update_type == 'two_level_rotation' or self._ppqe_update_type == 'two_level_rotation_im'):
+
+            # temp_pool = qf.SQOpPool()
+
+            # NICK: Write a 'updatte_coeffs' type fucntion for the op-pool.
+            # for tamp, top in zip(self._tamps, self._tops):
+                # temp_pool.add(tamp, self._pool_obj[top][1])
+
+            # For amplitude differences not for times steps
+            delta_t = []
+
+            # ====> # Loop over each tamp (mu indexed)
+            for mu in range(len(self._tamps)):
+                c_0, c_mu, r_mu = self.get_c0_cmu_rmu(mu, self._tamps)
+
+
+                # ====> Update theta_mu for this particualr operator iteration <=====
+                # the dUCC circuit is not different at the next iteration of the loop!
+                if (self._ppqe_update_type == 'two_level_rotation'):
+                    # ====> Try solving real part of Equation <=====
+                    # ====> Smaller values, but more numerically stable (arctan...) <=====
+                    delta_t_mu = 0.5 * np.arctan( -2.0 * np.real( r_mu ) / (np.real(c_mu) - np.real(c_0) ) )
+
+                elif (self._ppqe_update_type == 'two_level_rotation_im'):
+
+                    # ====> Try solving imaginary part of Equation <=====
+                    # ====> Preferable becuse imaginary part is generally larger (odd terms) <=====
+                    # note that it should be (+) in the equation but (-) seems to work better...
+
+                    # arg = 2.0 * np.imag(r_mu) / (np.imag(c_mu) - np.imag(c_0))
+                    # arg = np.clip(arg, -1.0, 1.0)
+                    # delta_t_mu = 0.5 * np.arcsin(arg)
+
+                    delta_t_mu = 0.5 * np.arcsin( 2.0 * np.imag(r_mu) / (np.imag(c_mu) - np.imag(c_0) ) )
+
+                self._tamps[mu] += delta_t_mu
+
+                # propagated_residuals.append(r_mu)
+
+                # NOTE(Nick): Don't need to loop again to update amps, they are updated sequentially,
+                # but still going to throw into diis for consistency.
+
+        else:
+            raise ValueError(f"Unknown update type: {self._ppqe_update_type}")
+
+        for t in self._tamps:
+            if np.imag(t) > 1.0e-12:
+                print(f" Im(t): {np.imag(t)}")
+                print(f" Re(t): {np.real(t)}")
+                print(f"\n\n")
+                raise ValueError('Imaginary t_amp encountered during rotation solver.')
+            
+        
+
+        # self._res_vec_norm = np.linalg.norm(propagated_residuals)
+        self._res_vec_norm = np.linalg.norm(d)
+        self._res_vec_evals += 1
+        self._res_m_evals += len(self._tamps)
+
+        Ek = self.energy_feval(self._tamps)
+        dE = Ek - Ek0
+        Ek0 = Ek
+
+        if self.__class__.__name__ in ['UCCNPPQE', 'S3PQE']:
+            print(f'     {k:7}        {Ek:+12.14f}      {dE:+12.14f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}       {self._n_shots:2.3e}')
+            
+            if (self._print_summary_file):
+                f = open("summary.dat", "a", buffering=1)
+                # f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.12f}      {dE:+12.12f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.12f}       {self._n_shots:2.3e}')
+                f.write(f'\n     {k:7}        {Ek:+12.14f}      {dE:+12.14f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}       {self._n_shots:2.3e}')
                 f.close()
 
             # NOTE(Nick): This is the original convergence criterion, but it is not     

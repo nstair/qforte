@@ -26,10 +26,15 @@ geom = [
 #     ]
 
 geom = [
-        ('O', (0., 0., 0.00)), 
-        ('H', (0., 0., -1.00)),
-        ('H', (0., 0., +1.00)),
-        ]  
+    ('O', (0., 0.,  0.00)), 
+    ('O', (0., 0.,  1.00)),
+    ]
+
+# geom = [
+#         ('O', (0., 0., 0.00)), 
+#         ('H', (0., 0., -1.00)),
+#         ('H', (0., 0., +1.00)),
+#         ]  
 
 timer = qf.local_timer()
 
@@ -46,23 +51,23 @@ mol = qf.system_factory(
 timer.record("Psi4 Setup")
 
 
-r_g_opt_thresh = 1.0e-4
+r_g_opt_thresh = 1.0e-9
 pool_type = 'SD'
-noise_factor = 1.0e-4  # Set to zero for exact residuals
+noise_factor = 0.0e-8  # Set to zero for exact residuals
 dt = 0.01
-update_type = 'jacobi_like'
-# update_type = 'two_level_rotation'
+# update_type = 'jacobi_like'
+update_type = 'two_level_rotation'
 # update_type = 'two_level_rotation_im'
 
 # ===> VQE <===
 timer.reset()
 
-alg_pqe = qf.UCCNVQE(
+alg_vqe = qf.UCCNVQE(
     mol,
     computer_type = 'fci'
     )
 
-alg_pqe.run(
+alg_vqe.run(
     opt_thresh=r_g_opt_thresh, 
     pool_type=pool_type,
     noise_factor=noise_factor,
@@ -79,7 +84,8 @@ timer.reset()
 
 alg_pqe = qf.UCCNPQE(
     mol,
-    computer_type = 'fci'
+    computer_type = 'fci',
+    print_summary_file=True,
     )
 
 alg_pqe.run(

@@ -74,11 +74,11 @@ class UCCPQE(PQE, UCC):
             self._curr_energy = self.energy_feval(x)
         # self._curr_energy = self.energy_feval(x)
         dE = self._curr_energy - self._prev_energy
-        print(f'     {self._k_counter:7}        {self._curr_energy:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}       {self._n_shots:2.3e}')
+        print(f'     {self._k_counter:7}        {self._curr_energy:+12.14f}      {dE:+12.14f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.10f}       {self._n_shots:2.3e}')
 
         if (self._print_summary_file):
             f = open("summary.dat", "a", buffering=1)
-            f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.12f}      {dE:+12.12f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.12f}       {self._n_shots:2.3e}')
+            f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.14f}      {dE:+12.14f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._res_vec_norm:+12.12f}       {self._n_shots:2.3e}')
             f.close()
 
         self._prev_energy = self._curr_energy
@@ -92,6 +92,10 @@ class UCCPQE(PQE, UCC):
     def solve(self):
         if self._optimizer.lower() == 'rotation':
             self.rotation_solver()
+        elif self._optimizer.lower() == 'sequential_rotation':
+            self.sequential_rotation_solver()
+        elif self._optimizer.lower() == 'jacobi_like':
+            self.jacobi_solver()
         elif self._optimizer.lower() == 'jacobi':
             self.jacobi_solver()
         elif self._optimizer.lower() in ['nelder-mead', 'powell', 'bfgs', 'l-bfgs-b', 'cg', 'slsqp']:

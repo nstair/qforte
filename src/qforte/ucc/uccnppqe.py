@@ -433,23 +433,31 @@ class UCCNPPQE(UCCPQE):
             # NOTE(Nick): Adding a loop over smaller dt's here to account for large frozen core energy.
             # want self._frozen_core_energy * dt > taylor_thresh
             taylor_thresh = 1.0
-            niter = int(np.abs(self._frozen_core_energy) * self._dt / taylor_thresh) + 1
+
+            # niter = int(np.abs(self._frozen_core_energy) * self._dt / taylor_thresh) + 1
+            # niter = int(np.sqrt(self._ham_l1_norm_sq) * self._dt / taylor_thresh) + 1
+            niter = int((self._ham_l1_norm_sq**(0.25)) * self._dt / taylor_thresh) + 1
+
+            # niter = 10
+
             # print(f"\n\nUsing {niter} iterations for Taylor expansion of the evolution operator.\n\n")
 
             if(self._apply_ham_as_tensor):
 
                 global_phase = np.exp(-1j * self._frozen_core_energy * self._dt)
 
-                qc_res.evolve_tensor_taylor(
-                            0.0, 
-                            self._mo_oeis, 
-                            self._mo_teis, 
-                            self._mo_teis_einsum, 
-                            self._norb,
-                            float(self._dt),
-                            1.0e-15,
-                            30,
-                            False)
+                for _ in range(niter):
+
+                    qc_res.evolve_tensor_taylor(
+                                0.0, 
+                                self._mo_oeis, 
+                                self._mo_teis, 
+                                self._mo_teis_einsum, 
+                                self._norb,
+                                float(self._dt/niter),
+                                1.0e-15,
+                                30,
+                                False)
                 
                 qc_res.scale(global_phase)
 
@@ -573,22 +581,26 @@ class UCCNPPQE(UCCPQE):
             if(self._ppqe_trotter_order == np.inf):
                 
                 taylor_thresh = 1.0
-                niter = int(np.abs(self._frozen_core_energy) * self._dt / taylor_thresh) + 1
+                # niter = int(np.abs(self._frozen_core_energy) * self._dt / taylor_thresh) + 1
+                niter = int((self._ham_l1_norm_sq**(0.25)) * self._dt / taylor_thresh) + 1
+
+                # niter = 10
 
                 if(self._apply_ham_as_tensor):
 
                     global_phase = np.exp(-1j * self._frozen_core_energy * self._dt)
 
-                    qc_ra.evolve_tensor_taylor(
-                                0.0, 
-                                self._mo_oeis, 
-                                self._mo_teis, 
-                                self._mo_teis_einsum, 
-                                self._norb,
-                                float(self._dt),
-                                1.0e-15,
-                                30,
-                                False)
+                    for _ in range(niter):
+                        qc_ra.evolve_tensor_taylor(
+                                    0.0, 
+                                    self._mo_oeis, 
+                                    self._mo_teis, 
+                                    self._mo_teis_einsum, 
+                                    self._norb,
+                                    float(self._dt/niter),
+                                    1.0e-15,
+                                    30,
+                                    False)
                     
                     qc_ra.scale(global_phase)
 
@@ -627,12 +639,182 @@ class UCCNPPQE(UCCPQE):
 
             # NOTE(Nick): this might be over all excitations, we should only include those that are in the pool.
 
-            if self._noise_factor > 1e-12:
-                self._n_shots += 2.0 * (len(self._tamps) + 1.0) / (self._noise_factor * self._noise_factor)
-            else:
-                self._n_shots += np.inf
+        if self._noise_factor > 1e-12:
+            self._n_shots += 2.0 * (len(self._tamps) + 1.0) / (self._noise_factor * self._noise_factor)
+        else:
+            self._n_shots += np.inf
 
         return prop_return_amps
+    
+
+    def get_c0_cmu_rmu(self, mu, trial_amps):
+        """Returns the propagated return amplitude vector with elements pertaining to all operators
+        in the ansatz circuit.
+
+        Parameters
+        ----------
+        trial_amps : list of floats
+            The list of (real) floating point numbers which will characterize
+            the state preparation circuit used in calculation of the residuals.
+        """
+        if(self._pool_type == 'sa_SD'):
+            raise ValueError('Must use single term particle-hole nbody operators for residual calculation')
+        
+        if not self._ref_from_hf:
+            raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
+        
+        temp_pool = qforte.SQOpPool()
+
+        for tamp, top in zip(trial_amps, self._tops):
+            temp_pool.add(tamp, self._pool_obj[top][1])
+
+        # prop_return_amps = []
+
+        IaIb_mu = self._excited_dets_fci_comp[mu][0]
+        phase_mu = self._excited_dets_fci_comp[mu][1]
+
+
+        qc_0 = qforte.FCIComputer(
+                self._nel, 
+                self._2_spin, 
+                self._norb)
+        
+        qc_mu = qforte.FCIComputer(
+                self._nel, 
+                self._2_spin, 
+                self._norb)
+
+        
+
+        # qc_ra.zero_state()
+        # print(f"IaIb: {IaIb}")
+
+        qc_0.hartree_fock()
+        qc_mu.set_element(IaIb_mu, 1.0)
+
+
+        # ====> New Here <====
+
+
+        # function assumers first order trotter, with 1 trotter step, and time = 1.0
+        qc_0.evolve_pool_trotter_basic(
+            temp_pool,
+            antiherm=True,
+            adjoint=False)
+        
+        qc_mu.evolve_pool_trotter_basic(
+            temp_pool,
+            antiherm=True,
+            adjoint=False)
+        
+
+        
+        C0 = qc_0.get_state_deep()
+        Cmu = qc_mu.get_state_deep()
+
+
+        if(self._ppqe_trotter_order == np.inf):
+            
+            taylor_thresh = 1.0
+            # niter = int(np.abs(self._frozen_core_energy) * self._dt / taylor_thresh) + 1
+            niter = int((self._ham_l1_norm_sq**(0.25)) * self._dt / taylor_thresh) + 1
+
+            # niter = 10
+
+            if(self._apply_ham_as_tensor):
+
+                global_phase = np.exp(-1j * self._frozen_core_energy * self._dt)
+
+                for _ in range(niter):
+                    qc_0.evolve_tensor_taylor(
+                                0.0, 
+                                self._mo_oeis, 
+                                self._mo_teis, 
+                                self._mo_teis_einsum, 
+                                self._norb,
+                                float(self._dt/niter),
+                                1.0e-15,
+                                30,
+                                False)
+                    
+                    qc_mu.evolve_tensor_taylor(
+                                0.0, 
+                                self._mo_oeis, 
+                                self._mo_teis, 
+                                self._mo_teis_einsum, 
+                                self._norb,
+                                float(self._dt/niter),
+                                1.0e-15,
+                                30,
+                                False)
+                
+                qc_0.scale(global_phase)
+                qc_mu.scale(global_phase)
+
+            else:
+                for _ in range(niter):
+
+                    qc_0.evolve_op_taylor(
+                            self._sq_ham,
+                            float(self._dt/niter),
+                            1.0e-15,
+                            30,
+                            False)
+
+                    qc_mu.evolve_op_taylor(
+                            self._sq_ham,
+                            float(self._dt/niter),
+                            1.0e-15,
+                            30,
+                            False)
+            
+        elif(self._ppqe_trotter_order in [1,2]):
+            qc_0.evolve_pool_trotter(
+                self._hermitian_pairs,
+                self._dt,
+                1,
+                self._ppqe_trotter_order,
+                antiherm=False,
+                adjoint=False)
+            
+            qc_mu.evolve_pool_trotter(
+                self._hermitian_pairs,
+                self._dt,
+                1,
+                self._ppqe_trotter_order,
+                antiherm=False,
+                adjoint=False)
+
+        else:
+            raise ValueError(f"PPQE Trotter order {self._ppqe_trotter_order} is not supported.")
+
+        L0 = qc_0.get_state_deep()
+        Lmu = qc_mu.get_state_deep()
+        
+        
+        c_0 = C0.vector_dot(L0)
+        c_mu = Cmu.vector_dot(Lmu)
+        r_mu = C0.vector_dot(Lmu) * phase_mu
+        
+        if self._noise_factor > 1e-12:
+            nre1 = np.random.normal(np.real(c_0), self._noise_factor)
+            nre2 = np.random.normal(np.real(c_mu), self._noise_factor)
+            nre3 = np.random.normal(np.real(r_mu), self._noise_factor)
+
+            nim1 = np.random.normal(np.imag(c_0), self._noise_factor)
+            nim2 = np.random.normal(np.imag(c_mu), self._noise_factor)
+            nim3 = np.random.normal(np.imag(r_mu), self._noise_factor)
+
+            c_0 = nre1 + 1j * nim1
+            c_mu = nre2 + 1j * nim2
+            r_mu = nre3 + 1j * nim3
+
+        if self._noise_factor > 1e-12:
+            self._n_shots += 6.0 / (self._noise_factor * self._noise_factor)
+        else:
+            self._n_shots += np.inf
+
+        return c_0, c_mu, r_mu
 
 
     def initialize_ansatz(self):
@@ -646,5 +828,6 @@ class UCCNPPQE(UCCPQE):
 # S2PQE.jacobi_solver = optimizer.jacobi_solver
 # S2PQE.scipy_solver = optimizer.scipy_solver
 UCCNPPQE.rotation_solver = optimizer.rotation_solver
+UCCNPPQE.sequential_rotation_solver = optimizer.sequential_rotation_solver
 UCCNPPQE.construct_moment_space = moment_energy_corrections.construct_moment_space
 UCCNPPQE.compute_moment_energies = moment_energy_corrections.compute_moment_energies
