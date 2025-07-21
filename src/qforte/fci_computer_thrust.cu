@@ -138,7 +138,7 @@ void FCIComputerThrust::apply_tensor_spin_1bdy(const TensorThrust& h1e, size_t n
             }
         );
 
-    apply_array_1bdy(
+    apply_array_1bdy_cpu(
         Cnew,
         graph_.read_dexca_vec(),
         nalfa_strs_,
@@ -148,7 +148,7 @@ void FCIComputerThrust::apply_tensor_spin_1bdy(const TensorThrust& h1e, size_t n
         norb_,
         true);
 
-    apply_array_1bdy(
+    apply_array_1bdy_cpu(
         Cnew,
         graph_.read_dexcb_vec(),
         nalfa_strs_,
@@ -183,7 +183,7 @@ void FCIComputerThrust::apply_tensor_spat_12bdy(
     TensorThrust Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
 
     // Apply one-body terms
-    apply_array_1bdy(
+    apply_array_1bdy_cpu(
         Cnew,
         graph_.read_dexca_vec(),
         nalfa_strs_,
@@ -193,7 +193,7 @@ void FCIComputerThrust::apply_tensor_spat_12bdy(
         norb_,
         true);
 
-    apply_array_1bdy(
+    apply_array_1bdy_cpu(
         Cnew,
         graph_.read_dexcb_vec(),
         nalfa_strs_,
@@ -204,7 +204,7 @@ void FCIComputerThrust::apply_tensor_spat_12bdy(
         false);
 
     // Apply two-body terms (same spin)
-    lm_apply_array12_same_spin_opt(
+    lm_apply_array12_same_spin_opt_cpu(
         Cnew,
         graph_.read_dexca_vec(),
         nalfa_strs_,
@@ -215,7 +215,7 @@ void FCIComputerThrust::apply_tensor_spat_12bdy(
         norb_,
         true);
 
-    lm_apply_array12_same_spin_opt(
+    lm_apply_array12_same_spin_opt_cpu(
         Cnew,
         graph_.read_dexcb_vec(),
         nalfa_strs_,
@@ -227,7 +227,7 @@ void FCIComputerThrust::apply_tensor_spat_12bdy(
         false);
 
     // Apply two-body terms (different spin)
-    lm_apply_array12_diff_spin_opt(
+    lm_apply_array12_diff_spin_opt_cpu(
         Cnew,
         graph_.read_dexca_vec(),
         graph_.read_dexcb_vec(),
@@ -313,7 +313,7 @@ void FCIComputerThrust::lm_apply_array1(
     throw std::runtime_error("");
 }*/
 
-void FCIComputerThrust::apply_array_1bdy(
+void FCIComputerThrust::apply_array_1bdy_cpu(
     TensorThrust& out,
     const std::vector<int>& dexc,
     const int astates,
@@ -348,7 +348,7 @@ void FCIComputerThrust::apply_array_1bdy(
     }
 }
 
-void FCIComputerThrust::lm_apply_array12_same_spin_opt(
+void FCIComputerThrust::lm_apply_array12_same_spin_opt_cpu(
     TensorThrust& out,
     const std::vector<int>& dexc,
     const int alpha_states,
@@ -401,7 +401,7 @@ void FCIComputerThrust::lm_apply_array12_same_spin_opt(
     }
 }
 
-void FCIComputerThrust::lm_apply_array12_diff_spin_opt(
+void FCIComputerThrust::lm_apply_array12_diff_spin_opt_cpu(
     TensorThrust& out,
     const std::vector<int>& adexc,
     const std::vector<int>& bdexc,
@@ -495,7 +495,7 @@ std::pair<TensorThrust, TensorThrust> FCIComputerThrust::calculate_dvec_spin_wit
     throw std::runtime_error("");
 }*/
 
-TensorThrust FCIComputerThrust::calculate_coeff_spin_with_dvec(std::pair<TensorThrust, TensorThrust>& dvec)
+TensorThrust FCIComputerThrust::calculate_coeff_spin_with_dvec_cpu(std::pair<TensorThrust, TensorThrust>& dvec)
 {
     cpu_error();
 
@@ -534,7 +534,7 @@ TensorThrust FCIComputerThrust::calculate_coeff_spin_with_dvec(std::pair<TensorT
     return Cnew;
 }
 
-std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map_number(
+std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map_number_cpu(
     const std::vector<int>& numa,
     const std::vector<int>& numb)
 {
@@ -570,7 +570,7 @@ std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map_nu
     return std::make_pair(amap, bmap);
 }
 
-std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map(
+std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map_cpu(
     const std::vector<int>& crea,
     const std::vector<int>& anna,
     const std::vector<int>& creb,
@@ -609,7 +609,7 @@ std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map(
     return std::make_pair(amap, bmap);
 }
 
-void FCIComputerThrust::apply_cos_inplace(
+void FCIComputerThrust::apply_cos_inplace_cpu(
     const std::complex<double> time,
     const std::complex<double> coeff,
     const std::vector<int>& crea,
@@ -623,7 +623,7 @@ void FCIComputerThrust::apply_cos_inplace(
     const std::complex<double> cabs = std::abs(coeff);
     const std::complex<double> factor = std::cos(time * cabs);
 
-    std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map(crea, anna, creb, annb);
+    std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_cpu(crea, anna, creb, annb);
 
     if (maps.first.size() != 0 and maps.second.size() != 0){
         for (size_t i = 0; i < maps.first.size(); i++){
@@ -634,7 +634,7 @@ void FCIComputerThrust::apply_cos_inplace(
     }
 }
 
-int FCIComputerThrust::isolate_number_operators(
+int FCIComputerThrust::isolate_number_operators_cpu(
     const std::vector<int>& cre,
     const std::vector<int>& ann,
     std::vector<int>& crework,
@@ -658,7 +658,7 @@ int FCIComputerThrust::isolate_number_operators(
     return par;
 }
 
-void FCIComputerThrust::evolve_individual_nbody_easy(
+void FCIComputerThrust::evolve_individual_nbody_easy_cpu(
     const std::complex<double> time,
     const std::complex<double> coeff,
     const TensorThrust& Cin,
@@ -671,7 +671,7 @@ void FCIComputerThrust::evolve_individual_nbody_easy(
     cpu_error();
 
     std::complex<double> factor = std::exp(-time * std::real(coeff) * std::complex<double>(0.0, 1.0));
-    std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number(anna, annb);
+    std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number_cpu(anna, annb);
 
     if (maps.first.size() != 0 and maps.second.size() != 0){
         for (size_t i = 0; i < maps.first.size(); i++){
@@ -682,7 +682,7 @@ void FCIComputerThrust::evolve_individual_nbody_easy(
     }
 }
 
-void FCIComputerThrust::evolve_individual_nbody_hard(
+void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
     const std::complex<double> time,
     const std::complex<double> coeff,
     const TensorThrust& Cin,
@@ -702,14 +702,14 @@ void FCIComputerThrust::evolve_individual_nbody_hard(
     std::vector<int> numberb;
 
     int parity = 0;
-    parity += isolate_number_operators(
+    parity += isolate_number_operators_cpu(
         crea,
         anna,
         dagworka,
         undagworka,
         numbera);
 
-    parity += isolate_number_operators(
+    parity += isolate_number_operators_cpu(
         creb,
         annb,
         dagworkb,
@@ -726,7 +726,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard(
     std::vector<int> numberb_dagworkb(numberb.begin(), numberb.end());
     numberb_dagworkb.insert(numberb_dagworkb.end(), dagworkb.begin(), dagworkb.end());
 
-    apply_cos_inplace(
+    apply_cos_inplace_cpu(
         time,
         ncoeff,
         numbera_dagworka,
@@ -743,7 +743,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard(
     std::vector<int> numberb_undagworkb(numberb.begin(), numberb.end());
     numberb_undagworkb.insert(numberb_undagworkb.end(), undagworkb.begin(), undagworkb.end());
 
-    apply_cos_inplace(
+    apply_cos_inplace_cpu(
         time,
         ncoeff,
         numbera_undagworka,
@@ -757,7 +757,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard(
     int phase = std::pow(-1, (crea.size() + anna.size()) * (creb.size() + annb.size()));
     std::complex<double> work_cof = std::conj(coeff) * static_cast<double>(phase) * std::complex<double>(0.0, -1.0);
 
-    apply_individual_nbody_accumulate(
+    apply_individual_nbody_accumulate_gpu(
         work_cof * sinfactor,
         Cin,
         Cout, 
@@ -768,7 +768,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard(
 
     // std::cout << "\n Cout After First Accumulate Application \n" << Cout.str(true, true) << std::endl;
 
-    apply_individual_nbody_accumulate(
+    apply_individual_nbody_accumulate_gpu(
         coeff * std::complex<double>(0.0, -1.0) * sinfactor,
         Cin,
         Cout, 
@@ -780,7 +780,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard(
     // std::cout << "\n Cout After Second Accumulate Application \n" << Cout.str(true, true) << std::endl;
 }
 
-void FCIComputerThrust::evolve_individual_nbody(
+void FCIComputerThrust::evolve_individual_nbody_cpu(
     const std::complex<double> time,
     const SQOperator& sqop,
     const TensorThrust& Cin,
@@ -843,7 +843,7 @@ void FCIComputerThrust::evolve_individual_nbody(
     std::complex<double> parity = std::pow(-1, nswaps);
 
     if (crea == anna && creb == annb) {
-        evolve_individual_nbody_easy(
+        evolve_individual_nbody_easy_cpu(
             time,
             parity * std::get<0>(term), 
             Cin,
@@ -853,7 +853,7 @@ void FCIComputerThrust::evolve_individual_nbody(
             creb,
             annb);
     } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
-        evolve_individual_nbody_hard(
+        evolve_individual_nbody_hard_cpu(
             time,
             parity * std::get<0>(term),
             Cin,
@@ -868,7 +868,7 @@ void FCIComputerThrust::evolve_individual_nbody(
     }
 }
 
-void FCIComputerThrust::apply_sqop_evolution(
+void FCIComputerThrust::apply_sqop_evolution_cpu(
     const std::complex<double> time,
     const SQOperator& sqop,
     const bool antiherm,
@@ -878,7 +878,7 @@ void FCIComputerThrust::apply_sqop_evolution(
 
     TensorThrust Cin = C_;
     // NOTE(Nick): needs gpu treatment
-    evolve_individual_nbody(
+    evolve_individual_nbody_cpu(
         time,
         sqop,
         Cin,
@@ -887,7 +887,7 @@ void FCIComputerThrust::apply_sqop_evolution(
         adjoint); 
 }
 
-void FCIComputerThrust::evolve_pool_trotter_basic(
+void FCIComputerThrust::evolve_pool_trotter_basic_cpu(
     const SQOpPool& pool,
     const bool antiherm,
     const bool adjoint)
@@ -896,7 +896,7 @@ void FCIComputerThrust::evolve_pool_trotter_basic(
 
     if(adjoint){
         for (int i = pool.terms().size() - 1; i >= 0; --i) {
-            apply_sqop_evolution(
+            apply_sqop_evolution_cpu(
                 pool.terms()[i].first, 
                 pool.terms()[i].second,
                 antiherm,
@@ -904,7 +904,7 @@ void FCIComputerThrust::evolve_pool_trotter_basic(
         }
     } else {
         for (const auto& sqop_term : pool.terms()) {
-            apply_sqop_evolution(
+            apply_sqop_evolution_cpu(
                 sqop_term.first, 
                 sqop_term.second,
                 antiherm,
@@ -913,7 +913,7 @@ void FCIComputerThrust::evolve_pool_trotter_basic(
     }
 }
 
-void FCIComputerThrust::evolve_pool_trotter(
+void FCIComputerThrust::evolve_pool_trotter_cpu(
     const SQOpPool& pool,
     const double evolution_time,
     const int trotter_steps,
@@ -930,7 +930,7 @@ void FCIComputerThrust::evolve_pool_trotter(
         if(adjoint){
             for( int r = 0; r < trotter_steps; r++) {
                 for (int i = pool.terms().size() - 1; i >= 0; --i) {
-                    apply_sqop_evolution(
+                    apply_sqop_evolution_cpu(
                         prefactor * pool.terms()[i].first, 
                         pool.terms()[i].second,
                         antiherm,
@@ -942,7 +942,7 @@ void FCIComputerThrust::evolve_pool_trotter(
         } else {
             for( int r = 0; r < trotter_steps; r++) {
                 for (const auto& sqop_term : pool.terms()) {
-                    apply_sqop_evolution(
+                    apply_sqop_evolution_cpu(
                         prefactor * sqop_term.first, 
                         sqop_term.second,
                         antiherm,
@@ -957,7 +957,7 @@ void FCIComputerThrust::evolve_pool_trotter(
         if(adjoint){
             for( int r = 0; r < trotter_steps; r++) {
                 for (int i = pool.terms().size() - 1; i >= 0; --i) {
-                    apply_sqop_evolution(
+                    apply_sqop_evolution_cpu(
                         prefactor * pool.terms()[i].first, 
                         pool.terms()[i].second,
                         antiherm,
@@ -965,7 +965,7 @@ void FCIComputerThrust::evolve_pool_trotter(
                 }
 
                 for (const auto& sqop_term : pool.terms()) {
-                    apply_sqop_evolution(
+                    apply_sqop_evolution_cpu(
                         prefactor * sqop_term.first, 
                         sqop_term.second,
                         antiherm,
@@ -977,7 +977,7 @@ void FCIComputerThrust::evolve_pool_trotter(
         } else {
             for( int r = 0; r < trotter_steps; r++) {
                 for (const auto& sqop_term : pool.terms()) {
-                    apply_sqop_evolution(
+                    apply_sqop_evolution_cpu(
                         prefactor * sqop_term.first, 
                         sqop_term.second,
                         antiherm,
@@ -985,7 +985,7 @@ void FCIComputerThrust::evolve_pool_trotter(
                 }
 
                 for (int i = pool.terms().size() - 1; i >= 0; --i) {
-                    apply_sqop_evolution(
+                    apply_sqop_evolution_cpu(
                         prefactor * pool.terms()[i].first, 
                         pool.terms()[i].second,
                         antiherm,
@@ -998,7 +998,7 @@ void FCIComputerThrust::evolve_pool_trotter(
     }
 }
 
-void FCIComputerThrust::evolve_op_taylor(
+void FCIComputerThrust::evolve_op_taylor_cpu(
     const SQOperator& op,
     const double evolution_time,
     const double convergence_thresh,
@@ -1016,8 +1016,8 @@ void FCIComputerThrust::evolve_op_taylor(
         // std::cout << "Cevol: " << Cevol.str() << std::endl;
 
         std::complex<double> coeff(0.0, -evolution_time);
-        apply_sqop(op);
-        scale(coeff);
+        apply_sqop_gpu(op);
+        scale_cpu(coeff);
 
         Cevol.zaxpy(
             C_,
@@ -1032,7 +1032,7 @@ void FCIComputerThrust::evolve_op_taylor(
     C_ = Cevol;
 }
 
-void FCIComputerThrust::apply_individual_nbody1_accumulate(
+void FCIComputerThrust::apply_individual_nbody1_accumulate_gpu(
     const std::complex<double> coeff, 
     const TensorThrust& Cin,
     TensorThrust& Cout,
@@ -1183,7 +1183,7 @@ void FCIComputerThrust::apply_individual_nbody1_accumulate(
     }    
 }
 
-void FCIComputerThrust::apply_individual_nbody_accumulate(
+void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
     const std::complex<double> coeff,
     const TensorThrust& Cin,
     TensorThrust& Cout,
@@ -1256,7 +1256,7 @@ void FCIComputerThrust::apply_individual_nbody_accumulate(
     timer_.reset();
     // std::cout << my_timer.str_table() << std::endl;
     // this is where the if statement goes
-    apply_individual_nbody1_accumulate(
+    apply_individual_nbody1_accumulate_gpu(
         coeff, 
         Cin,
         Cout,
@@ -1268,7 +1268,7 @@ void FCIComputerThrust::apply_individual_nbody_accumulate(
         parityb);    
 }
 
-void FCIComputerThrust::apply_individual_sqop_term(
+void FCIComputerThrust::apply_individual_sqop_term_gpu(
     const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
     const TensorThrust& Cin,
     TensorThrust& Cout)
@@ -1317,7 +1317,7 @@ void FCIComputerThrust::apply_individual_sqop_term(
     timer_.reset();
     // std::cout << my_timer.str_table() << std::endl;
 
-    apply_individual_nbody_accumulate(
+    apply_individual_nbody_accumulate_gpu(
         pow(-1, nswaps) * std::get<0>(term),
         Cin,
         Cout,
@@ -1327,7 +1327,7 @@ void FCIComputerThrust::apply_individual_sqop_term(
         annb);
 }
 
-void FCIComputerThrust::apply_sqop(const SQOperator& sqop)
+void FCIComputerThrust::apply_sqop_gpu(const SQOperator& sqop)
 {
      C_.gpu_error();
     TensorThrust Cin(C_.shape(), "Cin", true);
@@ -1347,7 +1347,7 @@ void FCIComputerThrust::apply_sqop(const SQOperator& sqop)
 
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
-        apply_individual_sqop_term(
+        apply_individual_sqop_term_gpu(
             term,
             Cin,
             C_);
@@ -1358,7 +1358,7 @@ void FCIComputerThrust::apply_sqop(const SQOperator& sqop)
     std::cout << timer_.acc_str_table() << std::endl;
 }
 
-void FCIComputerThrust::apply_diagonal_of_sqop(
+void FCIComputerThrust::apply_diagonal_of_sqop_cpu(
     const SQOperator& sq_op, 
     const bool invert_coeff)
 {
@@ -1387,7 +1387,7 @@ void FCIComputerThrust::apply_diagonal_of_sqop(
                 std::get<0>(temp_term) = std::get<0>(term);
             }
 
-            apply_individual_sqop_term(
+            apply_individual_sqop_term_gpu(
                 temp_term,
                 Cin,
                 C_);
@@ -1395,7 +1395,7 @@ void FCIComputerThrust::apply_diagonal_of_sqop(
     }
 }
 
-void FCIComputerThrust::apply_sqop_pool(const SQOpPool& sqop_pool)
+void FCIComputerThrust::apply_sqop_pool_cpu(const SQOpPool& sqop_pool)
 {
     cpu_error();
 
@@ -1410,7 +1410,7 @@ void FCIComputerThrust::apply_sqop_pool(const SQOpPool& sqop_pool)
             std::get<0>(temp_term) *= outer_coeff;
 
             if(std::abs(std::get<0>(temp_term)) > compute_threshold_){
-                apply_individual_sqop_term(
+                apply_individual_sqop_term_gpu(
                     temp_term,
                     Cin,
                     C_);
@@ -1419,13 +1419,13 @@ void FCIComputerThrust::apply_sqop_pool(const SQOpPool& sqop_pool)
     }
 }
 
-std::complex<double> FCIComputerThrust::get_exp_val(const SQOperator& sqop)
+std::complex<double> FCIComputerThrust::get_exp_val_cpu(const SQOperator& sqop)
 {
     TensorThrust Cin = C_;
     C_.zero();
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
-        apply_individual_sqop_term(
+        apply_individual_sqop_term_gpu(
             term,
             Cin,
             C_);
@@ -1436,7 +1436,7 @@ std::complex<double> FCIComputerThrust::get_exp_val(const SQOperator& sqop)
     return val;
 }
 
-std::complex<double> FCIComputerThrust::get_exp_val_tensor(
+std::complex<double> FCIComputerThrust::get_exp_val_tensor_cpu(
     const std::complex<double> h0e, 
     const TensorThrust& h1e, 
     const TensorThrust& h2e, 
@@ -1459,7 +1459,7 @@ std::complex<double> FCIComputerThrust::get_exp_val_tensor(
     return val;
 }
 
-void FCIComputerThrust::scale(const std::complex<double> a)
+void FCIComputerThrust::scale_cpu(const std::complex<double> a)
 {
     C_.scale(a);
 }
@@ -1482,7 +1482,7 @@ std::complex<double> FCIComputerThrust::coeff(const QubitBasis& abasis, const Qu
     throw std::runtime_error("");
 }*/
 
-void FCIComputerThrust::set_state(const TensorThrust& other_state)
+void FCIComputerThrust::set_state_cpu(const TensorThrust& other_state)
 {
     cpu_error();
     other_state.cpu_error();
@@ -1496,19 +1496,19 @@ void FCIComputerThrust::set_state_gpu(const TensorThrust& other_state)
     C_.copy_in_gpu(other_state);
 }
 
-void FCIComputerThrust::set_state_from_tensor(const Tensor& other_state)
+void FCIComputerThrust::set_state_from_tensor_cpu(const Tensor& other_state)
 {
     cpu_error();
     C_.copy_in_from_tensor(other_state);
 }
 
-void FCIComputerThrust::zero()
+void FCIComputerThrust::zero_cpu()
 {
     cpu_error();
     C_.zero();
 }
 
-void FCIComputerThrust::hartree_fock()
+void FCIComputerThrust::hartree_fock_cpu()
 {
     cpu_error();
     C_.zero();
@@ -1540,7 +1540,7 @@ void FCIComputerThrust::print_vector_uint(const std::vector<uint64_t>& vec, cons
 }
 
 /* New methods for copying out data */
-void FCIComputerThrust::copy_to_tensor(Tensor& tensor) const
+void FCIComputerThrust::copy_to_tensor_cpu(Tensor& tensor) const
 {
     cpu_error();
     C_.copy_to_tensor(tensor);

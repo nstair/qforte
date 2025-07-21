@@ -58,7 +58,7 @@ reference = 'random'
 if(reference == 'hf'):
     fci_comp.hartree_fock()
     fci_comp_gpu.hartree_fock()
-    fci_comp_thrust.hartree_fock()
+    fci_comp_thrust.hartree_fock_cpu()
 
 elif(reference == 'random'):
     random_array = np.random.rand(fci_comp.get_state().shape()[0], fci_comp.get_state().shape()[1])
@@ -71,7 +71,7 @@ elif(reference == 'random'):
 
     fci_comp.set_state(Crand)
     fci_comp_gpu.set_state_from_tensor(Crand)
-    fci_comp_thrust.set_state_from_tensor(Crand)
+    fci_comp_thrust.set_state_from_tensor_cpu(Crand)
 
 print("\n Crand State ==============")
 print(Crand)
@@ -88,7 +88,7 @@ fci_comp_gpu.to_cpu()
 
 fci_comp_thrust.to_gpu()
 timer.reset()
-fci_comp_thrust.apply_sqop(mol.sq_hamiltonian)
+fci_comp_thrust.apply_sqop_gpu(mol.sq_hamiltonian)
 timer.record('thrust')
 fci_comp_thrust.to_cpu()
 
@@ -103,7 +103,7 @@ comp_state_thrust = qf.Tensor(comp_state.shape(), "comp_state_thrust")
 # copy the state tensors to the gpu and thrust versions
 fci_comp_gpu.copy_to_tensor(comp_state_gpu)
 fci_comp_gpu.copy_to_tensor(comp_state_gpu2)
-fci_comp_thrust.copy_to_tensor(comp_state_thrust)
+fci_comp_thrust.copy_to_tensor_cpu(comp_state_thrust)
 
 # subtract the original state from the gpu and thrust states
 comp_state_gpu.subtract(comp_state)
