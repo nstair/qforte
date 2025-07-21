@@ -195,7 +195,7 @@ class FCIComputerThrust {
       const bool antiherm = false,
       const bool adjoint = false);
 
-    void evolve_pool_trotter_basic_cpu(
+    void evolve_pool_trotter_basic_gpu(
       const SQOpPool& pool,
       const bool antiherm = false,
       const bool adjoint = false);

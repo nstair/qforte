@@ -15,6 +15,12 @@ __device__ double atomicAdd_double(double* address, double val) {
 }
 
 
+// Helper function for atomic add with cuDoubleComplex
+__device__ void atomicAdd_complex(cuDoubleComplex* addr, cuDoubleComplex val) {
+    atomicAdd_double(&(addr->x), val.x);
+    atomicAdd_double(&(addr->y), val.y);
+}
+
 
 // __global__ void apply_individual_nbody1_accumulate_kernel(
 //     const cuDoubleComplex coeff, 
@@ -293,3 +299,202 @@ void apply_individual_nbody1_accumulate_wrapper(
         throw std::runtime_error("Kernel execution failed");
     }
 }
+
+
+__global__ void apply_individual_nbody1_accumulate_kernel_atomic_v2(
+    const cuDoubleComplex coeff, 
+    const cuDoubleComplex* __restrict__ d_Cin,        // NEW: __restrict__
+    cuDoubleComplex* __restrict__ d_Cout,             // NEW: __restrict__
+    const int* __restrict__ d_sourcea,                // NEW: __restrict__
+    const int* __restrict__ d_targeta,
+    const cuDoubleComplex* __restrict__ d_paritya,
+    const int* __restrict__ d_sourceb,
+    const int* __restrict__ d_targetb,
+    const cuDoubleComplex* __restrict__ d_parityb,
+    int nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    int tensor_size) 
+{
+    int total = targeta_size * targetb_size;           // NEW: Flatten 2D grid
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < total) {
+        int idx = index / targetb_size;                // Recover original indices
+        int idy = index % targetb_size;
+
+        int ta_idx = d_targeta[idx] * nbeta_strs_;
+        int sa_idx = d_sourcea[idx] * nbeta_strs_;
+
+        cuDoubleComplex pref = cuCmul(coeff, d_paritya[idx]);
+        cuDoubleComplex term = cuCmul(pref, d_parityb[idy]);
+        term = cuCmul(term, d_Cin[sa_idx + d_sourceb[idy]]);
+
+        int output_idx = ta_idx + d_targetb[idy];
+        atomicAdd_double(&d_Cout[output_idx].x, term.x);
+        atomicAdd_double(&d_Cout[output_idx].y, term.y);
+    }
+}
+
+void apply_individual_nbody1_accumulate_wrapper_v2(
+    const cuDoubleComplex coeff, 
+    const cuDoubleComplex* d_Cin, 
+    cuDoubleComplex* d_Cout, 
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb,
+    int nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    int tensor_size) 
+{
+    int total = targeta_size * targetb_size;
+    int blockSize = 256;
+    int numBlocks = (total + blockSize - 1) / blockSize;
+    
+    apply_individual_nbody1_accumulate_kernel_atomic<<<numBlocks, blockSize>>>(
+        coeff, d_Cin, d_Cout, d_sourcea, d_targeta, d_paritya, 
+        d_sourceb, d_targetb, d_parityb, nbeta_strs_, 
+        targeta_size, targetb_size, tensor_size);
+    
+    // Check for any errors launching the kernel
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Failed to launch apply_individual_nbody1_accumulate_kernel_atomic_v2 (error code " << cudaGetErrorString(err) << ")!" << std::endl;
+        throw std::runtime_error("Kernel launch failed");
+    }
+
+    // Wait for the kernel to complete and check for errors
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "Kernel execution failed (error code " << cudaGetErrorString(err) << ")!" << std::endl;
+        throw std::runtime_error("Kernel execution failed");
+    }
+}
+
+
+/* This is only better if the colision rate is very high */
+
+/*
+__global__ void apply_individual_nbody1_accumulate_kernel_shared(
+    const cuDoubleComplex coeff, 
+    const cuDoubleComplex* __restrict__ d_Cin,
+    cuDoubleComplex* __restrict__ d_Cout,
+    const int* __restrict__ d_sourcea,
+    const int* __restrict__ d_targeta,
+    const cuDoubleComplex* __restrict__ d_paritya,
+    const int* __restrict__ d_sourceb,
+    const int* __restrict__ d_targetb,
+    const cuDoubleComplex* __restrict__ d_parityb,
+    int nbeta_strs_,
+    int targeta_size,
+    int targetb_size) 
+{
+    // Flatten the 2D grid to 1D, as in previous example
+    int total = targeta_size * targetb_size;
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int blockSize = blockDim.x;
+    int tid = threadIdx.x;
+
+    // Allocate shared memory for reduction:
+    extern __shared__ int shared[]; // Dynamic shared mem: int + complex per thread
+    int* s_idx = shared; // [blockDim.x] -- each thread's output_idx
+    cuDoubleComplex* s_val = (cuDoubleComplex*)&s_idx[blockSize]; // [blockDim.x] -- each thread's value
+
+    // Each thread computes its term and output_idx
+    int output_idx = -1;
+    cuDoubleComplex term = make_cuDoubleComplex(0.0, 0.0);
+
+    if (index < total) {
+        int idx = index / targetb_size;
+        int idy = index % targetb_size;
+
+        int ta_idx = d_targeta[idx] * nbeta_strs_;
+        int sa_idx = d_sourcea[idx] * nbeta_strs_;
+
+        cuDoubleComplex pref = cuCmul(coeff, d_paritya[idx]);
+        term = cuCmul(pref, d_parityb[idy]);
+        term = cuCmul(term, d_Cin[sa_idx + d_sourceb[idy]]);
+
+        output_idx = ta_idx + d_targetb[idy];
+    }
+
+    // Store each thread's output index and value in shared memory
+    s_idx[tid] = output_idx;
+    s_val[tid] = term;
+
+    __syncthreads();
+
+    // **Block-wise reduction by output_idx**
+    // Each thread checks if it's the first occurrence of its output_idx in this block
+    // If so, it sums all contributions in the block with that output_idx
+    if (output_idx >= 0) {
+        cuDoubleComplex block_sum = s_val[tid];
+
+        // Only the first occurrence of this output_idx in the block performs the atomicAdd
+        bool is_first = true;
+        for (int t = 0; t < tid; ++t) {
+            if (s_idx[t] == output_idx) {
+                is_first = false;
+                break;
+            }
+        }
+        if (is_first) {
+            // Sum all other threads in the block with the same output_idx
+            for (int t = tid + 1; t < blockSize; ++t) {
+                if (s_idx[t] == output_idx) {
+                    block_sum.x += s_val[t].x;
+                    block_sum.y += s_val[t].y;
+                }
+            }
+            // One atomic add per unique output_idx per block
+            atomicAdd_complex(&d_Cout[output_idx], block_sum);
+        }
+    }
+}
+
+
+extern "C" void apply_individual_nbody1_accumulate_wrapper_shared(
+    const cuDoubleComplex coeff, 
+    const cuDoubleComplex* d_Cin, 
+    cuDoubleComplex* d_Cout, 
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb,
+    int nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    int tensor_size) 
+{
+    int blockSize = 256;
+    int numBlocks = (targeta_size * targetb_size + blockSize - 1) / blockSize;
+
+    // Allocate shared memory for reduction
+    size_t sharedMemSize = blockSize * (sizeof(int) + sizeof(cuDoubleComplex));
+
+    apply_individual_nbody1_accumulate_kernel_shared<<<numBlocks, blockSize, sharedMemSize>>>(
+        coeff, d_Cin, d_Cout, d_sourcea, d_targeta, d_paritya, 
+        d_sourceb, d_targetb, d_parityb, nbeta_strs_, 
+        targeta_size, targetb_size);
+    
+    // Check for any errors launching the kernel
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Failed to launch apply_individual_nbody1_accumulate_kernel_shared (error code " << cudaGetErrorString(err) << ")!" << std::endl;
+        throw std::runtime_error("Kernel launch failed");
+    }
+
+    // Wait for the kernel to complete and check for errors
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "Kernel execution failed (error code " << cudaGetErrorString(err) << ")!" << std::endl;
+        throw std::runtime_error("Kernel execution failed");
+    }
+}
+    */
