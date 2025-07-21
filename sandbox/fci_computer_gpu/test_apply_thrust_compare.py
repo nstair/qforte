@@ -11,14 +11,14 @@ geom = [
     ('H', (0., 0., 2.0)),
     ('H', (0., 0., 3.0)), 
     ('H', (0., 0., 4.0)),
-    #('H', (0., 0., 5.0)),
-    #('H', (0., 0., 6.0)),
-    #('H', (0., 0., 7.0)),
-    #('H', (0., 0., 8.0)),
-    #('H', (0., 0., 9.0)),
-    #('H', (0., 0., 10.0)),
-    #('H', (0., 0., 11.0)),
-    #('H', (0., 0., 12.0)),
+    ('H', (0., 0., 5.0)),
+    ('H', (0., 0., 6.0)),
+    ('H', (0., 0., 7.0)),
+    ('H', (0., 0., 8.0)),
+    ('H', (0., 0., 9.0)),
+    ('H', (0., 0., 10.0)),
+    ('H', (0., 0., 11.0)),
+    ('H', (0., 0., 12.0)),
     ]
 
 
@@ -53,7 +53,7 @@ fci_comp_thrust = qf.FCIComputerThrust(nel=nel, sz=sz, norb=norb)
 
 
 reference = 'random'
-# reference = 'hf'
+#reference = 'hf'
 
 if(reference == 'hf'):
     fci_comp.hartree_fock()
@@ -73,8 +73,8 @@ elif(reference == 'random'):
     fci_comp_gpu.set_state_from_tensor(Crand)
     fci_comp_thrust.set_state_from_tensor_cpu(Crand)
 
-print("\n Crand State ==============")
-print(Crand)
+    print("\n Crand State ==============")
+    print(Crand)
  
 timer.reset()
 fci_comp.apply_sqop(mol.sq_hamiltonian)

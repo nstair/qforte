@@ -887,7 +887,7 @@ void FCIComputerThrust::apply_sqop_evolution_cpu(
         adjoint); 
 }
 
-void FCIComputerThrust::evolve_pool_trotter_basic_cpu(
+void FCIComputerThrust::evolve_pool_trotter_basic_gpu(
     const SQOpPool& pool,
     const bool antiherm,
     const bool adjoint)
@@ -1138,7 +1138,7 @@ void FCIComputerThrust::apply_individual_nbody1_accumulate_gpu(
 
     cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
 
-    apply_individual_nbody1_accumulate_wrapper(
+    apply_individual_nbody1_accumulate_wrapper_v2(
         cu_coeff, 
         thrust::raw_pointer_cast(Cin.read_d_data().data()), 
         thrust::raw_pointer_cast(Cout.d_data().data()), 

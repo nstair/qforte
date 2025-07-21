@@ -48,3 +48,34 @@ extern "C" void apply_individual_nbody1_accumulate_wrapper(
     int targetb_size,
     int tensor_size);
 
+extern "C" void apply_individual_nbody1_accumulate_wrapper_v2(
+    const cuDoubleComplex coeff, 
+    const cuDoubleComplex* d_Cin, 
+    cuDoubleComplex* d_Cout, 
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb,
+    int nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    int tensor_size);
+
+    /*
+extern "C" void apply_individual_nbody1_accumulate_wrapper_shared(
+    const cuDoubleComplex coeff, 
+    const cuDoubleComplex* d_Cin, 
+    cuDoubleComplex* d_Cout, 
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb,
+    int nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    int tensor_size);
+    */
