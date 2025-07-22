@@ -1,5 +1,5 @@
-#ifndef _fci_graph_h_
-#define _fci_graph_h_
+#ifndef _fci_graph_thrust_h_
+#define _fci_graph_thrust_h_
 
 #include <vector>
 #include <unordered_map>
@@ -22,13 +22,13 @@ struct PairHash {
 
 using Spinmap = std::unordered_map<std::pair<int, int>, std::vector<std::tuple<int, int, int>>, PairHash>;
 
-class FCIGraph {
+class FCIGraphThrust {
 public:
 
     /// Constructor
-    FCIGraph(int nalfa, int nbeta, int norb);
+    FCIGraphThrust(int nalfa, int nbeta, int norb);
 
-    FCIGraph();
+    FCIGraphThrust();
 
     /// Build alfa/beta bitstrings to index the FCI Computer
     std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> build_strings(
@@ -182,7 +182,6 @@ public:
     const std::vector<int>& read_dexcb_vec() const { return dexcb_vec_; }
 
     local_timer get_acc_timer() { return timer_; }
-
 private:
     int nalfa_;
     int nbeta_;

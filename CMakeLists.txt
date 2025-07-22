@@ -44,7 +44,8 @@ set(CUDA_SOURCES
     "${SOURCE_DIR}/fci_computer_gpu_kernels.cu"
     "${SOURCE_DIR}/fci_computer_gpu.cu"
     "${SOURCE_DIR}/tensor_thrust.cu"
-    "${SOURCE_DIR}/fci_computer_thrust.cu")
+    "${SOURCE_DIR}/fci_computer_thrust.cu"
+    "${SOURCE_DIR}/fci_graph_thrust.cu")
 
 # Compiled with CXX
 set(SOURCES

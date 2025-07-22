@@ -23,6 +23,7 @@
 #include "blas_math.h"
 #include "tensor_thrust.h"
 #include "fci_computer_thrust.h"
+#include "fci_graph_thrust.h"
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -547,7 +548,25 @@ PYBIND11_MODULE(qforte, m) {
         .def("__repr__", &FCIComputerThrust::str, 
             py::arg("print_data") = true, 
             py::arg("print_complex") = false);
-    
+
+    py::class_<FCIGraphThrust>(m, "FCIGraphThrust")
+        .def(py::init<int, int, int>(), "nalfa"_a, "nbeta"_a, "norb"_a, "Make a FCIGraphThrust")
+        .def("make_mapping_each", &FCIGraphThrust::make_mapping_each)
+        .def("get_nalfa", &FCIGraphThrust::get_nalfa)
+        .def("get_nbeta", &FCIGraphThrust::get_nbeta)
+        .def("get_lena", &FCIGraphThrust::get_lena)
+        .def("get_lenb", &FCIGraphThrust::get_lenb)
+        .def("get_astr", &FCIGraphThrust::get_astr)
+        .def("get_bstr", &FCIGraphThrust::get_bstr)
+        .def("get_aind", &FCIGraphThrust::get_aind)
+        .def("get_bind", &FCIGraphThrust::get_bind)
+        .def("get_alfa_map", &FCIGraphThrust::get_alfa_map)
+        .def("get_beta_map", &FCIGraphThrust::get_beta_map)
+        .def("get_dexca", &FCIGraphThrust::get_dexca)
+        .def("get_dexcb", &FCIGraphThrust::get_dexcb)
+        .def("get_dexca_vec", &FCIGraphThrust::get_dexca_vec)
+        .def("get_dexcb_vec", &FCIGraphThrust::get_dexcb_vec);
+
     m.def(
         "gate",
         [](std::string type, size_t target, std::complex<double> parameter) {
