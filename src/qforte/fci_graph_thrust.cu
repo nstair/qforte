@@ -1,4 +1,5 @@
 #include "fci_graph_thrust.h"
+#include "fci_graph_thrust_kernels.cuh"
 #include <stdexcept>
 #include <algorithm>
 #include <cstdint>
