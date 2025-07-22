@@ -1,4 +1,4 @@
-#include "fci_graph.h"
+#include "fci_graph_thrust.h"
 #include <stdexcept>
 #include <algorithm>
 #include <cstdint>
@@ -8,7 +8,7 @@
 #include <bitset>
 
 /// Custom construcotr
-FCIGraph::FCIGraph(int nalfa, int nbeta, int norb) 
+FCIGraphThrust::FCIGraphThrust(int nalfa, int nbeta, int norb) 
 {
     if (norb < 0)
         throw std::invalid_argument("norb needs to be >= 0");
@@ -41,9 +41,9 @@ FCIGraph::FCIGraph(int nalfa, int nbeta, int norb)
     dexcb_vec_ = unroll_from_3d(dexcb_);
 }
 
-FCIGraph::FCIGraph() : FCIGraph(0, 0, 0) {}
+FCIGraphThrust::FCIGraphThrust() : FCIGraphThrust(0, 0, 0) {}
 
-std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> FCIGraph::build_strings(
+std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> FCIGraphThrust::build_strings(
     int nele, 
     size_t length) 
 {
@@ -80,7 +80,7 @@ std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> FCIGraph:
     return std::make_pair(string_list, index_list);
 }
 
-Spinmap FCIGraph::build_mapping(
+Spinmap FCIGraphThrust::build_mapping(
     const std::vector<uint64_t>& strings, 
     int nele, 
     const std::unordered_map<uint64_t, size_t>& index) 
@@ -128,7 +128,7 @@ Spinmap FCIGraph::build_mapping(
     return result;
 }
 
-std::vector<std::vector<std::vector<int>>> FCIGraph::map_to_deexc(
+std::vector<std::vector<std::vector<int>>> FCIGraphThrust::map_to_deexc(
     const Spinmap& mappings, 
     int states, 
     int norbs,
@@ -166,7 +166,7 @@ std::vector<std::vector<std::vector<int>>> FCIGraph::map_to_deexc(
 
 /// NICK: May be an accelerated version of this funciton, may also be important as it comes up in
 // every instance of apply individual op!
-std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::make_mapping_each(
+std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraphThrust::make_mapping_each(
     bool alpha, 
     const std::vector<int>& dag, 
     const std::vector<int>& undag) 
@@ -205,7 +205,6 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::
         bool check = ((current & dag_mask) == 0) && ((current & undag_mask ^ undag_mask) == 0);
         
         if (check) {
-            uint64_t tmp = current;
             uint64_t parity_value = 0;
             for (size_t i = undag.size(); i > 0; i--) {
                 parity_value += count_bits_above(current, undag[i - 1]);
@@ -235,7 +234,7 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::
 }
 
 /// NICK: 1. Consider a faster blas veriosn, 2. consider using qubit basis, 3. rename (too long)
-std::vector<uint64_t> FCIGraph::get_lex_bitstrings(int nele, int norb) {
+std::vector<uint64_t> FCIGraphThrust::get_lex_bitstrings(int nele, int norb) {
 
     if (nele > norb) {
         throw std::invalid_argument("can't have more electorns that orbitals");
@@ -243,35 +242,22 @@ std::vector<uint64_t> FCIGraph::get_lex_bitstrings(int nele, int norb) {
         
     std::vector<uint64_t> bitstrings;
 
-    // vector of [0,1,2,3,...]
     std::vector<uint64_t> indices(norb);
     for (int i = 0; i < norb; ++i)
         indices[i] = i;
 
-    // vector that is a bitstring of zeros [0,0,0,....]
     std::vector<bool> bitstring(norb, false);
-    
-    // make hf bitsring [1,1,1,1,0,0,....]
-    // esentially state is a bitstring (as a uint_64 for all possible permutations)
     for (int i = 0; i < nele; ++i)
         bitstring[i] = true;
 
     do {
         uint64_t state = 0;
-        // loop over orbital states in bitstring, if there is a particle in that postiong
-        // modify state
         for (int i = 0; i < norb; ++i) {
             if (bitstring[i]) { state |= (static_cast<uint64_t>(1) << i);}
         }
-        
         bitstrings.push_back(state);
-    // use std::prev_permutation to rearrange bitstring into the previous lexicographically ordered permutation.
-    /// NICK: std::prev_permutation rearranges the elements in the range [first, last) into the previous lexicographical permutation.
-    // It returns true if such a permutation exists (i.e., the sequence was not already in the smallest possible order).
-    // It returns false when the sequence reaches its first permutation, and no further previous permutation exists.
     } while (std::prev_permutation(bitstring.begin(), bitstring.end()));
 
-    // sort the bitstrings 
     std::sort(bitstrings.begin(), bitstrings.end());
 
     return bitstrings;
@@ -279,7 +265,7 @@ std::vector<uint64_t> FCIGraph::get_lex_bitstrings(int nele, int norb) {
 }
 
 /// NICK: Seems slow..., may want to use qubit basis, convert to size_t maybe??
-uint64_t FCIGraph::build_string_address(
+uint64_t FCIGraphThrust::build_string_address(
     int nele, 
     int norb, 
     uint64_t occ,
@@ -301,7 +287,7 @@ uint64_t FCIGraph::build_string_address(
 }
 
 /// NICK: May want to make faster using blas calls if it becomes a bottleneck
-std::vector<std::vector<uint64_t>> FCIGraph::get_z_matrix(int norb, int nele) {
+std::vector<std::vector<uint64_t>> FCIGraphThrust::get_z_matrix(int norb, int nele) {
     // Initialize Z matrix with zeros
     std::vector<std::vector<uint64_t>> Z(nele, std::vector<uint64_t>(norb, 0)); 
 
