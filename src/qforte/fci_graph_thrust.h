@@ -71,6 +71,15 @@ public:
         thrust::device_vector<int>& target,
         thrust::device_vector<cuDoubleComplex>& parity);
 
+    void make_mapping_each_gpu(
+        bool alpha, 
+        const std::vector<int>& dag, 
+        const std::vector<int>& undag,
+        int* count,
+        thrust::device_vector<int>& source,
+        thrust::device_vector<int>& target,
+        thrust::device_vector<cuDoubleComplex>& parity);
+
     /// ==> Utility Functions for Bit Math (may need to move) <== ///
 
     /// Combinutorics helper funciton for binomial coefficients

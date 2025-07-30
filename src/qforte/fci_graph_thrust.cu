@@ -221,18 +221,14 @@ void FCIGraphThrust::make_mapping_each(
         
         if (check) {
             uint64_t parity_value = 0;
-            uint64_t result_string = current;
-            
-            // Apply annihilation operators (undag) - process in reverse order
             for (size_t i = undag.size(); i > 0; i--) {
-                parity_value += count_bits_above(result_string, undag[i - 1]);
-                result_string = unset_bit(result_string, undag[i - 1]);
+                parity_value += count_bits_above(current, undag[i - 1]);
+                current = unset_bit(current, undag[i - 1]);
             }
             
-            // Apply creation operators (dag) - process in reverse order  
             for (size_t i = dag.size(); i > 0; i--) {
-                parity_value += count_bits_above(result_string, dag[i - 1]);
-                result_string = set_bit(result_string, dag[i - 1]);
+                parity_value += count_bits_above(current, dag[i - 1]);
+                current = set_bit(current, dag[i - 1]);
             }
             
             // Store the mapping like the CPU version after processing:
@@ -241,21 +237,15 @@ void FCIGraphThrust::make_mapping_each(
             // 3. parity: +1/-1 format (converted from 0/1)
             
             source_host.push_back(static_cast<int>(index));
-            
-            // Convert bitstring to index like CPU version does
-            int target_index;
+
             if (alpha) {
-                target_index = get_aind_for_str(static_cast<int>(result_string));
+                current = get_aind_for_str(static_cast<int>(current));
             } else {
-                target_index = get_bind_for_str(static_cast<int>(result_string));
+                current = get_bind_for_str(static_cast<int>(current));
             }
-            target_host.push_back(target_index);
-            
-            // Create cuDoubleComplex with +1/-1 parity like CPU version (1.0 - 2.0 * parity)
-            cuDoubleComplex parity_complex;
-            parity_complex.x = 1.0 - 2.0 * static_cast<double>(parity_value % 2);  // +1 or -1, not 0/1
-            parity_complex.y = 0.0;
-            parity_host.push_back(parity_complex);
+            target_host.push_back(current);
+
+            parity_host.push_back(make_cuDoubleComplex(1.0 - 2.0 * static_cast<int>(parity_value % 2), 0.0));
         }
     }
 
@@ -299,6 +289,27 @@ void FCIGraphThrust::make_mapping_each_gpu(
         length = lenb_;
     }
 
+    // For now convert all to device vectors (eventually may want to change to init as device vectors)
+    thrust::device_vector<uint64_t> d_strings(strings.begin(), strings.end());
+    thrust::device_vector<int> d_dag(dag.begin(), dag.end());
+    thrust::device_vector<int> d_undag(undag.begin(), undag.end());
+
+    // Maybe better way to convert map to device vector but for now this:
+    std::vector<std::pair<uint64_t, int>> pairs(index_map.begin(), index_map.end());
+    std::sort(pairs.begin(), pairs.end());
+    std::vector<uint64_t> keys;
+    std::vector<int> vals;
+    for (const auto& kv : pairs) {
+        keys.push_back(kv.first);
+        vals.push_back(kv.second); // or static_cast<int>(kv.second) if needed
+    }
+    thrust::device_vector<uint64_t> d_map_keys(keys.begin(), keys.end());
+    thrust::device_vector<int> d_map_values(vals.begin(), vals.end());
+
+    int dag_size = d_dag.size();
+    int undag_size = d_undag.size();
+    int map_size = d_map_keys.size();
+
     // Create masks for dag and undag operators
     uint64_t dag_mask = 0;
     uint64_t undag_mask = 0;
@@ -313,65 +324,29 @@ void FCIGraphThrust::make_mapping_each_gpu(
         undag_mask = set_bit(undag_mask, i); 
     }
 
-    // Temporary host vectors to store results before copying to device
-    std::vector<int> source_host;
-    std::vector<int> target_host;
-    std::vector<cuDoubleComplex> parity_host;
+    // Device counter for valid results
+    thrust::device_vector<int> d_count(1);
 
-    for (uint64_t index = 0; index < length; index++) {
-        uint64_t current = strings[index];
-        bool check = ((current & dag_mask) == 0) && ((current & undag_mask ^ undag_mask) == 0);
-        
-        if (check) {
-            uint64_t parity_value = 0;
-            uint64_t result_string = current;
-            
-            // Apply annihilation operators (undag) - process in reverse order
-            for (size_t i = undag.size(); i > 0; i--) {
-                parity_value += count_bits_above(result_string, undag[i - 1]);
-                result_string = unset_bit(result_string, undag[i - 1]);
-            }
-            
-            // Apply creation operators (dag) - process in reverse order  
-            for (size_t i = dag.size(); i > 0; i--) {
-                parity_value += count_bits_above(result_string, dag[i - 1]);
-                result_string = set_bit(result_string, dag[i - 1]);
-            }
-            
-            // Store the mapping like the CPU version after processing:
-            // 1. source: original determinant index
-            // 2. target: resulting determinant INDEX (converted from bitstring)
-            // 3. parity: +1/-1 format (converted from 0/1)
-            
-            source_host.push_back(static_cast<int>(index));
-            
-            // Convert bitstring to index like CPU version does
-            int target_index;
-            if (alpha) {
-                target_index = get_aind_for_str(static_cast<int>(result_string));
-            } else {
-                target_index = get_bind_for_str(static_cast<int>(result_string));
-            }
-            target_host.push_back(target_index);
-            
-            // Create cuDoubleComplex with +1/-1 parity like CPU version (1.0 - 2.0 * parity)
-            cuDoubleComplex parity_complex;
-            parity_complex.x = 1.0 - 2.0 * static_cast<double>(parity_value % 2);  // +1 or -1, not 0/1
-            parity_complex.y = 0.0;
-            parity_host.push_back(parity_complex);
-        }
-    }
+    make_mapping_each_kernel_wrapper(
+        thrust::raw_pointer_cast(d_strings.data()),
+        thrust::raw_pointer_cast(d_map_keys.data()),
+        thrust::raw_pointer_cast(d_map_values.data()),
+        map_size,
+        thrust::raw_pointer_cast(d_dag.data()),
+        thrust::raw_pointer_cast(d_undag.data()),
+        dag_size,
+        undag_size,
+        dag_mask,
+        undag_mask,
+        length,
+        thrust::raw_pointer_cast(source.data()),
+        thrust::raw_pointer_cast(target.data()),
+        thrust::raw_pointer_cast(parity.data()),
+        thrust::raw_pointer_cast(d_count.data())
+    );
 
-    // Set the count
-    *count = source_host.size();
-
-    // Copy results to device vectors
-    if (*count > 0) {
-        // Copy data from host to device
-        thrust::copy(source_host.begin(), source_host.end(), source.begin());
-        thrust::copy(target_host.begin(), target_host.end(), target.begin());
-        thrust::copy(parity_host.begin(), parity_host.end(), parity.begin());
-    }
+    // Retrieve the count from the device
+    cudaMemcpy(&count, thrust::raw_pointer_cast(d_count.data()), sizeof(int), cudaMemcpyDeviceToHost);
 
     timer_.acc_record("make_mapping_each");
 }
