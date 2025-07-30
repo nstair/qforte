@@ -225,7 +225,7 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::
     }
 
     timer_.acc_record("make_mapping_each");
-    std::cout << timer_.acc_str_table() << std::endl;
+    //std::cout << timer_.acc_str_table() << std::endl;
 
     return std::make_tuple(
                     count,

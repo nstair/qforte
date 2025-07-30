@@ -633,7 +633,7 @@ PYBIND11_MODULE(qforte, m) {
 
     py::class_<FCIGraphThrust>(m, "FCIGraphThrust")
         .def(py::init<int, int, int>(), "nalfa"_a, "nbeta"_a, "norb"_a, "Make a FCIGraphThrust")
-        .def("make_mapping_each", &FCIGraphThrust::make_mapping_each)
+        //.def("make_mapping_each", &FCIGraphThrust::make_mapping_each)
         .def("get_nalfa", &FCIGraphThrust::get_nalfa)
         .def("get_nbeta", &FCIGraphThrust::get_nbeta)
         .def("get_lena", &FCIGraphThrust::get_lena)

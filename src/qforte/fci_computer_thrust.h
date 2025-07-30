@@ -9,10 +9,18 @@
 #include "tensor.h" 
 #include "tensor_thrust.h"
 #include "fci_graph.h"
+#include "fci_graph_thrust.h"
 #include "timer.h"
 
 #include <cuda_runtime.h>
 #include <cuComplex.h>
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <thrust/transform.h>
+#include <thrust/functional.h>
+#include <thrust/inner_product.h>
+#include <thrust/fill.h>
+#include <thrust/copy.h>
 
 class local_timer;
 class Gate;
@@ -21,6 +29,7 @@ class SQOperator;
 class TensorOperator;
 class TensorThrust;
 class FCIGraph;
+class FCIGraphThrust;
 class SQOpPool;
 
 class FCIComputerThrust {
@@ -218,12 +227,8 @@ class FCIComputerThrust {
       const std::complex<double> coeff, 
       const TensorThrust& Cin,
       TensorThrust& Cout,
-      std::vector<int>& targeta,
-      std::vector<int>& sourcea,
-      std::vector<int>& paritya,
-      std::vector<int>& targetb,
-      std::vector<int>& sourceb,
-      std::vector<int>& parityb);
+      int counta,
+      int countb);
 
     void apply_individual_nbody_accumulate_gpu(
       const std::complex<double> coeff,
@@ -233,11 +238,6 @@ class FCIComputerThrust {
       const std::vector<int>& undaga, 
       const std::vector<int>& dagb,
       const std::vector<int>& undagb);
-
-    void apply_individual_nbody1_accumulate_gpu(
-      const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
-      const TensorThrust& Cin,
-      TensorThrust& Cout);
 
     void apply_individual_sqop_term_gpu(
       const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
@@ -345,7 +345,13 @@ class FCIComputerThrust {
     size_t nbbasis_;
     const std::string name_ = "FCIComputerThrust State";
     TensorThrust C_;
-    FCIGraph graph_;
+    thrust::device_vector<int> sourcea_gpu_;
+    thrust::device_vector<int> targeta_gpu_;
+    thrust::device_vector<cuDoubleComplex> paritya_gpu_;
+    thrust::device_vector<int> sourceb_gpu_;
+    thrust::device_vector<int> targetb_gpu_;
+    thrust::device_vector<cuDoubleComplex> parityb_gpu_;
+    FCIGraphThrust graph_;
 
     local_timer timer_;
     std::vector<std::pair<std::string, double>> timings_;

@@ -6,6 +6,11 @@
 #include <tuple>
 #include <cstdint>
 #include <cstddef>
+
+#include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
+#include <cuComplex.h>
+
 #include "timer.h"
 
 #ifndef _pair_hash_
@@ -57,10 +62,14 @@ public:
 
     std::vector<std::vector<uint64_t>> get_z_matrix(int norb, int nele);
 
-    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> make_mapping_each(
-        bool alpha, 
-        const std::vector<int>& dag, 
-        const std::vector<int>& undag); 
+    void make_mapping_each(
+        bool alpha,
+        const std::vector<int>& dag,
+        const std::vector<int>& undag,
+        int* count,
+        thrust::device_vector<int>& source,
+        thrust::device_vector<int>& target,
+        thrust::device_vector<cuDoubleComplex>& parity);
 
     /// ==> Utility Functions for Bit Math (may need to move) <== ///
 
