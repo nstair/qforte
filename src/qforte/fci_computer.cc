@@ -863,6 +863,8 @@ void FCIComputer::evolve_individual_nbody_hard(
     std::vector<int> numberb_dagworkb(numberb.begin(), numberb.end());
     numberb_dagworkb.insert(numberb_dagworkb.end(), dagworkb.begin(), dagworkb.end());
 
+    std::cout << "\n Cout Before Cos Application \n" << Cout.str(true, true) << std::endl;
+
     apply_cos_inplace(
         time,
         ncoeff,
@@ -872,13 +874,15 @@ void FCIComputer::evolve_individual_nbody_hard(
         undagworkb,
         Cout);
 
-    // std::cout << "\n Cout After 1st Cos Application \n" << Cout.str(true, true) << std::endl;
+    std::cout << "\n Cout After 1st Cos Application \n" << Cout.str(true, true) << std::endl;
 
     std::vector<int> numbera_undagworka(numbera.begin(), numbera.end());
     numbera_undagworka.insert(numbera_undagworka.end(), undagworka.begin(), undagworka.end());
 
     std::vector<int> numberb_undagworkb(numberb.begin(), numberb.end());
     numberb_undagworkb.insert(numberb_undagworkb.end(), undagworkb.begin(), undagworkb.end());
+
+    std::cout << "\n Cout Before 2nd Cos Application \n" << Cout.str(true, true) << std::endl;
 
     apply_cos_inplace(
         time,
@@ -889,7 +893,7 @@ void FCIComputer::evolve_individual_nbody_hard(
         dagworkb,
         Cout);
 
-    // std::cout << "\n Cout After 2nd Cos Application \n" << Cout.str(true, true) << std::endl;
+    std::cout << "\n Cout After 2nd Cos Application \n" << Cout.str(true, true) << std::endl;
 
     int phase = std::pow(-1, (crea.size() + anna.size()) * (creb.size() + annb.size()));
     std::complex<double> work_cof = std::conj(coeff) * static_cast<double>(phase) * std::complex<double>(0.0, -1.0);
@@ -903,7 +907,7 @@ void FCIComputer::evolve_individual_nbody_hard(
         annb,
         creb);
 
-    // std::cout << "\n Cout After First Accumulate Application \n" << Cout.str(true, true) << std::endl;
+    std::cout << "\n Cout After First Accumulate Application \n" << Cout.str(true, true) << std::endl;
 
     apply_individual_nbody_accumulate(
         coeff * std::complex<double>(0.0, -1.0) * sinfactor,
@@ -914,7 +918,7 @@ void FCIComputer::evolve_individual_nbody_hard(
         creb,
         annb);
 
-    // std::cout << "\n Cout After Second Accumulate Application \n" << Cout.str(true, true) << std::endl;
+    std::cout << "\n Cout After Second Accumulate Application \n" << Cout.str(true, true) << std::endl;
 }
 
 void FCIComputer::evolve_individual_nbody(
@@ -1426,6 +1430,13 @@ void FCIComputer::apply_individual_nbody_accumulate(
         targetb[i] = graph_.get_bind_for_str(std::get<2>(ubetamap)[i]);
         parityb[i] = 1.0 - 2.0 * std::get<3>(ubetamap)[i];
     }
+
+    print_vector(sourcea, "sourcea");
+    print_vector(targeta, "targeta");
+    print_vector(paritya, "paritya");
+    print_vector(sourceb, "sourceb");
+    print_vector(targetb, "targetb");
+    print_vector(parityb, "parityb");
 
     my_timer.record("second for loop in apply_individual_nbody_accumulate");
     // std::cout << my_timer.str_table() << std::endl;

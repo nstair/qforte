@@ -270,7 +270,7 @@ class FCIComputerThrust {
     std::string str(
       bool print_data,
       bool print_complex
-      ) const 
+      ) 
     {
       return C_.str(print_data, print_complex); 
     }
@@ -321,7 +321,11 @@ class FCIComputerThrust {
 
     void print_vector(const std::vector<int>& vec, const std::string& name);
 
+    void print_vector_thrust(const thrust::host_vector<int>& vec, const std::string& name);
+
     void print_vector_uint(const std::vector<uint64_t>& vec, const std::string& name);
+
+    void print_vector_thrust_cuDoubleComplex(const thrust::host_vector<cuDoubleComplex>& vec, const std::string& name);
 
     /* Below are new methods for getting tensor data out of the computer */
 

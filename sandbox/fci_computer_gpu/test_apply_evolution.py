@@ -36,10 +36,11 @@ print("===========================")
 print(fci_comp_thrust)
 
 sq_terms = [
-    (+0.704645, [7, 6], [3, 2]), # 2body ab 
-    #(+0.4, [6], [0]), # 1bdy-a
-    #(+0.4, [7], [3]), # 1bdy-a
-    ]
+    #(+0.123, [2, 3], [0, 1]), # 2body ab
+    (+0.704645, [7, 6], [3, 2]), # 2body ab
+    (+0.4, [6], [0]), # 1bdy-a
+    (+0.4, [7], [3]), # 1bdy-a
+]
 
 time = 1.0
 print_imag = True
@@ -81,3 +82,9 @@ fci_comp_thrust.copy_to_tensor_cpu(Ctemp_thrust)
 cnrm_thrust = Ctemp_thrust.norm()
 print(f"||C_thrust||: {cnrm_thrust}")
 print(fci_comp_thrust.str(print_data=True, print_complex=print_imag))
+
+difference = qf.Tensor(Ctemp_thrust_shape, "difference")
+fci_comp_thrust.copy_to_tensor_cpu(difference)
+difference.subtract(Ctemp)
+cnrm_thrust = difference.norm()
+print(f"||C_thrust - C||: {cnrm_thrust}")

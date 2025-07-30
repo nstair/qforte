@@ -45,7 +45,11 @@ TensorThrust();
 ~TensorThrust();
 
 void to_gpu();
+
 void to_cpu();
+
+bool on_gpu() const { return on_gpu_; }
+
 void add(const TensorThrust&);
 
 void zero();
@@ -93,7 +97,7 @@ std::string str(
     int maxcols = 6,
     const std::string& data_format = "%12.7f",
     const std::string& header_format = "%12zu"
-    ) const; 
+    ); 
 
 /// The offset between consecutive indices within each dimension
 const std::vector<size_t>& strides() const { return strides_; }
