@@ -1064,7 +1064,7 @@ void FCIComputerThrust::apply_individual_nbody1_accumulate_gpu(
     cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
 
     // Call the GPU kernel using thrust raw pointers directly
-    apply_individual_nbody1_accumulate_wrapper_v2(
+    apply_individual_nbody1_accumulate_wrapper(
         cu_coeff, 
         thrust::raw_pointer_cast(Cin.read_d_data().data()), 
         thrust::raw_pointer_cast(Cout.d_data().data()), 
@@ -1142,6 +1142,15 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
 
     timer_.acc_record("second for loop in apply_individual_nbody_accumulate");
     timer_.reset();
+
+    /// TODO: maybe change this
+    for (int i = 0; i < counta; i++) {
+        targeta_gpu_[i] = graph_.get_aind_for_str(targeta_gpu_[i]);
+    }
+
+    for (int i = 0; i < countb; i++) {
+        targetb_gpu_[i] = graph_.get_bind_for_str(targetb_gpu_[i]);
+    }
 
     /// TODO: changing this function to use private members of FCIComputerThrust
     apply_individual_nbody1_accumulate_gpu(
