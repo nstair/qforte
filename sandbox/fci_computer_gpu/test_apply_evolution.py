@@ -11,8 +11,8 @@ norb = 4
 fci_comp = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 fci_comp.hartree_fock()
 
-fci_comp_gpu = qf.FCIComputerGPU(nel=nel, sz=sz, norb=norb)
-fci_comp_gpu.hartree_fock()
+#fci_comp_gpu = qf.FCIComputerGPU(nel=nel, sz=sz, norb=norb)
+#fci_comp_gpu.hartree_fock()
 
 fci_comp_thrust = qf.FCIComputerThrust(nel=nel, sz=sz, norb=norb)
 fci_comp_thrust.hartree_fock_cpu()
@@ -26,21 +26,19 @@ if(RAND):
     rand_nrm = Crand.norm()
     Crand.scale(1/rand_nrm)
     fci_comp.set_state(Crand)
-    fci_comp_gpu.set_state(Crand)
+    #fci_comp_gpu.set_state(Crand)
     fci_comp_thrust.set_state(Crand)
-
-dim = 2*norb
-max_nbody = 1
 
 print("\n Initial FCIcomp Stuff")
 print("===========================")
 print(fci_comp)
-
+print("===========================")
+print(fci_comp_thrust)
 
 sq_terms = [
     (+0.704645, [7, 6], [3, 2]), # 2body ab 
-    (+0.4, [6], [0]), # 1bdy-a
-    (+0.4, [7], [3]), # 1bdy-a
+    #(+0.4, [6], [0]), # 1bdy-a
+    #(+0.4, [7], [3]), # 1bdy-a
     ]
 
 time = 1.0
@@ -64,12 +62,6 @@ fci_comp.evolve_pool_trotter_basic(
     pool,
     antiherm=True)
 
-fci_comp_gpu.to_gpu()
-fci_comp_gpu.evolve_pool_trotter_basic(
-    pool,
-    antiherm=True)
-fci_comp_gpu.to_cpu()
-
 fci_comp_thrust.to_gpu()
 fci_comp_thrust.evolve_pool_trotter_basic_gpu(
     pool,
@@ -82,11 +74,6 @@ Ctemp = fci_comp.get_state_deep()
 cnrm = Ctemp.norm()
 print(f"||C||: {cnrm}")
 print(fci_comp.str(print_data=True, print_complex=print_imag))
-
-Ctemp_gpu = fci_comp_gpu.get_state_deep()
-cnrm_gpu = Ctemp_gpu.norm()
-print(f"||C_gpu||: {cnrm_gpu}")
-print(fci_comp_gpu.str(print_data=True, print_complex=print_imag))
 
 Ctemp_thrust_shape = fci_comp_thrust.get_shape()
 Ctemp_thrust = qf.Tensor(Ctemp_thrust_shape, "Ctemp_thrust")

@@ -198,7 +198,7 @@ class FCIComputerThrust {
       const bool antiherm = false,
       const bool adjoint = false);
 
-    void apply_sqop_evolution_cpu(
+    void apply_sqop_evolution_gpu(
       const std::complex<double> time,
       const SQOperator& sqop,
       const bool antiherm = false,

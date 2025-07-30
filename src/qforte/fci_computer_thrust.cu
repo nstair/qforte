@@ -546,7 +546,8 @@ std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map_nu
     const std::vector<int>& numa,
     const std::vector<int>& numb)
 {
-    cpu_error();
+    /// TODO: Implement separate CPU and GPU versions of this function
+    // cpu_error();
 
     std::vector<int> amap(nalfa_strs_);
     std::vector<int> bmap(nbeta_strs_);
@@ -584,7 +585,8 @@ std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map_cp
     const std::vector<int>& creb,
     const std::vector<int>& annb)
 {
-    cpu_error();
+    /// TODO: Implement separate CPU and GPU versions of this function
+    // cpu_error();
 
     std::vector<int> amap(nalfa_strs_);
     std::vector<int> bmap(nbeta_strs_);
@@ -626,7 +628,8 @@ void FCIComputerThrust::apply_cos_inplace_cpu(
     const std::vector<int>& annb,
     TensorThrust& Cout)
 {
-    cpu_error();
+    /// TODO: Implement separate CPU and GPU versions of this function
+    // cpu_error();
 
     const std::complex<double> cabs = std::abs(coeff);
     const std::complex<double> factor = std::cos(time * cabs);
@@ -649,7 +652,8 @@ int FCIComputerThrust::isolate_number_operators_cpu(
     std::vector<int>& annwork,
     std::vector<int>& number)
 {
-    cpu_error();
+    /// TODO: Implement separate CPU and GPU versions of this function
+    // cpu_error();
 
     int par = 0;
     for (int current : cre) {
@@ -676,7 +680,8 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu(
     const std::vector<int>& creb,
     const std::vector<int>& annb)
 {
-    cpu_error();
+    /// TODO: Implement seperate CPU and GPU versions of this function
+    // cpu_error();
 
     std::complex<double> factor = std::exp(-time * std::real(coeff) * std::complex<double>(0.0, 1.0));
     std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number_cpu(anna, annb);
@@ -700,7 +705,8 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
     const std::vector<int>& creb,
     const std::vector<int>& annb)
 {
-    cpu_error();
+    /// TODO: Implement seperate CPU and GPU versions of this function
+    // cpu_error();
 
     std::vector<int> dagworka(crea);
     std::vector<int> dagworkb(creb);
@@ -796,7 +802,8 @@ void FCIComputerThrust::evolve_individual_nbody_cpu(
     const bool antiherm,
     const bool adjoint)
 {
-    cpu_error();
+    /// TODO: Implement seperate CPU and GPU versions of this function
+    // cpu_error();
 
     if (sqop.terms().size() != 2) {
         std::cout << "This sqop has " << sqop.terms().size() << " terms." << std::endl;
@@ -851,6 +858,8 @@ void FCIComputerThrust::evolve_individual_nbody_cpu(
     std::complex<double> parity = std::pow(-1, nswaps);
 
     if (crea == anna && creb == annb) {
+        std::cout << "Made it to easy" << std::endl;
+
         evolve_individual_nbody_easy_cpu(
             time,
             parity * std::get<0>(term), 
@@ -861,6 +870,8 @@ void FCIComputerThrust::evolve_individual_nbody_cpu(
             creb,
             annb);
     } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
+        std::cout << "Made it to hard" << std::endl;
+
         evolve_individual_nbody_hard_cpu(
             time,
             parity * std::get<0>(term),
@@ -876,15 +887,17 @@ void FCIComputerThrust::evolve_individual_nbody_cpu(
     }
 }
 
-void FCIComputerThrust::apply_sqop_evolution_cpu(
+void FCIComputerThrust::apply_sqop_evolution_gpu(
     const std::complex<double> time,
     const SQOperator& sqop,
     const bool antiherm,
     const bool adjoint)
 {
-    cpu_error();
+    gpu_error();
 
-    TensorThrust Cin = C_;
+    TensorThrust Cin(C_.shape(), "Cin", true);
+    Cin.copy_in_gpu(C_);
+
     // NOTE(Nick): needs gpu treatment
     evolve_individual_nbody_cpu(
         time,
@@ -900,11 +913,11 @@ void FCIComputerThrust::evolve_pool_trotter_basic_gpu(
     const bool antiherm,
     const bool adjoint)
 {
-    cpu_error();
+    gpu_error();
 
     if(adjoint){
         for (int i = pool.terms().size() - 1; i >= 0; --i) {
-            apply_sqop_evolution_cpu(
+            apply_sqop_evolution_gpu(
                 pool.terms()[i].first, 
                 pool.terms()[i].second,
                 antiherm,
@@ -912,7 +925,7 @@ void FCIComputerThrust::evolve_pool_trotter_basic_gpu(
         }
     } else {
         for (const auto& sqop_term : pool.terms()) {
-            apply_sqop_evolution_cpu(
+            apply_sqop_evolution_gpu(
                 sqop_term.first, 
                 sqop_term.second,
                 antiherm,
@@ -938,7 +951,7 @@ void FCIComputerThrust::evolve_pool_trotter_cpu(
         if(adjoint){
             for( int r = 0; r < trotter_steps; r++) {
                 for (int i = pool.terms().size() - 1; i >= 0; --i) {
-                    apply_sqop_evolution_cpu(
+                    (
                         prefactor * pool.terms()[i].first, 
                         pool.terms()[i].second,
                         antiherm,
@@ -950,7 +963,7 @@ void FCIComputerThrust::evolve_pool_trotter_cpu(
         } else {
             for( int r = 0; r < trotter_steps; r++) {
                 for (const auto& sqop_term : pool.terms()) {
-                    apply_sqop_evolution_cpu(
+                    (
                         prefactor * sqop_term.first, 
                         sqop_term.second,
                         antiherm,
@@ -965,7 +978,7 @@ void FCIComputerThrust::evolve_pool_trotter_cpu(
         if(adjoint){
             for( int r = 0; r < trotter_steps; r++) {
                 for (int i = pool.terms().size() - 1; i >= 0; --i) {
-                    apply_sqop_evolution_cpu(
+                    (
                         prefactor * pool.terms()[i].first, 
                         pool.terms()[i].second,
                         antiherm,
@@ -973,7 +986,7 @@ void FCIComputerThrust::evolve_pool_trotter_cpu(
                 }
 
                 for (const auto& sqop_term : pool.terms()) {
-                    apply_sqop_evolution_cpu(
+                    (
                         prefactor * sqop_term.first, 
                         sqop_term.second,
                         antiherm,
@@ -985,7 +998,7 @@ void FCIComputerThrust::evolve_pool_trotter_cpu(
         } else {
             for( int r = 0; r < trotter_steps; r++) {
                 for (const auto& sqop_term : pool.terms()) {
-                    apply_sqop_evolution_cpu(
+                    (
                         prefactor * sqop_term.first, 
                         sqop_term.second,
                         antiherm,
@@ -993,7 +1006,7 @@ void FCIComputerThrust::evolve_pool_trotter_cpu(
                 }
 
                 for (int i = pool.terms().size() - 1; i >= 0; --i) {
-                    apply_sqop_evolution_cpu(
+                    (
                         prefactor * pool.terms()[i].first, 
                         pool.terms()[i].second,
                         antiherm,
@@ -1097,6 +1110,8 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
     const std::vector<int>& dagb,
     const std::vector<int>& undagb)
 {
+    gpu_error();
+
     if((daga.size() != undaga.size()) or (dagb.size() != undagb.size())){
         throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
     }
