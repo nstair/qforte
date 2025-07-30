@@ -1108,7 +1108,7 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
     int counta = 0;
     int countb = 0;
 
-    graph_.make_mapping_each(
+    graph_.make_mapping_each_gpu(
         true,
         daga,
         undaga,
@@ -1124,7 +1124,7 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
         return;
     }
 
-    graph_.make_mapping_each(
+    graph_.make_mapping_each_gpu(
         false,
         dagb,
         undagb,

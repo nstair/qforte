@@ -21,7 +21,7 @@ extern "C" void make_mapping_each_cuda(
     int* d_count,
     uint64_t dag_mask, uint64_t undag_mask);
 
-extern "C" void call_make_mapping_each_kernel(
+extern "C" void make_mapping_each_kernel_wrapper(
     const uint64_t* d_strings,
     const uint64_t* d_map_keys,
     const int* d_map_values,
