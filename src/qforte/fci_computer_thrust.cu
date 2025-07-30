@@ -21,7 +21,6 @@
 #include "cuda_runtime.h"
 
 #include "fci_computer_thrust.h"
-#include "fci_graph.h"
 #include "fci_graph_thrust.h"
 
 #include "fci_computer_gpu_kernels.cuh"
@@ -1108,7 +1107,7 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
     int counta = 0;
     int countb = 0;
 
-    graph_.make_mapping_each_gpu(
+    graph_.make_mapping_each_gpu_v2(
         true,
         daga,
         undaga,
@@ -1124,7 +1123,7 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
         return;
     }
 
-    graph_.make_mapping_each_gpu(
+    graph_.make_mapping_each_gpu_v2(
         false,
         dagb,
         undagb,
@@ -1142,15 +1141,6 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
 
     timer_.acc_record("second for loop in apply_individual_nbody_accumulate");
     timer_.reset();
-
-    /// TODO: maybe change this
-    for (int i = 0; i < counta; i++) {
-        targeta_gpu_[i] = graph_.get_aind_for_str(targeta_gpu_[i]);
-    }
-
-    for (int i = 0; i < countb; i++) {
-        targetb_gpu_[i] = graph_.get_bind_for_str(targetb_gpu_[i]);
-    }
 
     /// TODO: changing this function to use private members of FCIComputerThrust
     apply_individual_nbody1_accumulate_gpu(

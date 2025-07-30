@@ -326,6 +326,73 @@ void FCIGraphThrust::make_mapping_each_gpu(
     timer_.acc_record("make_mapping_each");
 }
 
+void FCIGraphThrust::make_mapping_each_gpu_v2(
+    bool alpha, 
+    const std::vector<int>& dag, 
+    const std::vector<int>& undag,
+    int* count,
+    thrust::device_vector<int>& source_gpu,
+    thrust::device_vector<int>& target_gpu,
+    thrust::device_vector<cuDoubleComplex>& parity_gpu) 
+{
+    timer_.reset();
+
+    std::vector<uint64_t> strings;
+    int length;
+    
+    if (alpha) {
+        strings = get_astr();
+        length = lena_;
+    } else {
+        strings = get_bstr();
+        length = lenb_;
+    }
+
+    thrust::host_vector<int> source(length);
+    thrust::host_vector<int> target(length);
+    thrust::host_vector<cuDoubleComplex> parity(length);
+
+    uint64_t dag_mask = 0;
+    uint64_t undag_mask = 0;
+
+    for (uint64_t i : dag) {
+        if (std::find(undag.begin(), undag.end(), i) == undag.end()) {
+            dag_mask = set_bit(dag_mask, i);
+        }
+    }
+
+    for (uint64_t i : undag) { undag_mask = set_bit(undag_mask, i); }
+
+    for (uint64_t index = 0; index < length; index++) {
+        uint64_t current = strings[index];
+        bool check = ((current & dag_mask) == 0) && ((current & undag_mask ^ undag_mask) == 0);
+        
+        if (check) {
+            uint64_t parity_value = 0;
+            for (size_t i = undag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, undag[i - 1]);
+                current = unset_bit(current, undag[i - 1]);
+            }
+            
+            for (size_t i = dag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, dag[i - 1]);
+                current = set_bit(current, dag[i - 1]);
+            }
+            
+            source[*count] = static_cast<int>(index);
+            target[*count] = get_aind_for_str(static_cast<int>(current));
+            parity[*count] = make_cuDoubleComplex(1.0 - 2.0 * static_cast<int>(parity_value % 2), 0.0);
+            (*count)++;
+        }
+    }
+
+    thrust::copy(source.begin(), source.begin() + *count, source_gpu.begin());
+    thrust::copy(target.begin(), target.begin() + *count, target_gpu.begin());
+    thrust::copy(parity.begin(), parity.begin() + *count, parity_gpu.begin());
+
+    timer_.acc_record("make_mapping_each");
+}
+
 /// NICK: 1. Consider a faster blas veriosn, 2. consider using qubit basis, 3. rename (too long)
 std::vector<uint64_t> FCIGraphThrust::get_lex_bitstrings(int nele, int norb) {
 
