@@ -759,6 +759,8 @@ std::string TensorThrust::str(
     const std::string& header_format
     ) const
 {
+    cpu_error();
+
     std::string str = "";
     str += std::printf( "TensorThrust: %s\n", name_.c_str());
     str += std::printf( "  Ndim  = %zu\n", ndim());

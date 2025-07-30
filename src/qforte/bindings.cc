@@ -513,7 +513,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_exp_val_cpu", &FCIComputerThrust::get_exp_val_cpu)
         .def("get_exp_val_tensor_cpu", &FCIComputerThrust::get_exp_val_tensor_cpu)
         .def("evolve_op_taylor_cpu", &FCIComputerThrust::evolve_op_taylor_cpu)
-        .def("apply_sqop_evolution_cpu", &FCIComputerThrust::apply_sqop_evolution_cpu, 
+        .def("apply_sqop_evolution_gpu", &FCIComputerThrust::apply_sqop_evolution_gpu, 
             py::arg("time"),
             py::arg("sqop"),
             py::arg("antiherm") = false,
