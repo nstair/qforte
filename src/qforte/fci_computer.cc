@@ -2172,6 +2172,13 @@ void FCIComputer::apply_individual_nbody_accumulate(
         parityb[i] = 1.0 - 2.0 * std::get<3>(ubetamap)[i];
     }
 
+    print_vector(sourcea, "sourcea");
+    print_vector(targeta, "targeta");
+    print_vector(paritya, "paritya");
+    print_vector(sourceb, "sourceb");
+    print_vector(targetb, "targetb");
+    print_vector(parityb, "parityb");
+
     my_timer.record("second for loop in apply_individual_nbody_accumulate");
     // std::cout << my_timer.str_table() << std::endl;
     // this is where the if statement goes

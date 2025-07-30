@@ -757,8 +757,14 @@ std::string TensorThrust::str(
     int maxcols,
     const std::string& data_format,
     const std::string& header_format
-    ) const
+    )
 {
+    bool reset = false;
+    if (on_gpu_) {
+        reset = true;
+        to_cpu();
+    }
+
     cpu_error();
 
     std::string str = "";
@@ -856,6 +862,10 @@ std::string TensorThrust::str(
                 }
             }
         }
+    }
+
+    if (reset) {
+        to_gpu();
     }
     return str;
 }
