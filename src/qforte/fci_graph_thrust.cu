@@ -233,19 +233,13 @@ void FCIGraphThrust::make_mapping_each(
             
             // Store the mapping like the CPU version after processing:
             // 1. source: original determinant index
-            // 2. target: resulting determinant INDEX (converted from bitstring)
+            // 2. target: resulting determinant BITSTRING (not index)
             // 3. parity: +1/-1 format (converted from 0/1)
             
             source_host.push_back(static_cast<int>(index));
+            target_host.push_back(static_cast<int>(current));
 
-            if (alpha) {
-                current = get_aind_for_str(static_cast<int>(current));
-            } else {
-                current = get_bind_for_str(static_cast<int>(current));
-            }
-            target_host.push_back(current);
-
-            parity_host.push_back(make_cuDoubleComplex(1.0 - 2.0 * static_cast<int>(parity_value % 2), 0.0));
+            parity_host.push_back(make_cuDoubleComplex(static_cast<double>(parity_value % 2), 0.0));
         }
     }
 
@@ -275,17 +269,14 @@ void FCIGraphThrust::make_mapping_each_gpu(
     timer_.reset();
 
     // Get the appropriate strings and mappings based on alpha/beta
-    thrust::device_vector<uint64_t> strings;
-    std::unordered_map<uint64_t, size_t> index_map;
+    std::vector<uint64_t> strings;
     int length;
     
     if (alpha) {
         strings = get_astr();
-        index_map = get_aind();
         length = lena_;
     } else {
         strings = get_bstr();
-        index_map = get_bind();
         length = lenb_;
     }
 
@@ -294,21 +285,8 @@ void FCIGraphThrust::make_mapping_each_gpu(
     thrust::device_vector<int> d_dag(dag.begin(), dag.end());
     thrust::device_vector<int> d_undag(undag.begin(), undag.end());
 
-    // Maybe better way to convert map to device vector but for now this:
-    std::vector<std::pair<uint64_t, int>> pairs(index_map.begin(), index_map.end());
-    std::sort(pairs.begin(), pairs.end());
-    std::vector<uint64_t> keys;
-    std::vector<int> vals;
-    for (const auto& kv : pairs) {
-        keys.push_back(kv.first);
-        vals.push_back(kv.second); // or static_cast<int>(kv.second) if needed
-    }
-    thrust::device_vector<uint64_t> d_map_keys(keys.begin(), keys.end());
-    thrust::device_vector<int> d_map_values(vals.begin(), vals.end());
-
     int dag_size = d_dag.size();
     int undag_size = d_undag.size();
-    int map_size = d_map_keys.size();
 
     // Create masks for dag and undag operators
     uint64_t dag_mask = 0;
@@ -325,13 +303,10 @@ void FCIGraphThrust::make_mapping_each_gpu(
     }
 
     // Device counter for valid results
-    thrust::device_vector<int> d_count(1);
+    thrust::device_vector<int> d_count(1, 0);  // Initialize to 0
 
     make_mapping_each_kernel_wrapper(
         thrust::raw_pointer_cast(d_strings.data()),
-        thrust::raw_pointer_cast(d_map_keys.data()),
-        thrust::raw_pointer_cast(d_map_values.data()),
-        map_size,
         thrust::raw_pointer_cast(d_dag.data()),
         thrust::raw_pointer_cast(d_undag.data()),
         dag_size,
@@ -346,7 +321,7 @@ void FCIGraphThrust::make_mapping_each_gpu(
     );
 
     // Retrieve the count from the device
-    cudaMemcpy(&count, thrust::raw_pointer_cast(d_count.data()), sizeof(int), cudaMemcpyDeviceToHost);
+    *count = d_count[0];
 
     timer_.acc_record("make_mapping_each");
 }

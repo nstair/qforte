@@ -23,9 +23,6 @@ extern "C" void make_mapping_each_cuda(
 
 extern "C" void make_mapping_each_kernel_wrapper(
     const uint64_t* d_strings,
-    const uint64_t* d_map_keys,
-    const int* d_map_values,
-    int map_size,
     const int* d_dag,
     const int* d_undag,
     int dag_size,

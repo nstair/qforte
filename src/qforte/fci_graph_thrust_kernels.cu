@@ -11,9 +11,16 @@ __device__ inline uint64_t unset_bit_gpu(uint64_t n, int idx) {
     return n & ~(1ULL << idx);
 }
 
-__device__ inline int count_bits_above_gpu(uint64_t n, int idx) {
-    uint64_t mask = (1ULL << idx) - 1;
-    return __popcll(n & ~mask);
+__device__ inline int count_bits_above_gpu(uint64_t string, int pos) {
+    uint64_t bitmask = (1 << (pos + 1)) - 1;
+    uint64_t inverted_mask = ~bitmask;
+    uint64_t result = string & inverted_mask;
+    int count = 0;
+    while (result) {
+        result &= (result - 1);
+        count++;
+    }
+    return count;
 }
 
 // GPU device function to perform binary search for index mapping
@@ -34,9 +41,6 @@ __device__ int binary_search_index_map(const uint64_t* keys, const int* values, 
 
 __global__ void make_mapping_each_gpu_kernel(
     const uint64_t* strings,
-    const uint64_t* map_keys,
-    const int* map_values,
-    int map_size,
     const int* dag,
     const int* undag,
     int dag_size,
@@ -55,48 +59,39 @@ __global__ void make_mapping_each_gpu_kernel(
     uint64_t current = strings[index];
     
     // Check if the operator can act on this determinant
-    bool check = ((current & dag_mask) == 0) && ((current & undag_mask) == undag_mask);
+    bool check = ((current & dag_mask) == 0) && ((current & undag_mask ^ undag_mask) == 0);
     
     if (check) {
         uint64_t parity_value = 0;
-        uint64_t result_string = current;
         
         // Apply annihilation operators (undag) - process in reverse order
         for (int i = undag_size - 1; i >= 0; i--) {
-            parity_value += count_bits_above_gpu(result_string, undag[i]);
-            result_string = unset_bit_gpu(result_string, undag[i]);
+            parity_value += count_bits_above_gpu(current, undag[i]);
+            current = unset_bit_gpu(current, undag[i]);
         }
         
         // Apply creation operators (dag) - process in reverse order
         for (int i = dag_size - 1; i >= 0; i--) {
-            parity_value += count_bits_above_gpu(result_string, dag[i]);
-            result_string = set_bit_gpu(result_string, dag[i]);
+            parity_value += count_bits_above_gpu(current, dag[i]);
+            current = set_bit_gpu(current, dag[i]);
         }
         
-        // Find the target index using binary search
-        int target_index = binary_search_index_map(map_keys, map_values, map_size, result_string);
+        int pos = atomicAdd(count, 1);
         
-        if (target_index >= 0) {
-            // Atomically increment count and get insertion position
-            int pos = atomicAdd(count, 1);
-            
-            // Store results
-            source[pos] = index;
-            target[pos] = target_index;
-            
-            // Convert parity from 0/1 to +1/-1 format
-            int parity_int = 1 - 2 * static_cast<int>(parity_value % 2);
-            parity[pos].x = static_cast<double>(parity_int);
-            parity[pos].y = 0.0;
-        }
+        // Store results with conversions like the CPU code:
+        source[pos] = index;
+        target[pos] = current;  // keep as index for now since we don't have a mapping here
+
+        // Convert parity from 0/1 to +1/-1 format like the CPU code
+        int parity_int = static_cast<int>(parity_value % 2);
+        double parity_converted = 1.0 - 2.0 * parity_int;
+        parity[pos].x = parity_converted;
+        parity[pos].y = 0.0;
     }
 }
 
 extern "C" void make_mapping_each_kernel_wrapper(
     const uint64_t* d_strings,
-    const uint64_t* d_map_keys,
-    const int* d_map_values,
-    int map_size,
     const int* d_dag,
     const int* d_undag,
     int dag_size,
@@ -115,8 +110,7 @@ extern "C" void make_mapping_each_kernel_wrapper(
     
     // Launch kernel
     make_mapping_each_gpu_kernel<<<grid_size, block_size>>>(
-        d_strings, d_map_keys, d_map_values, map_size,
-        d_dag, d_undag, dag_size, undag_size,
+        d_strings, d_dag, d_undag, dag_size, undag_size,
         dag_mask, undag_mask, length,
         d_source, d_target, d_parity, d_count
     );
