@@ -524,7 +524,7 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("antiherm") = false,
             py::arg("adjoint") = false
             )
-        .def("evolve_pool_trotter_cpu", &FCIComputerThrust::evolve_pool_trotter_cpu, 
+        .def("evolve_pool_trotter_gpu", &FCIComputerThrust::evolve_pool_trotter_gpu, 
             py::arg("sqop"),
             py::arg("evolution_time"),
             py::arg("trotter_steps"),
