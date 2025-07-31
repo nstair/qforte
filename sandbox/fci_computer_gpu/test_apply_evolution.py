@@ -40,6 +40,7 @@ sq_terms = [
     (+0.704645, [7, 6], [3, 2]), # 2body ab
     (+0.4, [6], [0]), # 1bdy-a
     (+0.4, [7], [3]), # 1bdy-a
+    (+0.4, [2], [2])
 ]
 
 time = 1.0
@@ -61,12 +62,12 @@ print(pool)
 
 fci_comp.evolve_pool_trotter_basic(
     pool,
-    antiherm=True)
+    antiherm=False)
 
 fci_comp_thrust.to_gpu()
 fci_comp_thrust.evolve_pool_trotter_basic_gpu(
     pool,
-    antiherm=True)
+    antiherm=False)
 fci_comp_thrust.to_cpu()
 
 print("\n Final FCIcomp Stuff")

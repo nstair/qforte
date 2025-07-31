@@ -173,7 +173,7 @@ class FCIComputerThrust {
     void evolve_individual_nbody_easy_cpu(
       const std::complex<double> time,
       const std::complex<double> coeff,
-      const TensorThrust& Cin,
+      TensorThrust& Cin,
       TensorThrust& Cout,
       const std::vector<int>& crea,
       const std::vector<int>& anna,
@@ -183,7 +183,7 @@ class FCIComputerThrust {
     void evolve_individual_nbody_hard_cpu(
       const std::complex<double> time,
       const std::complex<double> coeff,
-      const TensorThrust& Cin,
+      TensorThrust& Cin,
       TensorThrust& Cout,
       const std::vector<int>& crea,
       const std::vector<int>& anna,
@@ -193,7 +193,7 @@ class FCIComputerThrust {
     void evolve_individual_nbody_cpu(
       const std::complex<double> time,
       const SQOperator& sqop,
-      const TensorThrust& Cin,
+      TensorThrust& Cin,
       TensorThrust& Cout,
       const bool antiherm = false,
       const bool adjoint = false);
@@ -209,7 +209,7 @@ class FCIComputerThrust {
       const bool antiherm = false,
       const bool adjoint = false);
 
-    void evolve_pool_trotter_cpu(
+    void evolve_pool_trotter_gpu(
       const SQOpPool& pool,
       const double evolution_time,
       const int trotter_steps,
@@ -225,14 +225,14 @@ class FCIComputerThrust {
 
     void apply_individual_nbody1_accumulate_gpu(
       const std::complex<double> coeff, 
-      const TensorThrust& Cin,
+      TensorThrust& Cin,
       TensorThrust& Cout,
       int counta,
       int countb);
 
     void apply_individual_nbody_accumulate_gpu(
       const std::complex<double> coeff,
-      const TensorThrust& Cin,
+      TensorThrust& Cin,
       TensorThrust& Cout,
       const std::vector<int>& daga,
       const std::vector<int>& undaga, 
@@ -241,7 +241,7 @@ class FCIComputerThrust {
 
     void apply_individual_sqop_term_gpu(
       const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
-      const TensorThrust& Cin,
+      TensorThrust& Cin,
       TensorThrust& Cout);
 
     void apply_sqop_gpu(const SQOperator& sqop);
