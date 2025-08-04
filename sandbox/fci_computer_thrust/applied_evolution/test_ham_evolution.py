@@ -14,7 +14,9 @@ geom = [
     ('H', (0., 0., 7.0)), 
     ('H', (0., 0., 8.0)),
     ('H', (0., 0., 9.0)), 
-    ('H', (0., 0.,10.0))
+    ('H', (0., 0.,10.0)),
+    ('H', (0., 0.,11.0)),
+    ('H', (0., 0.,12.0)),
     ]
 
 # Get the molecule object that now contains both the fermionic and qubit Hamiltonians.

@@ -498,3 +498,51 @@ extern "C" void apply_individual_nbody1_accumulate_wrapper_shared(
     }
 }
     */
+
+__global__ void scale_elements_kernel(
+    cuDoubleComplex* d_Cout,
+    const int* d_first, 
+    int first_size,
+    const int* d_second, 
+    int second_size,
+    int nbeta_strs_,
+    cuDoubleComplex factor) 
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (i < first_size && j < second_size) {
+        int idx = d_first[i] * nbeta_strs_ + d_second[j];
+        d_Cout[idx] = cuCmul(d_Cout[idx], factor);
+    }
+}
+
+extern "C" void scale_elements_wrapper(
+    cuDoubleComplex* d_Cout,
+    const int* d_first, 
+    int first_size,
+    const int* d_second, 
+    int second_size,
+    int nbeta_strs_,
+    cuDoubleComplex factor) 
+{
+    dim3 blockSize(16, 16);
+    dim3 gridSize((first_size + blockSize.x - 1) / blockSize.x, 
+                  (second_size + blockSize.y - 1) / blockSize.y);
+
+    scale_elements_kernel<<<gridSize, blockSize>>>(d_Cout, d_first, first_size, d_second, second_size, nbeta_strs_, factor);
+
+    // Check for any errors launching the kernel
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Failed to launch scale_elements_kernel (error code " << cudaGetErrorString(err) << ")!" << std::endl;
+        throw std::runtime_error("Kernel launch failed");
+    }
+
+    // Wait for the kernel to complete and check for errors
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "Kernel execution failed (error code " << cudaGetErrorString(err) << ")!" << std::endl;
+        throw std::runtime_error("Kernel execution failed");
+    }
+}

@@ -631,28 +631,32 @@ void FCIComputerThrust::apply_cos_inplace_cpu(
     /// TODO: Implement separate CPU and GPU versions of this function
     // cpu_error();
 
-    bool reset = false;
-    if (Cout.on_gpu()) {
-        reset = true;
-        Cout.to_cpu();
-    }
+    // bool reset = false;
+    // if (Cout.on_gpu()) {
+    //     reset = true;
+    //     Cout.to_cpu();
+    // }
 
     const std::complex<double> cabs = std::abs(coeff);
     const std::complex<double> factor = std::cos(time * cabs);
+    cuDoubleComplex factor_gpu = make_cuDoubleComplex(factor.real(), factor.imag());
 
     std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_cpu(crea, anna, creb, annb);
+    thrust::device_vector<int> d_first(maps.first.begin(), maps.first.end());
+    thrust::device_vector<int> d_second(maps.second.begin(), maps.second.end());
 
-    if (maps.first.size() != 0 and maps.second.size() != 0){
-        for (size_t i = 0; i < maps.first.size(); i++){
-            for (size_t j = 0; j < maps.second.size(); j++){
-                Cout.data()[maps.first[i] * nbeta_strs_ +  maps.second[j]] *= factor;
-            }
-        }       
-    }
+    scale_elements_wrapper(
+        thrust::raw_pointer_cast(Cout.d_data().data()),
+        thrust::raw_pointer_cast(d_first.data()), 
+        d_first.size(),
+        thrust::raw_pointer_cast(d_second.data()), 
+        d_second.size(),
+        nbeta_strs_,
+        factor_gpu);
 
-    if (reset) {
-        Cout.to_gpu();
-    }
+    // if (reset) {
+    //     Cout.to_gpu();
+    // }
 }
 
 int FCIComputerThrust::isolate_number_operators_cpu(
@@ -695,41 +699,46 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu(
     /// TODO: Implement seperate CPU and GPU versions of this function
     // cpu_error();
 
-    bool reset1 = false;
-    bool reset2 = false;
+    // bool reset1 = false;
+    // bool reset2 = false;
 
-    if (Cin.on_gpu()) {
-        Cin.to_cpu();
-        reset1 = true;
-    }
+    // if (Cin.on_gpu()) {
+    //     Cin.to_cpu();
+    //     reset1 = true;
+    // }
 
-    if (Cout.on_gpu()) {
-        Cout.to_cpu();
-        reset2 = true;
-    }
+    // if (Cout.on_gpu()) {
+    //     Cout.to_cpu();
+    //     reset2 = true;
+    // }
 
-    if (reset1 != reset2) {
-        throw std::runtime_error("Both Cin and Cout must be on the same device (CPU or GPU)");
-    }
+    // if (reset1 != reset2) {
+    //     throw std::runtime_error("Both Cin and Cout must be on the same device (CPU or GPU)");
+    // }
 
     std::complex<double> factor = std::exp(-time * std::real(coeff) * std::complex<double>(0.0, 1.0));
+    cuDoubleComplex factor_gpu = make_cuDoubleComplex(factor.real(), factor.imag());
+
     std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number_cpu(anna, annb);
+    thrust::device_vector<int> d_first(maps.first.begin(), maps.first.end());
+    thrust::device_vector<int> d_second(maps.second.begin(), maps.second.end());
 
-    if (maps.first.size() != 0 and maps.second.size() != 0){
-        for (size_t i = 0; i < maps.first.size(); i++){
-            for (size_t j = 0; j < maps.second.size(); j++){
-                Cout.data()[maps.first[i] * nbeta_strs_ +  maps.second[j]] *= factor;
-            }
-        }       
-    }
+    scale_elements_wrapper(
+        thrust::raw_pointer_cast(Cout.d_data().data()),
+        thrust::raw_pointer_cast(d_first.data()), 
+        d_first.size(),
+        thrust::raw_pointer_cast(d_second.data()), 
+        d_second.size(),
+        nbeta_strs_,
+        factor_gpu);
 
-    if (reset1) {
-        Cin.to_gpu();
-    }
+    // if (reset1) {
+    //     Cin.to_gpu();
+    // }
 
-    if (reset2) {
-        Cout.to_gpu();
-    }
+    // if (reset2) {
+    //     Cout.to_gpu();
+    // }
 }
 
 /// NOTE: Cin should be const, changing for now
