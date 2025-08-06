@@ -4,10 +4,13 @@ the molecular info and properties (hamiltonian, rdms, etc...).
 """
 # import operator
 # import itertools
+import os
 import numpy as np
 import copy
 from abc import ABC, abstractmethod
 from qforte.helper.df_ham_helper import *
+from qforte.helper.orb_transforms import *
+from qforte.helper.printing import *
 
 import qforte
 
@@ -71,6 +74,10 @@ def create_psi_mol(**kwargs):
 
     # Setup psi4 calculation(s)
     psi4.set_memory('2 GB')
+
+
+
+    # ===> Set Psi4 options <=== #
     psi4.core.set_output_file(kwargs['filename']+'.out', False)
 
     p4_geom_str =  f"{int(charge)}  {int(multiplicity)}"
@@ -121,6 +128,140 @@ def create_psi_mol(**kwargs):
     mints = psi4.core.MintsHelper(p4_wfn.basisset())
 
     C = p4_wfn.Ca_subset("AO", "ALL")
+
+    if kwargs.get('localize_orbitals', True):
+
+        print(f"\n  ====> Warning Localized Orbitals are NOT semi-canonicalized <==== ")
+        print(f"        Orbs within occ/vir blocks are orderd via Rayleigh quotients")
+        print(f"        Could in principal reorder which orbs are occ and which are vir! \n")
+        print(f"        Orbital energies (for denoms) are NOT currently updated! \n")
+
+
+        # 2. Get the AO basis and the MO coefficient blocks you want
+        basis  = p4_wfn.basisset()
+        C_all  = p4_wfn.Ca_subset("AO", "ALL")  # All alpha MOs
+        C_occ  = p4_wfn.Ca_subset("AO", "OCC")  # Occupied alpha MOs
+        C_vir  = p4_wfn.Ca_subset("AO", "VIR")  # Virtual alpha MOs
+
+        F = p4_wfn.Fa()
+        F_np = F.np
+
+        # 3. Build and run the localizer on whatever block(s) you like
+        method = kwargs.get('localization_method', 'PIPEK_MEZEY')  # or "BOYS", etc.
+
+        if kwargs['localize_blocks'] == 'full':
+            loc = psi4.core.Localizer.build(method, basis, C_all)  
+            loc.localize()                                         
+            C_loc_mat = loc.L
+
+            print(f"C_loc_p4")
+            print(C_loc_mat.np)
+
+        elif kwargs['localize_blocks'] == 'split':
+
+            # NOTE(Nick): uncommenting will print the psi4 localizer iterations
+            # psi4.core.set_output_file("/dev/stdout", append=False)
+
+            loc_occ = psi4.core.Localizer.build(method, basis, C_occ)
+            loc_vir = psi4.core.Localizer.build(method, basis, C_vir)
+
+            loc_occ.localize()
+            loc_vir.localize()
+
+            C_occ_loc = loc_occ.L
+            C_vir_loc = loc_vir.L
+
+            C_loc_np = np.concatenate(
+                (C_occ_loc.np, C_vir_loc.np),
+                axis=1
+            )
+
+            # 1) Build the "Fock in MO basis"
+            F_loc_np = C_loc_np.T @ F_np @ C_loc_np      
+
+            # 2) Extract the diagonal = Rayleigh quotients
+            eps_proxy = np.diag(F_loc_np)
+
+            # 3) (Optional) sort by increasing proxy‐energies
+            order     = np.argsort(eps_proxy)
+            eps_proxy = eps_proxy[order]
+            C_loc_sorted_np  = C_loc_np[:, order]
+
+
+            # 4) Want this in the end
+            C_loc_mat = psi4.core.Matrix.from_array(
+                C_loc_sorted_np
+            )
+
+            # print(f"\n ===> C_loc_p4 <=== \n")
+            # matprint(C_loc_mat.np)
+
+        elif kwargs['localize_blocks'] == 'qf_split':
+
+            nbf     = basis.nbf()
+            ao2atom = np.empty(nbf, dtype=int)
+
+            for mu in range(nbf):
+                sh = basis.ao_to_shell(mu)
+                ao2atom[mu] = basis.shell_to_center(sh)
+
+            S_ao = mints.ao_overlap()
+            S_ao_np = np.asarray(S_ao)
+
+            C_occ_np = np.asarray(C_occ)
+            C_vir_np = np.asarray(C_vir)
+
+            C_occ_loc = pipek_mezey(
+                C_occ_np, 
+                S_ao_np, 
+                basis,
+                )
+
+            C_vir_loc = pipek_mezey(
+                C_vir_np, 
+                S_ao_np, 
+                basis,
+                )
+            
+            C_loc_np = np.concatenate(
+                (C_occ_loc, C_vir_loc),
+                axis=1
+            )
+            
+
+            # 1) Build the "Fock in MO basis"
+            F_loc_np = C_loc_np.T @ F_np @ C_loc_np      
+
+            # 2) Extract the diagonal = Rayleigh quotients
+            eps_proxy = np.diag(F_loc_np)
+
+            # 3) (Optional) sort by increasing proxy‐energies
+            order     = np.argsort(eps_proxy)
+            eps_proxy = eps_proxy[order]
+            C_loc_sorted_np  = C_loc_np[:, order]
+
+
+            # 4) Want this in the end
+            C_loc_mat = psi4.core.Matrix.from_array(
+                C_loc_sorted_np
+            )
+
+            # print(f"\n ===> C_loc_qf <=== \n")
+            # matprint(C_loc_mat.np)
+
+            # I = C_loc_mat.np.transpose() @ S_ao_np @ C_loc_mat.np
+            # print("\n ===> C_loc_qf overlap <=== \n")
+            # matprint(I)
+
+        else:
+            raise ValueError(f"Unknown localize_blocks option: {kwargs['localize_blocks']}")
+
+        # 4. If you need a NumPy array of the localized coefficients:
+        # C_loc = C_loc_mat.np
+
+        # Use C_loc instead of C for subsequent calculations
+        C = C_loc_mat
+
 
     scalars = p4_wfn.scalar_variables()
 
