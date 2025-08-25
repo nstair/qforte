@@ -1,0 +1,15 @@
+name: cuqf_sum25_v1
+channels:
+  - defaults
+dependencies:
+  - python=3.8
+  - cuda
+  - cmake
+  - libopenblas
+  - libxcrypt
+  - blas[build=*openblas]
+  - make
+  - ninja
+  - libcblas
+  - pkg-config
+prefix: /home/nstair/anaconda3/envs/cuqf_sum25_v1

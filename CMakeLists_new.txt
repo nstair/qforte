@@ -1,21 +1,15 @@
-#cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.4)
 
-cmake_minimum_required(VERSION 3.18...3.29)
+project(qforte LANGUAGES CXX C CUDA)
 
-
-
-# -------------------------------------------------------------------
-# CUDA arch / Toolkit root
-# -------------------------------------------------------------------
 # Use the toolkit from the current conda env and target your GPU (RTX 3060 = 86)
 # (FORCE clears stale cache values so old arch lists like 70/61/52 don't sneak back in.)
 set(CUDAToolkit_ROOT "$ENV{CONDA_PREFIX}")
 set(CMAKE_CUDA_ARCHITECTURES "86" CACHE STRING "" FORCE)
 message(STATUS "Using CUDA archs: ${CMAKE_CUDA_ARCHITECTURES}")
 
-project(qforte LANGUAGES CXX C CUDA)
-
 set(CMAKE_CXX_STANDARD 17)
+# set(CMAKE_CXX_STANDARD_REQUIRED OFF)
 
 # optionally use OpenMP, if so use OpenMP compatible compiler
 OPTION(USE_OpenMP "Use OpenMP to enamble <omp.h>" OFF)
@@ -27,24 +21,26 @@ cmake_policy(SET CMP0074 NEW)         # find_package() respects *_ROOT vars
 set(BLA_VENDOR "Generic")             # bypass FindBLAS vendor picks
 
 # (Nick) kept as-is so CMake finds headers/libs inside the env.
-set(CMAKE_PREFIX_PATH "/home/nstair/anaconda3/envs/cuqf_8_25_25_v2")
+set(CMAKE_PREFIX_PATH "/home/nstair/anaconda3/envs/cuqf_sum25_v1")
 # set(CMAKE_PREFIX_PATH "/home/zach_gonzales/anaconda3/envs/qforte")
 
 set(BLAS_LIBRARIES "${CMAKE_PREFIX_PATH}/lib")
 set(CBLAS_INCLUDE_DIR "${CMAKE_PREFIX_PATH}/include")         # need
 set(OPENBLAS_EXE "${CMAKE_PREFIX_PATH}/lib/libopenblas.so")   # need
+# set(CUDA_EXE "${CMAKE_PREFIX_PATH}/lib/libcudart.so")       # ❌ Don't link by path; prefer target CUDA::cudart (version-safe)
+
+# find_package(BLAS REQUIRED)   # ❌ Not used because we link OpenBLAS directly above.
 
 # -------------------------------------------------------------------
 # CUDA toolkit & flags
 # -------------------------------------------------------------------
 find_package(CUDAToolkit REQUIRED)
 
-# For all CUDA files, enable extended lambdas & suppress noisy diagnostics.
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda -diag-suppress 815,186 -Wno-deprecated-gpu-targets")
 
-# -------------------------------------------------------------------
-# Locate Thrust/CUB (handles both NVIDIA "cccl" layout and conda-forge)
-# -------------------------------------------------------------------
+
+
+# Find Thurst stuff begin
+# --- Locate Thrust/CUB (handles both NVIDIA "cccl" layout and conda-forge) ---
 set(_CUDA_TGT_INC "$ENV{CONDA_PREFIX}/targets/x86_64-linux/include")
 set(_CUDA_INC     "$ENV{CONDA_PREFIX}/include")
 
@@ -55,7 +51,7 @@ elseif (EXISTS "${_CUDA_TGT_INC}/cccl/thrust/host_vector.h")
 elseif (EXISTS "${_CUDA_INC}/thrust/host_vector.h")
   set(THRUST_ROOT "${_CUDA_INC}")                    # conda-forge layout
 elseif (EXISTS "${_CUDA_INC}/cccl/thrust/host_vector.h")
-  set(THRUST_ROOT "${_CUDA_INC}/cccl")
+  set(THRUST_ROOT "${_CUDA_INC}/cccl")               # rare, but handle it
 else()
   message(FATAL_ERROR
     "Thrust headers not found.\nChecked:\n"
@@ -65,14 +61,23 @@ else()
     "  ${_CUDA_INC}/cccl/thrust/host_vector.h\n"
     "Install cuda-cccl (NVIDIA) or thrust (conda-forge), then rebuild.")
 endif()
+
 message(STATUS "Using THRUST_ROOT = ${THRUST_ROOT}")
+# Find Thurst stuff end
+
+
+
+
+
+# For all CUDA files, enable extended lambdas & suppress noisy diagnostics.
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda -diag-suppress 815,186 -Wno-deprecated-gpu-targets")
 
 # -------------------------------------------------------------------
 # Sources
 # -------------------------------------------------------------------
 set(SOURCE_DIR "src/qforte")
 
-# CUDA sources (kernels + thrust-based .cu)
+# ✅ Include CUDA kernels & thrust-based .cu files. (Previously commented out led to undefined references.)
 set(CUDA_SOURCES
     "${SOURCE_DIR}/tensor_gpu_kernels.cu"
     "${SOURCE_DIR}/fci_computer_gpu_kernels.cu"
@@ -117,18 +122,14 @@ add_subdirectory(lib/pybind11)
 add_subdirectory(lib/fmt)
 
 # -------------------------------------------------------------------
-# Core library (SHARED): performs its own CUDA device-link
+# Build a single core library with ALL implementation sources (CPU+CUDA)
+# This avoids duplicate builds and fixes missing wrapper symbols at link.
 # -------------------------------------------------------------------
-add_library(qforte_core SHARED ${SOURCES} ${CUDA_SOURCES})
+add_library(qforte_core STATIC ${SOURCES} ${CUDA_SOURCES})
 set_target_properties(qforte_core PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}"
   CUDA_SEPARABLE_COMPILATION ON
-  CUDA_RESOLVE_DEVICE_SYMBOLS ON
-  # Co-locate the shared lib next to the Python module (setup.py sets CMAKE_LIBRARY_OUTPUT_DIRECTORY)
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
-  BUILD_RPATH "\$ORIGIN"
-  INSTALL_RPATH "\$ORIGIN"
 )
 target_include_directories(qforte_core PRIVATE
   ${CBLAS_INCLUDE_DIR}
@@ -141,29 +142,79 @@ target_link_libraries(qforte_core PRIVATE
   ${OPENBLAS_EXE}
 )
 
+# ❌ Global include of CUDA headers leaks CUB/Thrust into every TU (caused __syncthreads/threadIdx errors before).
+# include_directories(${CUDAToolkit_INCLUDE_DIRS})   # WRONG: global leakage
+# include_directories("/home/nstair/anaconda3/envs/cuqf_sum25_v1/targets/x86_64-linux/include")  # WRONG: hardcoded path; use CUDAToolkit_INCLUDE_DIRS per-target
+
 # -------------------------------------------------------------------
-# Pybind11 module: link against shared core
+# Pybind11 module: compile ONLY the bindings TU here,
+# and link it to the core lib built above.
+# bindings.cc should define the two THRUST_*_SYSTEM macros at top.
 # -------------------------------------------------------------------
 pybind11_add_module(qforte "${SOURCE_DIR}/bindings.cc")
 
+
+# New device stub linker stuff begin <====
+# Give the module one CUDA TU so CMake performs device linking
+target_sources(qforte PRIVATE "${SOURCE_DIR}/device_link_stub.cu")
+set_source_files_properties("${SOURCE_DIR}/device_link_stub.cu" PROPERTIES LANGUAGE CUDA)
+
+# Make sure device-link runs and uses CUDA linker for the module
+set_target_properties(qforte PROPERTIES
+  LINKER_LANGUAGE CUDA
+  CUDA_SEPARABLE_COMPILATION ON
+  CUDA_RESOLVE_DEVICE_SYMBOLS ON
+  CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}"
+)
+
+# Link both the core (C++ symbols) and CUDA runtime
+target_link_libraries(qforte PRIVATE qforte_core CUDA::cudart)
+# New device stub linker stuff end <====
+
+
+# The bindings TU still needs to SEE Thrust headers (host backend is forced in code).
+# The generator-expression version hid includes from C++ TUs -> "thrust/... not found".
+# target_include_directories(qforte PRIVATE ${CBLAS_INCLUDE_DIR} $<$<COMPILE_LANGUAGE:CUDA>:${CUDAToolkit_INCLUDE_DIRS}>) # ❌ Wrong here
 target_include_directories(qforte PRIVATE
   ${CBLAS_INCLUDE_DIR}
   ${CUDAToolkit_INCLUDE_DIRS}
   ${THRUST_ROOT}
 )
 
-#target_link_libraries(qforte PRIVATE qforte_core)
-target_link_libraries(qforte PRIVATE qforte_core fmt-header-only)
+# Older pattern: putting all SOURCES/CUDA_SOURCES into the pybind module duplicated compiles and caused include-mode confusion.
+# pybind11_add_module(qforte "${SOURCE_DIR}/bindings.cc" ${SOURCES} ${CUDA_SOURCES})  # ❌ Prefer a core lib and link to it.
 
+# Next two commands seem to be culprates for linker probelms
+# Keep explicit CUDA arch on the module target too (harmless and clear).
+# target_link_libraries(qforte PRIVATE qforte_core)
+# set_target_properties(qforte PROPERTIES CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}")
+
+
+# More new linking help begin <===
+
+# Use CUDA linker + device-link for the module
 set_target_properties(qforte PROPERTIES
+  LINKER_LANGUAGE CUDA
+  CUDA_RESOLVE_DEVICE_SYMBOLS ON
+  CUDA_SEPARABLE_COMPILATION ON
   CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}"
-  # Ensure it can find libqforte_core.so at import time (next to the module)
-  BUILD_RPATH "\$ORIGIN"
-  INSTALL_RPATH "\$ORIGIN"
 )
+
+# Link the core lib (C++ symbols like QubitOperator::mult_coeffs) and CUDA runtime
+target_link_libraries(qforte PRIVATE qforte_core CUDA::cudart)
+
+# More new linking help end <===
+
+
 
 # Python type stub generation
 add_pybind11_stubs(qforte)
+
+# ❌ Prefer not to use link_directories; we already link by full paths/targets.
+# link_directories(${BLAS_LIBRARIES})   # WRONG: global link dirs can mask the wrong libs
+
+# Older explicit cudart .so path — not version-safe; use CUDA::cudart target instead.
+# target_link_libraries(qforte PRIVATE fmt-header-only CUDA::cudart ${OPENBLAS_EXE} ${CUDA_EXE})  # ${CUDA_EXE} removed
 
 # -------------------------------------------------------------------
 # OpenMP (attach to core implementation, not the module glue)
@@ -188,19 +239,22 @@ include_directories(${CBLAS_INCLUDE_DIR})
 include_directories(lib/catch2/single_include/catch2)
 include_directories(lib/fmt/include)
 
+# Older pattern rebuilt all SOURCES into the test exe. Link to core instead.
+# add_executable("${PROJECT_NAME}_test" ${SOURCES} ${TESTS})  # ❌ duplicates builds
 add_executable("${PROJECT_NAME}_test" ${TESTS})
-# target_link_libraries("${PROJECT_NAME}_test" PRIVATE qforte_core)
-target_link_libraries("${PROJECT_NAME}_test" PRIVATE qforte_core fmt-header-only)
+target_link_libraries("${PROJECT_NAME}_test" PRIVATE qforte_core)
 
 # -------------------------------------------------------------------
 # Benchmarks
 # -------------------------------------------------------------------
+# Older pattern rebuilt all SOURCES/CUDA_SOURCES here too (and missed wrappers sometimes).
+# add_executable("${PROJECT_NAME}_benchmarks" benchmarks/benchmarks.cc "${SOURCES}" "${CUDA_SOURCES}")  # ❌
 add_executable("${PROJECT_NAME}_benchmarks" benchmarks/benchmarks.cc)
 set_target_properties(qforte_benchmarks PROPERTIES
   CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}"
-  BUILD_RPATH "\$ORIGIN"
-  INSTALL_RPATH "\$ORIGIN"
 )
 target_include_directories(qforte_benchmarks PRIVATE ${CUDAToolkit_INCLUDE_DIRS} ${THRUST_ROOT})
-# target_link_libraries(qforte_benchmarks PRIVATE qforte_core)
-target_link_libraries(qforte_benchmarks PRIVATE qforte_core fmt-header-only)
+target_link_libraries(qforte_benchmarks PRIVATE qforte_core)
+
+# Keep this if you want fmt & OpenBLAS visible directly to the bench binary (not strictly required since qforte_core brings them).
+# target_link_libraries(qforte_benchmarks PRIVATE fmt-header-only ${OPENBLAS_EXE})
