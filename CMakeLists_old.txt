@@ -1,0 +1,151 @@
+cmake_minimum_required(VERSION 3.4)
+
+project(qforte LANGUAGES CXX C CUDA)
+
+# Use the toolkit from the current conda env and target your GPU (RTX 3060 = 86)
+set(CUDAToolkit_ROOT "$ENV{CONDA_PREFIX}")
+set(CMAKE_CUDA_ARCHITECTURES "86" CACHE STRING "" FORCE)
+message(STATUS "Using CUDA archs: ${CMAKE_CUDA_ARCHITECTURES}")
+
+set (CMAKE_CXX_STANDARD 17)
+# set(CMAKE_CXX_STANDARD_REQUIRED OFF)
+
+# optionally use OpenMP, if so use OpenMP compatible compiler
+OPTION (USE_OpenMP "Use OpenMP to enamble <omp.h>" OFF)
+
+
+
+# Need to check how much of this is actually needed!
+
+# Find BLAS library
+cmake_policy(SET CMP0074 NEW)
+
+# Bypass FindBLAS module
+set(BLA_VENDOR "Generic")
+
+# (Nick) I need the following, may be elsewhere or unneeded on other os. 
+# set(CMAKE_C_COMPILER "/usr/bin/gcc")
+# set(CMAKE_CXX_COMPILER "/usr/bin/g++")
+
+# Use these if installing to anaconda
+set(CMAKE_PREFIX_PATH "/home/nstair/anaconda3/envs/qfcuda2")
+# set(CMAKE_PREFIX_PATH "/home/zach_gonzales/anaconda3/envs/qforte")
+set(BLAS_LIBRARIES "${CMAKE_PREFIX_PATH}/lib") 
+set(CBLAS_INCLUDE_DIR "${CMAKE_PREFIX_PATH}/include") #need
+set(OPENBLAS_EXE "${CMAKE_PREFIX_PATH}/lib/libopenblas.so") #need, may be libopenblas.so for linux
+set(CUDA_EXE "${CMAKE_PREFIX_PATH}/lib/libcudart.so")
+# find_package(BLAS REQUIRED)
+
+find_package(CUDAToolkit REQUIRED)
+
+# For all CUDA files, enable extended lambdas & supress comparison warning 815,186
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda -diag-suppress 815,186 -Wno-deprecated-gpu-targets")
+
+# Set source directory
+set(SOURCE_DIR "src/qforte")
+
+# Compiled with nvcc
+set(CUDA_SOURCES 
+#    "${SOURCE_DIR}/tensor_gpu_kernels.cu"
+#    "${SOURCE_DIR}/fci_computer_gpu_kernels.cu"
+#    "${SOURCE_DIR}/fci_computer_gpu.cu"
+    "${SOURCE_DIR}/tensor_thrust.cu"
+    "${SOURCE_DIR}/fci_computer_thrust.cu"
+    "${SOURCE_DIR}/fci_graph_thrust.cu"
+    "${SOURCE_DIR}/fci_graph_thrust_kernels.cu")
+
+# Compiled with CXX
+set(SOURCES
+    "${SOURCE_DIR}/helpers.cc"
+    "${SOURCE_DIR}/make_gate.cc"
+    "${SOURCE_DIR}/qubit_basis.cc"
+    "${SOURCE_DIR}/circuit.cc"
+    "${SOURCE_DIR}/computer.cc"
+    "${SOURCE_DIR}/fci_computer.cc"
+    "${SOURCE_DIR}/fci_graph.cc"
+    "${SOURCE_DIR}/tensor_einsum.cc"
+    "${SOURCE_DIR}/tensor_operator.cc"
+    "${SOURCE_DIR}/gate.cc"
+    "${SOURCE_DIR}/blas_math.cc" 
+    "${SOURCE_DIR}/qubit_operator.cc"
+    "${SOURCE_DIR}/qubit_op_pool.cc"
+    "${SOURCE_DIR}/sq_operator.cc"
+    "${SOURCE_DIR}/sq_op_pool.cc"
+    "${SOURCE_DIR}/sparse_tensor.cc"
+    "${SOURCE_DIR}/timer.cc"
+#    "${SOURCE_DIR}/tensor_gpu.cc"
+    "${SOURCE_DIR}/tensor.cc")
+
+
+
+# Tell CMake that headers are also in SOURCE_DIR
+include_directories(${SOURCE_DIR})
+#set(SOURCES "${SOURCE_DIR}/math.cc")
+
+# Include Python stub generation functions
+include(cmake/PythonStubs.cmake)
+
+# Generate Python module
+add_subdirectory(lib/pybind11)
+add_subdirectory(lib/fmt)
+
+
+pybind11_add_module(qforte "${SOURCE_DIR}/bindings.cc"
+    ${SOURCES}
+    ${CUDA_SOURCES})
+
+# Add Python type stub generation
+add_pybind11_stubs(qforte)
+
+set_target_properties(qforte PROPERTIES CUDA_ARCHITECTURES "86")
+
+link_directories(${BLAS_LIBRARIES})
+
+
+# target_include_directories(qforte PRIVATE ${CBLAS_INCLUDE_DIR} ${CUDAToolkit_INCLUDE_DIRS})
+
+# New below
+target_include_directories(qforte PRIVATE
+  ${CBLAS_INCLUDE_DIR}
+  $<$<COMPILE_LANGUAGE:CUDA>:${CUDAToolkit_INCLUDE_DIRS}>
+)
+
+target_link_libraries(qforte PRIVATE fmt-header-only CUDA::cudart ${OPENBLAS_EXE} ${CUDA_EXE})
+
+
+# ===> Commenting out for now <===
+# Add explicit Thrust include directory
+include_directories(${CUDAToolkit_INCLUDE_DIRS})
+
+# include_directories("/home/zach_gonzales/anaconda3/envs/qforte/targets/x86_64-linux/include")
+include_directories("/home/nstair/anaconda3/envs/qfcuda2/targets/x86_64-linux/include")
+
+
+
+
+# specify open MP flags
+if(USE_OpenMP)
+  find_package(OpenMP REQUIRED)
+  if(OpenMP_CXX_FOUND)
+      target_link_libraries(qforte PUBLIC OpenMP::OpenMP_CXX)
+  endif()
+endif(USE_OpenMP)
+
+SET(TEST_DIR "tests")
+SET(TESTS ${SOURCES}
+    "${TEST_DIR}/test_main.cc"
+    "${TEST_DIR}/test_math.cc")
+
+# Generate a test executable
+include_directories(${CBLAS_INCLUDE_DIR})
+include_directories(lib/catch2/single_include/catch2)
+include_directories(lib/fmt/include)
+
+add_executable("${PROJECT_NAME}_test" ${TESTS})
+
+add_executable("${PROJECT_NAME}_benchmarks"
+    benchmarks/benchmarks.cc
+    "${SOURCES}"
+    "${CUDA_SOURCES}")
+
+target_link_libraries(qforte_benchmarks PRIVATE fmt-header-only ${OPENBLAS_EXE})
