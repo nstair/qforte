@@ -217,6 +217,14 @@ class FCIComputerThrust {
       const bool antiherm = false,
       const bool adjoint = false);
 
+    void evolve_pool_trotter_gpu_v2(
+      const SQOpPool& pool,
+      const double evolution_time,
+      const int trotter_steps,
+      const int trotter_order,
+      const bool antiherm = false,
+      const bool adjoint = false);
+
     void evolve_op_taylor_cpu(
       const SQOperator& op,
       const double evolution_time,

@@ -109,13 +109,15 @@ for _ in range(1):
         30)
 
     timer.reset()
-    fci_comp_thrust.evolve_pool_trotter_gpu(
+
+    fci_comp_thrust.evolve_pool_trotter_gpu_v2(
         hermitian_pairs,
         time,
         r,
         order,
         antiherm=False,
         adjoint=False)
+    
     timer.record('trotter fci_comp_thrust')
 
     # print(fci_comp2)
@@ -144,9 +146,11 @@ for _ in range(1):
 
     fci_comp_thrust.to_gpu()
 
+
+fci_thrust_timer = fci_comp_thrust.get_acc_timer()
+print(fci_thrust_timer.acc_str_table())
+
 print(timer)
 
-# not working rn, I suspect evolution is correct but formation of 
-# hermitian pairs might be funky for diagonal part of the
-# hamiltonain, or some such...
+print("I get here")
 

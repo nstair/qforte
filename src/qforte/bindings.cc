@@ -626,6 +626,14 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("antiherm") = false,
             py::arg("adjoint") = false
             )
+        .def("evolve_pool_trotter_gpu_v2", &FCIComputerThrust::evolve_pool_trotter_gpu_v2, 
+            py::arg("sqop"),
+            py::arg("evolution_time"),
+            py::arg("trotter_steps"),
+            py::arg("trotter_order"),
+            py::arg("antiherm") = false,
+            py::arg("adjoint") = false
+            )
         .def("set_state_cpu", &FCIComputerThrust::set_state_cpu)
         //.def("get_state", &FCIComputerThrust::get_state)
         //.def("get_state_deep", &FCIComputerThrust::get_state_deep)
