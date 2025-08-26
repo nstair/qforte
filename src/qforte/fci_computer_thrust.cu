@@ -1659,6 +1659,290 @@ void FCIComputerThrust::print_vector_thrust_cuDoubleComplex(const thrust::host_v
     std::cout << std::endl;
 }
 
+void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool){
+    
+    // for (int i = pool.terms().size() - 1; i >= 0; --i) {
+
+    for (int i=0; i<pool.terms().size(); ++i){
+
+        auto sqop = pool.terms()[i].second;
+
+        // evolve_individual_nbody_cpu(
+        //     prefactor * pool.terms()[i].first,
+        //     pool.terms()[i].second,             // c_mu g_mu +- c_mu g_mu
+        //     Cin,
+        //     C_,
+        //     antiherm,
+        //     adjoint); 
+
+        if (sqop.terms().size() != 2) {
+            std::cout << "This sqop has " << sqop.terms().size() << " terms." << std::endl;
+            throw std::invalid_argument("Individual n-body code is called with multiple terms");
+        }
+
+        // append h_mu
+        pool.outer_coeffs().push_back(pool.terms()[i].first);
+
+        /// NICK: TODO, implement a hermitian check, at least for two term SQOperators
+        // sqop.hermitian_check();
+
+        auto term = sqop.terms()[0];
+
+        if(std::abs(std::get<0>(term)) < compute_threshold_){
+            continue;
+        }
+
+        /// append c_mu
+        pool.inner_coeffs().push_back(std::get<0>(term));
+
+        std::vector<int> crea;
+        std::vector<int> anna;
+        std::vector<int> creb;
+        std::vector<int> annb;
+
+        for(size_t i = 0; i < std::get<1>(term).size(); i++){
+            if(std::get<1>(term)[i]%2 == 0){
+                crea.push_back(std::floor(std::get<1>(term)[i] / 2));
+            } else {
+                creb.push_back(std::floor(std::get<1>(term)[i] / 2));
+            }
+        }
+
+        for(size_t i = 0; i < std::get<2>(term).size(); i++){
+            if(std::get<2>(term)[i]%2 == 0){
+                anna.push_back(std::floor(std::get<2>(term)[i] / 2));
+            } else {
+                annb.push_back(std::floor(std::get<2>(term)[i] / 2));
+            }
+        }
+
+        std::vector<size_t> ops1(std::get<1>(term));
+        std::vector<size_t> ops2(std::get<2>(term));
+        ops1.insert(ops1.end(), ops2.begin(), ops2.end());
+
+        int nswaps = parity_sort(ops1);
+
+        std::complex<double> parity = std::pow(-1, nswaps);
+
+        if (crea == anna && creb == annb) {
+            // std::cout << "Made it to easy" << std::endl;
+
+            // evolve_individual_nbody_easy_cpu(
+            //     time,
+            //     parity * std::get<0>(term), 
+            //     Cin,
+            //     Cout,
+            //     crea,
+            //     anna, 
+            //     creb,
+            //     annb);
+
+            std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number_cpu(anna, annb);
+            thrust::device_vector<int> d_alfa(maps.first.begin(), maps.first.end());
+            thrust::device_vector<int> d_beta(maps.second.begin(), maps.second.end());
+
+            // Indicies for scale inplace
+            pool.terms_scale_indsa_dag_gpu().emplace_back(d_alfa);
+            pool.terms_scale_indsa_undag_gpu().emplace_back();
+            pool.terms_scale_indsb_dag_gpu().emplace_back(d_beta);
+            pool.terms_scale_indsb_undag_gpu().emplace_back();
+
+            // Accumulation (source) index maps
+            pool.terms_sourcea_dag_gpu().emplace_back();
+            pool.terms_sourcea_undag_gpu().emplace_back();
+            pool.terms_sourceb_dag_gpu().emplace_back();
+            pool.terms_sourceb_undag_gpu().emplace_back();
+
+            // Accumulation (target) index maps
+            pool.terms_targeta_dag_gpu().emplace_back();
+            pool.terms_targeta_undag_gpu().emplace_back();
+            pool.terms_targetb_dag_gpu().emplace_back();
+            pool.terms_targetb_undag_gpu().emplace_back();
+
+            // Parity/phase maps
+            pool.terms_paritya_dag_gpu().emplace_back();
+            pool.terms_paritya_undag_gpu().emplace_back();
+            pool.terms_parityb_dag_gpu().emplace_back();
+            pool.terms_parityb_undag_gpu().emplace_back();
+
+
+        } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
+            // std::cout << "Made it to hard" << std::endl;
+
+            // evolve_individual_nbody_hard_cpu(
+            //     time,
+            //     parity * std::get<0>(term),
+            //     Cin,
+            //     Cout,
+            //     crea,
+            //     anna, 
+            //     creb,
+            //     annb);
+
+            std::vector<int> dagworka(crea);
+            std::vector<int> dagworkb(creb);
+            std::vector<int> undagworka(anna);
+            std::vector<int> undagworkb(annb);
+            std::vector<int> numbera;
+            std::vector<int> numberb;
+            
+            // int parity = 0;
+            // parity += isolate_number_operators_cpu(
+            //     crea,
+            //     anna,
+            //     dagworka,
+            //     undagworka,
+            //     numbera);
+
+            // parity += isolate_number_operators_cpu(
+            //     creb,
+            //     annb,
+            //     dagworkb,
+            //     undagworkb,
+            //     numberb);
+
+            // std::complex<double> ncoeff = coeff * std::pow(-1.0, parity);
+            // std::complex<double> absol = std::abs(ncoeff);
+            // std::complex<double> sinfactor = std::sin(time * absol) / absol;
+
+            std::vector<int> numbera_dagworka(numbera.begin(), numbera.end());
+            numbera_dagworka.insert(numbera_dagworka.end(), dagworka.begin(), dagworka.end());
+
+            std::vector<int> numberb_dagworkb(numberb.begin(), numberb.end());
+            numberb_dagworkb.insert(numberb_dagworkb.end(), dagworkb.begin(), dagworkb.end());
+
+            std::vector<int> numbera_undagworka(numbera.begin(), numbera.end());
+            numbera_undagworka.insert(numbera_undagworka.end(), undagworka.begin(), undagworka.end());
+
+            std::vector<int> numberb_undagworkb(numberb.begin(), numberb.end());
+            numberb_undagworkb.insert(numberb_undagworkb.end(), undagworkb.begin(), undagworkb.end());
+
+            // int phase = std::pow(-1, (crea.size() + anna.size()) * (creb.size() + annb.size()));
+            // std::complex<double> work_cof = std::conj(coeff) * static_cast<double>(phase) * std::complex<double>(0.0, -1.0);
+
+            void FCIComputerThrust::apply_cos_inplace_cpu(
+                const std::complex<double> time,
+                const std::complex<double> coeff,
+                const std::vector<int>& crea,
+                const std::vector<int>& anna,
+                const std::vector<int>& creb,
+                const std::vector<int>& annb,
+                TensorThrust& Cout)
+
+            // apply_cos_inplace_cpu(
+            //     time,
+            //     ncoeff,
+            //     numbera_dagworka,
+            //     undagworka,
+            //     numberb_dagworkb,
+            //     undagworkb,
+            //     Cout);
+
+            std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_cpu(
+                numbera_dagworka, 
+                undagworka, 
+                numberb_dagworkb, 
+                undagworkb);
+
+            thrust::device_vector<int> d_first(maps.first.begin(), maps.first.end());
+            thrust::device_vector<int> d_second(maps.second.begin(), maps.second.end());
+
+            // apply_cos_inplace_cpu(
+            //     time,
+            //     ncoeff,
+            //     numbera_undagworka,
+            //     dagworka,
+            //     numberb_undagworkb,
+            //     dagworkb,
+            //     Cout);
+
+            std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_cpu(
+                numbera_undagworka, 
+                dagworka, 
+                numberb_undagworkb, 
+                dagworkb);
+
+            thrust::device_vector<int> d_first(maps.first.begin(), maps.first.end());
+            thrust::device_vector<int> d_second(maps.second.begin(), maps.second.end());
+
+      
+            // apply_individual_nbody_accumulate_gpu(
+            //     work_cof * sinfactor,
+            //     Cin,
+            //     Cout, 
+            //     anna,
+            //     crea,
+            //     annb,
+            //     creb);
+
+            // void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
+            // const std::complex<double> coeff,
+            // TensorThrust& Cin,
+            // TensorThrust& Cout,
+            // const std::vector<int>& daga,
+            // const std::vector<int>& undaga, 
+            // const std::vector<int>& dagb,
+            // const std::vector<int>& undagb)
+        
+            // gpu_error();
+
+            // YOU ARE HERE!!! BELOW NEEDS TO BE REVISED!
+
+            if((daga.size() != undaga.size()) or (dagb.size() != undagb.size())){
+                throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
+            }
+
+            int counta = 0;
+            int countb = 0;
+
+            // TODO:Nick need a v3 that resizes stp_gpu and populates it...
+            graph_.make_mapping_each_gpu_v2(
+                true,
+                daga,
+                undaga,
+                &counta,
+                sourcea_gpu_,
+                targeta_gpu_,
+                paritya_gpu_);
+
+            if (counta == 0) {
+                return;
+            }
+
+            graph_.make_mapping_each_gpu_v2(
+                false,
+                dagb,
+                undagb,
+                &countb,
+                sourceb_gpu_,
+                targetb_gpu_,
+                parityb_gpu_);
+
+            if (countb == 0) {
+                return;
+            }
+
+            // apply_individual_nbody_accumulate_gpu(
+            //     coeff * std::complex<double>(0.0, -1.0) * sinfactor,
+            //     Cin,
+            //     Cout, 
+            //     crea,
+            //     anna,
+            //     creb,
+            //     annb);
+
+            
+
+
+        } else {
+            throw std::invalid_argument("Evolved state must remain in spin and particle-number symmetry sector");
+        }
+
+    }
+
+
+}
+
 /* New methods for copying out data */
 void FCIComputerThrust::copy_to_tensor_cpu(Tensor& tensor) const
 {

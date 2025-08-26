@@ -11,6 +11,7 @@
 #include "fci_graph.h"
 #include "fci_graph_thrust.h"
 #include "timer.h"
+#include "sq_op_pool_thrust.h"
 
 #include <cuda_runtime.h>
 #include <cuComplex.h>
@@ -31,6 +32,7 @@ class TensorThrust;
 class FCIGraph;
 class FCIGraphThrust;
 class SQOpPool;
+class SQOpPoolThrust;
 
 class FCIComputerThrust {
   public:
@@ -334,6 +336,12 @@ class FCIComputerThrust {
     void print_vector_uint(const std::vector<uint64_t>& vec, const std::string& name);
 
     void print_vector_thrust_cuDoubleComplex(const thrust::host_vector<cuDoubleComplex>& vec, const std::string& name);
+
+
+    /// ===> Helpers for populating device index/parity arrays for a particular SQOpPool
+    
+    /// uses the graph to populate the src/target/parity device vectors, keeps data on device for re-use
+    void populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool);
 
     /* Below are new methods for getting tensor data out of the computer */
 

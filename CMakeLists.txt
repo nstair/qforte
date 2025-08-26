@@ -81,6 +81,7 @@ set(CUDA_SOURCES
     "${SOURCE_DIR}/fci_computer_thrust.cu"
     "${SOURCE_DIR}/fci_graph_thrust.cu"
     "${SOURCE_DIR}/fci_graph_thrust_kernels.cu"
+    "${SOURCE_DIR}/sq_op_pool_thrust.cu"
 )
 
 # C++ sources

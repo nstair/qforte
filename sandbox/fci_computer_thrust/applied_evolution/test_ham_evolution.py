@@ -7,16 +7,18 @@ import time
 geom = [
     ('H', (0., 0., 1.0)), 
     ('H', (0., 0., 2.0)),
-    ('H', (0., 0., 3.0)), 
-    ('H', (0., 0., 4.0)),
-    ('H', (0., 0., 5.0)), 
-    ('H', (0., 0., 6.0)),
-    ('H', (0., 0., 7.0)), 
-    ('H', (0., 0., 8.0)),
-    ('H', (0., 0., 9.0)), 
-    ('H', (0., 0.,10.0)),
+    # ('H', (0., 0., 3.0)), 
+    # ('H', (0., 0., 4.0)),
+    # ('H', (0., 0., 5.0)), 
+    # ('H', (0., 0., 6.0)),
+    # ('H', (0., 0., 7.0)), 
+    # ('H', (0., 0., 8.0)),
+    # ('H', (0., 0., 9.0)), 
+    # ('H', (0., 0.,10.0)),
     # ('H', (0., 0.,11.0)),
     # ('H', (0., 0.,12.0)),
+    # ('H', (0., 0.,13.0)),
+    # ('H', (0., 0.,14.0)),
     ]
 
 # Get the molecule object that now contains both the fermionic and qubit Hamiltonians.
@@ -66,6 +68,8 @@ sqham = mol.sq_hamiltonian
 
 hermitian_pairs = qf.SQOpPool()
 hermitian_pairs.add_hermitian_pairs(1.0, sqham)
+
+print(hermitian_pairs)
 
 
 # print('sqham')
