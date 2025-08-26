@@ -482,6 +482,10 @@ PYBIND11_MODULE(qforte, m) {
         .def("record", &local_timer::record)
         .def("get_timings", &local_timer::get_timings)
         .def("get_acc_timings", &local_timer::get_acc_timings)
+        .def("acc_begin", &local_timer::acc_begin)
+        .def("acc_end", &local_timer::acc_end)
+        .def("str_table", &local_timer::str_table)
+        .def("acc_str_table", &local_timer::acc_str_table)
         .def("__str__", &local_timer::str_table);
 
     py::class_<TensorThrust>(m, "TensorThrust")
@@ -537,6 +541,14 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("adjoint") = false
             )
         .def("evolve_pool_trotter_gpu", &FCIComputerThrust::evolve_pool_trotter_gpu, 
+            py::arg("sqop"),
+            py::arg("evolution_time"),
+            py::arg("trotter_steps"),
+            py::arg("trotter_order"),
+            py::arg("antiherm") = false,
+            py::arg("adjoint") = false
+            )
+        .def("evolve_pool_trotter_gpu_v2", &FCIComputerThrust::evolve_pool_trotter_gpu_v2, 
             py::arg("sqop"),
             py::arg("evolution_time"),
             py::arg("trotter_steps"),
