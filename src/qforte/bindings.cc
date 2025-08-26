@@ -36,6 +36,7 @@
 #include "tensor_thrust.h"
 #include "fci_computer_thrust.h"
 #include "fci_graph_thrust.h"
+#include "sq_op_pool_thrust.h"
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -127,6 +128,27 @@ PYBIND11_MODULE(qforte, m) {
         .def("__len__", [](const SQOpPool &pool) { return pool.terms().size(); })
         .def("__str__", &SQOpPool::str)
         .def("__repr__", &SQOpPool::str);
+
+    py::class_<SQOpPoolThrust>(m, "SQOpPoolThrust")
+        .def(py::init<>())
+        .def("add", &SQOpPoolThrust::add_term)
+        .def("add_hermitian_pairs", &SQOpPoolThrust::add_hermitian_pairs)
+        .def("add_term", &SQOpPoolThrust::add_term)
+        .def("set_coeffs", &SQOpPoolThrust::set_coeffs)
+        .def("set_coeffs_to_scaler", &SQOpPoolThrust::set_coeffs_to_scaler)
+        .def("terms", &SQOpPoolThrust::terms)
+        .def("set_orb_spaces", &SQOpPoolThrust::set_orb_spaces)
+        .def("get_qubit_op_pool", &SQOpPoolThrust::get_qubit_op_pool)
+        .def("get_qubit_operator", &SQOpPoolThrust::get_qubit_operator, py::arg("order_type"),
+             py::arg("combine_like_terms") = true, py::arg("qubit_excitations") = false)
+        .def("fill_pool", &SQOpPoolThrust::fill_pool)
+        .def("str", &SQOpPoolThrust::str)
+        .def("__getitem__", [](const SQOpPoolThrust &pool, size_t i) { return pool.terms()[i]; })
+        .def("__iter__", [](const SQOpPoolThrust &pool) { return py::make_iterator(pool.terms()); },
+            py::keep_alive<0, 1>())
+        .def("__len__", [](const SQOpPoolThrust &pool) { return pool.terms().size(); })
+        .def("__str__", &SQOpPoolThrust::str)
+        .def("__repr__", &SQOpPoolThrust::str);
 
     py::class_<QubitOperator>(m, "QubitOperator")
         .def(py::init<>())
@@ -559,6 +581,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("set_state_cpu", &FCIComputerThrust::set_state_cpu)
         //.def("get_state", &FCIComputerThrust::get_state)
         //.def("get_state_deep", &FCIComputerThrust::get_state_deep)
+        .def("populate_index_arrays_for_pool_evo", &FCIComputerThrust::populate_index_arrays_for_pool_evo)
         .def("copy_to_tensor_cpu", &FCIComputerThrust::copy_to_tensor_cpu)
         .def("copy_to_tensor_thrust_gpu", &FCIComputerThrust::copy_to_tensor_thrust_gpu)
         .def("copy_to_tensor_thrust_cpu", &FCIComputerThrust::copy_to_tensor_thrust_cpu)
