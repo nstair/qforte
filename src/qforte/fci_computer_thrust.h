@@ -5,6 +5,11 @@
 #include <string>
 #include <vector>
 
+#include <tuple>
+#include <cstddef>   // std::size_t
+#include <utility>   // std::declval
+
+
 #include "qforte-def.h" 
 #include "tensor.h" 
 #include "tensor_thrust.h"
@@ -36,6 +41,11 @@ class SQOpPoolThrust;
 
 class FCIComputerThrust {
   public:
+
+    // Alias for the big tuple type (tuple of const references) returned by get_mu_tuple()
+    using PrecompTuple =
+        decltype(std::declval<const SQOpPoolThrust&>().get_mu_tuple(std::size_t{}));
+
     /// default constructor: create a 'FCI' quantum computer 
     /// the computer represends a restricted hilbert space for 'chemistry'
     /// nel: the number of electrons
@@ -180,7 +190,8 @@ class FCIComputerThrust {
       const std::vector<int>& crea,
       const std::vector<int>& anna,
       const std::vector<int>& creb,
-      const std::vector<int>& annb); 
+      const std::vector<int>& annb,
+      const PrecompTuple* precomp = nullptr); 
 
     void evolve_individual_nbody_hard_cpu(
       const std::complex<double> time,
@@ -190,7 +201,8 @@ class FCIComputerThrust {
       const std::vector<int>& crea,
       const std::vector<int>& anna,
       const std::vector<int>& creb,
-      const std::vector<int>& annb); 
+      const std::vector<int>& annb,
+      const PrecompTuple* precomp = nullptr); 
 
     void evolve_individual_nbody_cpu(
       const std::complex<double> time,
@@ -198,7 +210,8 @@ class FCIComputerThrust {
       TensorThrust& Cin,
       TensorThrust& Cout,
       const bool antiherm = false,
-      const bool adjoint = false);
+      const bool adjoint = false,
+      const PrecompTuple* precomp = nullptr);
 
     void apply_sqop_evolution_gpu(
       const std::complex<double> time,
@@ -226,6 +239,16 @@ class FCIComputerThrust {
       const int trotter_order,
       const bool antiherm = false,
       const bool adjoint = false);
+
+    // Adds usage of pre-computed stp device arrays (optional argument).
+    // NOTE: default only in the declaration (here).
+    void evolve_pool_trotter_gpu_v3(
+      const SQOpPoolThrust& pool,
+      double evolution_time,
+      int trotter_steps,
+      int trotter_order,
+      bool antiherm,
+      bool adjoint);
 
     void evolve_op_taylor_cpu(
       const SQOperator& op,
