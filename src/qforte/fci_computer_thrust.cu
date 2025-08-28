@@ -1144,6 +1144,8 @@ void FCIComputerThrust::apply_individual_nbody1_accumulate_gpu(
         countb,
         Cin.size() * sizeof(cuDoubleComplex));
 
+    std::cout << "cout: \n" << Cout.str() << std::endl;
+
     timer_.acc_record("calling gpu function");
     timer_.reset();
 
@@ -1227,12 +1229,16 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
     thrust::copy(targetb_gpu_.begin(), targetb_gpu_.begin() + countb, targetb_cpu.begin());
     thrust::copy(parityb_gpu_.begin(), parityb_gpu_.begin() + countb, parityb_cpu.begin());
 
-    // print_vector_thrust(sourcea_cpu, "sourcea");
-    // print_vector_thrust(targeta_cpu, "targeta");
+    // std::cout << "\n\n----------------------------------------------------------\n\n" << std::endl;
+    
+    print_vector_thrust(sourcea_cpu, "sourcea");
+    print_vector_thrust(targeta_cpu, "targeta");
     // print_vector_thrust_cuDoubleComplex(paritya_cpu, "paritya");
-    // print_vector_thrust(sourceb_cpu, "sourceb");
-    // print_vector_thrust(targetb_cpu, "targetb");
+    print_vector_thrust(sourceb_cpu, "sourceb");
+    print_vector_thrust(targetb_cpu, "targetb");
     // print_vector_thrust_cuDoubleComplex(parityb_cpu, "parityb");
+
+    // std::cout << "\n\n----------------------------------------------------------\n\n" << std::endl;
 
     /// TODO: changing this function to use private members of FCIComputerThrust
     apply_individual_nbody1_accumulate_gpu(
@@ -1493,7 +1499,7 @@ void FCIComputerThrust::hartree_fock_cpu()
 
 void FCIComputerThrust::print_vector(const std::vector<int>& vec, const std::string& name)
 {
-    std::cout << "\n" << name << ": ";
+    std::cout << name << ": ";
     for (size_t i = 0; i < vec.size(); ++i) {
         std::cout << static_cast<int>(vec[i]);
         if (i < vec.size() - 1) {
@@ -1505,7 +1511,7 @@ void FCIComputerThrust::print_vector(const std::vector<int>& vec, const std::str
 
 void FCIComputerThrust::print_vector_thrust(const thrust::host_vector<int>& vec, const std::string& name)
 {
-    std::cout << "\n" << name << ": ";
+    std::cout << name << ": ";
     for (size_t i = 0; i < vec.size(); ++i) {
         std::cout << static_cast<int>(vec[i]);
         if (i < vec.size() - 1) {
@@ -1517,7 +1523,7 @@ void FCIComputerThrust::print_vector_thrust(const thrust::host_vector<int>& vec,
 
 void FCIComputerThrust::print_vector_uint(const std::vector<uint64_t>& vec, const std::string& name)
 {
-    std::cout << "\n" << name << ": ";
+    std::cout << name << ": ";
     for (size_t i = 0; i < vec.size(); ++i) {
         std::cout << vec[i];
         if (i < vec.size() - 1) {
@@ -1529,7 +1535,7 @@ void FCIComputerThrust::print_vector_uint(const std::vector<uint64_t>& vec, cons
 
 void FCIComputerThrust::print_vector_thrust_cuDoubleComplex(const thrust::host_vector<cuDoubleComplex>& vec, const std::string& name)
 {
-    std::cout << "\n" << name << ": ";
+    std::cout << name << ": ";
     for (size_t i = 0; i < vec.size(); ++i) {
         std::complex<double> tmp = {vec[i].x, vec[i].y};
         std::cout << tmp;
