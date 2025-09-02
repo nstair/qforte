@@ -239,6 +239,21 @@ class FCIComputerThrust {
       const std::vector<int>& dagb,
       const std::vector<int>& undagb);
 
+    // Special-case optimized paths when one spin side has no excitations
+    void apply_individual_nbody_accumulate_gpu_row_only(
+      const std::complex<double> coeff,
+      TensorThrust& Cin,
+      TensorThrust& Cout,
+      const std::vector<int>& daga,
+      const std::vector<int>& undaga);
+
+    void apply_individual_nbody_accumulate_gpu_col_only(
+      const std::complex<double> coeff,
+      TensorThrust& Cin,
+      TensorThrust& Cout,
+      const std::vector<int>& dagb,
+      const std::vector<int>& undagb);
+
     void apply_individual_sqop_term_gpu(
       const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
       TensorThrust& Cin,
