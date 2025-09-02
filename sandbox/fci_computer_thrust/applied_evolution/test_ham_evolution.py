@@ -21,6 +21,13 @@ geom = [
     # ('H', (0., 0.,14.0)),
     ]
 
+# geom = [
+#     ('H', (0., 0., 1.0)), 
+#     ('C', (0., 0., 2.0)),
+#     ('C', (0., 0., 3.0)),
+#     ('H', (0., 0., 4.0))
+#     ]
+
 # Get the molecule object that now contains both the fermionic and qubit Hamiltonians.
 mol = qf.system_factory(build_type='psi4', mol_geometry=geom, basis='sto-3g', run_fci=1)
 
@@ -72,17 +79,29 @@ hermitian_pairs.add_hermitian_pairs(1.0, sqham)
 hp_gpu = qf.SQOpPoolThrust()
 hp_gpu.add_hermitian_pairs(1.0, sqham)
 
-# print(hermitian_pairs)
+fci_comp_thrust.populate_index_arrays_for_pool_evo(hp_gpu)
 
 
-# print('sqham')
-# print(sqham)
+len = hp_gpu.check_mu_tuple_container_sizes()
 
-# print('hermitian_pairs')
-# print(hermitian_pairs)
+print(f"len {len}")
+
+# mu = 2
+
+# print(f"\n\n ===> mu: {mu} <=== \n")
+
+# print(hp_gpu.terms()[mu])
+
+# hp_gpu.print_mu_tuple_dims(mu)
+# print("")
+# hp_gpu.print_mu_tuple_elements(mu)
+
+
+# print(hp_gpu)
 
 time = 0.1
 
+N = 2
 r = 1
 order = 1
 
@@ -92,7 +111,7 @@ print(f"order: {order}")
 
 fci_comp_thrust.to_gpu()
 
-for _ in range(1):
+for _ in range(N):
 # Call Trotter for fci_comp1
     timer.reset()
     fci_comp1.evolve_pool_trotter(
@@ -133,8 +152,6 @@ for _ in range(1):
         antiherm=False,
         adjoint=False)
     
-    print("I get here")
-    
     timer.record('trotter fci_comp_thrust')
 
     # print(fci_comp2)
@@ -156,7 +173,10 @@ for _ in range(1):
     # C2.subtract(C3)
     C1_dup.subtract(C3)
 
+    
+
     # print(C1)
+    # print(C3)
     # print(f"deltaC.norm() {C1.norm()}")
     # print(f"deltaC_thrust.norm() {C2.norm()}")
     print(f"||C1 - C3|| {C1_dup.norm()}")
