@@ -4,6 +4,9 @@
 #include <complex>
 #include <string>
 #include <vector>
+#include <tuple>
+#include <iostream>
+#include <iomanip>
 
 #include <cuda_runtime.h>
 #include <cuComplex.h>
@@ -14,6 +17,9 @@
 // #include <thrust/inner_product.h>
 // #include <thrust/fill.h>
 // #include <thrust/copy.h>
+
+
+#include <thrust/host_vector.h>
 
 // #include "qforte-def.h"
 
@@ -133,6 +139,17 @@ class SQOpPoolThrust {
             terms_parityb_undag_gpu_[mu]      // 17
         );
     }
+
+    // Verifies that inner_coeffs_, outer_coeffs_, and all 16 term arrays
+    // have the same length (same number of μ-terms). Returns the common
+    // size on success; returns 0 and prints a report on mismatch.
+    std::size_t check_mu_tuple_container_sizes() const;
+
+    // Print sizes of all arrays referenced by get_mu_tuple(mu)
+    void print_mu_tuple_dims(std::size_t mu) const;
+
+    // Print actual elements of all arrays referenced by get_mu_tuple(mu)
+    void print_mu_tuple_elements(std::size_t mu) const;
 
 
     /// set the total number of occupied and virtual spatial orbitals from a reference, from the number

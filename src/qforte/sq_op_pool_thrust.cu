@@ -542,6 +542,161 @@ void SQOpPoolThrust::fill_pool(std::string pool_type){
     }
 }
 
+std::size_t SQOpPoolThrust::check_mu_tuple_container_sizes() const {
+    const std::size_t s_ref = terms().size();
+
+    bool ok = true;
+
+    auto check = [&](const char* name, std::size_t sz) {
+        if (sz != s_ref) {
+            std::cerr << "[SQOpPoolThrust] size mismatch: "
+                      << name << " = " << sz << " (expected " << s_ref << ")\n";
+            ok = false;
+        }
+    };
+
+    // Compare all containers against inner_coeffs_
+    check("inner_coeffs_",  s_ref);
+    check("outer_coeffs_",  outer_coeffs_.size());
+
+    check("terms_scale_indsa_dag_gpu_",    terms_scale_indsa_dag_gpu_.size());
+    check("terms_scale_indsa_undag_gpu_",  terms_scale_indsa_undag_gpu_.size());
+    check("terms_scale_indsb_dag_gpu_",    terms_scale_indsb_dag_gpu_.size());
+    check("terms_scale_indsb_undag_gpu_",  terms_scale_indsb_undag_gpu_.size());
+
+    check("terms_sourcea_dag_gpu_",        terms_sourcea_dag_gpu_.size());
+    check("terms_sourcea_undag_gpu_",      terms_sourcea_undag_gpu_.size());
+    check("terms_sourceb_dag_gpu_",        terms_sourceb_dag_gpu_.size());
+    check("terms_sourceb_undag_gpu_",      terms_sourceb_undag_gpu_.size());
+
+    check("terms_targeta_dag_gpu_",        terms_targeta_dag_gpu_.size());
+    check("terms_targeta_undag_gpu_",      terms_targeta_undag_gpu_.size());
+    check("terms_targetb_dag_gpu_",        terms_targetb_dag_gpu_.size());
+    check("terms_targetb_undag_gpu_",      terms_targetb_undag_gpu_.size());
+
+    check("terms_paritya_dag_gpu_",        terms_paritya_dag_gpu_.size());
+    check("terms_paritya_undag_gpu_",      terms_paritya_undag_gpu_.size());
+    check("terms_parityb_dag_gpu_",        terms_parityb_dag_gpu_.size());
+    check("terms_parityb_undag_gpu_",      terms_parityb_undag_gpu_.size());
+
+    if (!ok) {
+        std::cerr << "[SQOpPoolThrust] Not all μ-containers have the same length. "
+                  << "Returning 0.\n";
+        return 0;
+    }
+    return s_ref;
+}
+
+void SQOpPoolThrust::print_mu_tuple_dims(std::size_t mu) const {
+    if (mu >= inner_coeffs_.size()) {
+        std::cerr << "[SQOpPoolThrust] print_mu_tuple_dims: mu=" << mu
+                  << " is out of range (size=" << inner_coeffs_.size() << ")\n";
+        return;
+    }
+
+    auto print_sz = [](const char* name, const auto& dv) {
+        std::cout << "  " << std::left << std::setw(28) << name
+                  << ": size = " << dv.size() << '\n';
+    };
+
+    std::cout << "[SQOpPoolThrust] mu=" << mu << "  (array dimensions)\n";
+    std::cout << "  " << std::left << std::setw(28) << "inner_coeff (scalar)"
+              << ": size = 1\n";
+    std::cout << "  " << std::left << std::setw(28) << "outer_coeff (scalar)"
+              << ": size = 1\n";
+
+    print_sz("terms_scale_indsa_dag",    terms_scale_indsa_dag_gpu_[mu]);
+    print_sz("terms_scale_indsa_undag",  terms_scale_indsa_undag_gpu_[mu]);
+    print_sz("terms_scale_indsb_dag",    terms_scale_indsb_dag_gpu_[mu]);
+    print_sz("terms_scale_indsb_undag",  terms_scale_indsb_undag_gpu_[mu]);
+    print_sz("terms_sourcea_dag",        terms_sourcea_dag_gpu_[mu]);
+    print_sz("terms_sourcea_undag",      terms_sourcea_undag_gpu_[mu]);
+    print_sz("terms_sourceb_dag",        terms_sourceb_dag_gpu_[mu]);
+    print_sz("terms_sourceb_undag",      terms_sourceb_undag_gpu_[mu]);
+    print_sz("terms_targeta_dag",        terms_targeta_dag_gpu_[mu]);
+    print_sz("terms_targeta_undag",      terms_targeta_undag_gpu_[mu]);
+    print_sz("terms_targetb_dag",        terms_targetb_dag_gpu_[mu]);
+    print_sz("terms_targetb_undag",      terms_targetb_undag_gpu_[mu]);
+    print_sz("terms_paritya_dag",        terms_paritya_dag_gpu_[mu]);
+    print_sz("terms_paritya_undag",      terms_paritya_undag_gpu_[mu]);
+    print_sz("terms_parityb_dag",        terms_parityb_dag_gpu_[mu]);
+    print_sz("terms_parityb_undag",      terms_parityb_undag_gpu_[mu]);
+}
+
+
+void SQOpPoolThrust::print_mu_tuple_elements(std::size_t mu) const {
+    if (mu >= inner_coeffs_.size()) {
+        std::cerr << "[SQOpPoolThrust] print_mu_tuple_elements: mu=" << mu
+                  << " is out of range (size=" << inner_coeffs_.size() << ")\n";
+        return;
+    }
+
+    std::cout.setf(std::ios::fixed, std::ios::floatfield);
+    std::streamsize old_prec = std::cout.precision();
+    std::cout << std::setprecision(6);
+
+    // Helper: print a device_vector<int>
+    auto print_dvi = [](const char* name, const thrust::device_vector<int>& dv) {
+        thrust::host_vector<int> h = dv;  // copy to host
+        std::cout << "  " << name << " [" << h.size() << "]: ";
+        if (h.empty()) { std::cout << "[]\n"; return; }
+        std::cout << "[";
+        for (std::size_t i = 0; i < h.size(); ++i) {
+            std::cout << h[i];
+            if (i + 1 < h.size()) std::cout << ", ";
+        }
+        std::cout << "]\n";
+    };
+
+    // Helper: print a device_vector<cuDoubleComplex>
+    auto print_dvz = [](const char* name, const thrust::device_vector<cuDoubleComplex>& dv) {
+        thrust::host_vector<cuDoubleComplex> h = dv;  // copy to host
+        std::cout << "  " << name << " [" << h.size() << "]: ";
+        if (h.empty()) { std::cout << "[]\n"; return; }
+        std::cout << "[";
+        for (std::size_t i = 0; i < h.size(); ++i) {
+            const auto re = cuCreal(h[i]);
+            const auto im = cuCimag(h[i]);
+            std::cout << "(" << re << (im < 0 ? "" : "+") << im << "i)";
+            if (i + 1 < h.size()) std::cout << ", ";
+        }
+        std::cout << "]\n";
+    };
+
+    std::cout << "[SQOpPoolThrust] mu=" << mu << "  (array contents)\n";
+    // Scalars
+    {
+        const auto& ic = inner_coeffs_[mu];
+        const auto& oc = outer_coeffs_[mu];
+        std::cout << "  inner_coeff: (" << ic.real() << (ic.imag() < 0 ? "" : "+")
+                  << ic.imag() << "i)\n";
+        std::cout << "  outer_coeff: (" << oc.real() << (oc.imag() < 0 ? "" : "+")
+                  << oc.imag() << "i)\n";
+    }
+
+    // Int index arrays
+    print_dvi("terms_scale_indsa_dag",    terms_scale_indsa_dag_gpu_[mu]);
+    print_dvi("terms_scale_indsa_undag",  terms_scale_indsa_undag_gpu_[mu]);
+    print_dvi("terms_scale_indsb_dag",    terms_scale_indsb_dag_gpu_[mu]);
+    print_dvi("terms_scale_indsb_undag",  terms_scale_indsb_undag_gpu_[mu]);
+    print_dvi("terms_sourcea_dag",        terms_sourcea_dag_gpu_[mu]);
+    print_dvi("terms_sourcea_undag",      terms_sourcea_undag_gpu_[mu]);
+    print_dvi("terms_sourceb_dag",        terms_sourceb_dag_gpu_[mu]);
+    print_dvi("terms_sourceb_undag",      terms_sourceb_undag_gpu_[mu]);
+    print_dvi("terms_targeta_dag",        terms_targeta_dag_gpu_[mu]);
+    print_dvi("terms_targeta_undag",      terms_targeta_undag_gpu_[mu]);
+    print_dvi("terms_targetb_dag",        terms_targetb_dag_gpu_[mu]);
+    print_dvi("terms_targetb_undag",      terms_targetb_undag_gpu_[mu]);
+
+    // cuDoubleComplex parity/phase arrays
+    print_dvz("terms_paritya_dag",        terms_paritya_dag_gpu_[mu]);
+    print_dvz("terms_paritya_undag",      terms_paritya_undag_gpu_[mu]);
+    print_dvz("terms_parityb_dag",        terms_parityb_dag_gpu_[mu]);
+    print_dvz("terms_parityb_undag",      terms_parityb_undag_gpu_[mu]);
+
+    std::cout << std::setprecision(old_prec); // restore precision
+}
+
 std::string SQOpPoolThrust::str() const{
     std::vector<std::string> s;
     s.push_back("");

@@ -713,34 +713,39 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu(
 
     if(precomp){
         timer_.acc_begin("==>easy: scale elements kernel");
+
         scale_elements_wrapper(
-        thrust::raw_pointer_cast(Cout.d_data().data()),
-        thrust::raw_pointer_cast(std::get<2>(*precomp).data()), 
-        std::get<2>(*precomp).size(),
-        thrust::raw_pointer_cast(std::get<4>(*precomp).data()), 
-        std::get<4>(*precomp).size(),
-        nbeta_strs_,
-        factor_gpu);
+            thrust::raw_pointer_cast(Cout.d_data().data()),
+            thrust::raw_pointer_cast(std::get<2>(*precomp).data()), 
+            std::get<2>(*precomp).size(),
+            thrust::raw_pointer_cast(std::get<4>(*precomp).data()), 
+            std::get<4>(*precomp).size(),
+            nbeta_strs_,
+            factor_gpu);
+
         timer_.acc_end("==>easy: scale elements kernel");
 
     } else {
         timer_.acc_begin("==>easy: setup");
+
         std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number_cpu(anna, annb);
 
-    
         thrust::device_vector<int> d_first(maps.first.begin(), maps.first.end());
         thrust::device_vector<int> d_second(maps.second.begin(), maps.second.end());
+        
         timer_.acc_end("==>easy: setup");
 
         timer_.acc_begin("==>easy: scale elements kernel");
+
         scale_elements_wrapper(
-        thrust::raw_pointer_cast(Cout.d_data().data()),
-        thrust::raw_pointer_cast(d_first.data()), 
-        d_first.size(),
-        thrust::raw_pointer_cast(d_second.data()), 
-        d_second.size(),
-        nbeta_strs_,
-        factor_gpu);
+            thrust::raw_pointer_cast(Cout.d_data().data()),
+            thrust::raw_pointer_cast(d_first.data()), 
+            d_first.size(),
+            thrust::raw_pointer_cast(d_second.data()), 
+            d_second.size(),
+            nbeta_strs_,
+            factor_gpu);
+
         timer_.acc_end("==>easy: scale elements kernel");
     }
     
@@ -808,11 +813,11 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
 
     if(precomp){
 
-        const std::complex<double> cabs = std::abs(coeff);
+        const std::complex<double> cabs = std::abs(ncoeff);
         const std::complex<double> factor = std::cos(time * cabs);
         cuDoubleComplex factor_gpu = make_cuDoubleComplex(factor.real(), factor.imag());
 
-        timer_.acc_begin("===>hard: apply cos kernal");
+        timer_.acc_begin("===>hard: apply cos kernal");        
         
         scale_elements_wrapper(
             thrust::raw_pointer_cast(Cout.d_data().data()),
@@ -847,21 +852,24 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
 
         cuDoubleComplex cu_coeff_dag = make_cuDoubleComplex(coeff_dag.real(), coeff_dag.imag());
 
-        // Call the GPU kernel using thrust raw pointers directly
-        apply_individual_nbody1_accumulate_wrapper(
-            cu_coeff_dag, 
-            thrust::raw_pointer_cast(Cin.read_d_data().data()), 
-            thrust::raw_pointer_cast(Cout.d_data().data()), 
-            thrust::raw_pointer_cast(std::get<6>(*precomp).data()),
-            thrust::raw_pointer_cast(std::get<10>(*precomp).data()),
-            thrust::raw_pointer_cast(std::get<14>(*precomp).data()),
-            thrust::raw_pointer_cast(std::get<8>(*precomp).data()),
-            thrust::raw_pointer_cast(std::get<12>(*precomp).data()),
-            thrust::raw_pointer_cast(std::get<16>(*precomp).data()),
-            nbeta_strs_,
-            std::get<6>(*precomp).size(),
-            std::get<8>(*precomp).size(),
-            Cin.size() * sizeof(cuDoubleComplex));
+        if(std::get<6>(*precomp).size() != 0 and std::get<8>(*precomp).size() != 0) {
+
+            // Call the GPU kernel using thrust raw pointers directly
+            apply_individual_nbody1_accumulate_wrapper(
+                cu_coeff_dag, 
+                thrust::raw_pointer_cast(Cin.read_d_data().data()), 
+                thrust::raw_pointer_cast(Cout.d_data().data()), 
+                thrust::raw_pointer_cast(std::get<6>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<10>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<14>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<8>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<12>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<16>(*precomp).data()),
+                nbeta_strs_,
+                std::get<6>(*precomp).size(),
+                std::get<8>(*precomp).size(),
+                Cin.size() * sizeof(cuDoubleComplex));
+        }
 
         cudaError_t error1 = cudaGetLastError();
         if (error1 != cudaSuccess) {
@@ -881,22 +889,26 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
 
         cuDoubleComplex cu_coeff_undag = make_cuDoubleComplex(coeff_undag.real(), coeff_undag.imag());
 
-        // Call the GPU kernel using thrust raw pointers directly
-        apply_individual_nbody1_accumulate_wrapper(
-            cu_coeff_undag, 
-            thrust::raw_pointer_cast(Cin.read_d_data().data()), 
-            thrust::raw_pointer_cast(Cout.d_data().data()), 
-            thrust::raw_pointer_cast(std::get<7>(*precomp).data()),
-            thrust::raw_pointer_cast(std::get<11>(*precomp).data()),
-            thrust::raw_pointer_cast(std::get<15>(*precomp).data()),
-            thrust::raw_pointer_cast(std::get<9>(*precomp).data()),
-            thrust::raw_pointer_cast(std::get<13>(*precomp).data()),
-            thrust::raw_pointer_cast(std::get<17>(*precomp).data()),
-            nbeta_strs_,
-            std::get<7>(*precomp).size(),
-            std::get<9>(*precomp).size(),
-            Cin.size() * sizeof(cuDoubleComplex));
+        if(std::get<7>(*precomp).size() != 0 and std::get<7>(*precomp).size() != 0) {
 
+            // Call the GPU kernel using thrust raw pointers directly
+            apply_individual_nbody1_accumulate_wrapper(
+                cu_coeff_undag, 
+                thrust::raw_pointer_cast(Cin.read_d_data().data()), 
+                thrust::raw_pointer_cast(Cout.d_data().data()), 
+                thrust::raw_pointer_cast(std::get<7>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<11>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<15>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<9>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<13>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<17>(*precomp).data()),
+                nbeta_strs_,
+                std::get<7>(*precomp).size(),
+                std::get<9>(*precomp).size(),
+                Cin.size() * sizeof(cuDoubleComplex));
+        }
+
+        
         cudaError_t error2 = cudaGetLastError();
         if (error2 != cudaSuccess) {
             std::cerr << "CUDA error: " << cudaGetErrorString(error2) << std::endl;
@@ -956,8 +968,6 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
 
         timer_.acc_end("==>hard: apply_individual_nbody_accumulate_gpu");
     }
-
-    
 
     // std::cout << "\n Cout After Second Accumulate Application Thrust \n" << Cout.str(true, true) << std::endl;
 }
@@ -1292,6 +1302,10 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v3(
 {
     gpu_error();
 
+    if (pool.device_vecs_populated()==false){
+        throw std::runtime_error("SQOpPoolThrust STP device arrays must be populated before evolution.");
+    }
+
     timer_.acc_begin("evolve_pool_trotter_gpu(outer)");
 
     TensorThrust Cin(C_.shape(), "Cin", true);
@@ -1445,9 +1459,6 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
         throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
     }
 
-    // local_timer my_timer = local_timer();
-    // timer_.reset();
-
     timer_.acc_begin("===>hard nbody acc setup");
 
     int counta = 0;
@@ -1462,9 +1473,6 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
         targeta_gpu_,
         paritya_gpu_);
 
-    // timer_.acc_record("first 'make_mapping_each' in apply_individual_nbody_accumulate");
-    // timer_.reset();
-
     if (counta == 0) {
         return;
     }
@@ -1478,15 +1486,9 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
         targetb_gpu_,
         parityb_gpu_);
 
-    // timer_.acc_record("second 'make_mapping_each' in apply_individual_nbody_accumulate");
-    // timer_.reset();
-
     if (countb == 0) {
         return;
     }
-
-    // timer_.acc_record("second for loop in apply_individual_nbody_accumulate");
-    // timer_.reset();
 
     // thrust::host_vector<int> sourcea_cpu(counta);
     // thrust::host_vector<int> targeta_cpu(counta);
@@ -1539,7 +1541,6 @@ void FCIComputerThrust::apply_individual_sqop_term_gpu(
     std::vector<int> annb;
 
     local_timer my_timer = local_timer();
-    // timer_.reset();
 
     for(size_t i = 0; i < std::get<1>(term).size(); i++){
         if(std::get<1>(term)[i]%2 == 0){
@@ -1549,9 +1550,6 @@ void FCIComputerThrust::apply_individual_sqop_term_gpu(
         }
     }
 
-    // timer_.acc_record("first loop in apply_individual_sqop_term");
-    // timer_.reset();
-
     for(size_t i = 0; i < std::get<2>(term).size(); i++){
         if(std::get<2>(term)[i]%2 == 0){
             anna.push_back(std::floor(std::get<2>(term)[i] / 2));
@@ -1559,9 +1557,6 @@ void FCIComputerThrust::apply_individual_sqop_term_gpu(
             annb.push_back(std::floor(std::get<2>(term)[i] / 2));
         }
     }
-
-    // timer_.acc_record("second loop in apply_individual_sqop_term");
-    // timer_.reset();
 
     if (std::get<1>(term).size() != std::get<2>(term).size()) {
         throw std::invalid_argument("Each term must have same number of anihilators and creators");
@@ -1572,9 +1567,6 @@ void FCIComputerThrust::apply_individual_sqop_term_gpu(
     ops1.insert(ops1.end(), ops2.begin(), ops2.end());
 
     int nswaps = parity_sort(ops1);
-    // timer_.acc_record("some parity things");
-    // timer_.reset();
-    // std::cout << my_timer.str_table() << std::endl;
 
     apply_individual_nbody_accumulate_gpu(
         pow(-1, nswaps) * std::get<0>(term),
@@ -1588,21 +1580,13 @@ void FCIComputerThrust::apply_individual_sqop_term_gpu(
 
 void FCIComputerThrust::apply_sqop_gpu(const SQOperator& sqop)
 {
-     C_.gpu_error();
+    C_.gpu_error();
     TensorThrust Cin(C_.shape(), "Cin", true);
     Cin.copy_in_gpu(C_);
 
-
-    
     local_timer my_timer = local_timer();
-    // timer_.reset();
-    
-    // cudaMemcpy(Cin.d_data(), C_.d_data(), Cin.size() * sizeof(cuDoubleComplex))
 
     C_.zero_gpu();
-
-    // timer_.acc_record("making tensor things");
-    // timer_.reset();
 
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
@@ -1612,9 +1596,6 @@ void FCIComputerThrust::apply_sqop_gpu(const SQOperator& sqop)
             C_);
         }
     }
-
-    // timer_.acc_record("first for loop in apply_sqop");
-    // std::cout << // timer_.acc_str_table() << std::endl;
 }
 
 void FCIComputerThrust::apply_diagonal_of_sqop_cpu(
@@ -1846,10 +1827,6 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
 
         auto term = sqop.terms()[0];
 
-        if(std::abs(std::get<0>(term)) < compute_threshold_){
-            continue;
-        }
-
         /// append c_mu
         pool.inner_coeffs().push_back(std::get<0>(term));
 
@@ -1883,17 +1860,8 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
         std::complex<double> parity = std::pow(-1, nswaps);
 
         if (crea == anna && creb == annb) {
-            // std::cout << "Made it to easy" << std::endl;
 
-            // evolve_individual_nbody_easy_cpu(
-            //     time,
-            //     parity * std::get<0>(term), 
-            //     Cin,
-            //     Cout,
-            //     crea,
-            //     anna, 
-            //     creb,
-            //     annb);
+            // std::cout << "Made it to easy" << std::endl;
 
             std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number_cpu(anna, annb);
             thrust::device_vector<int> d_alfa(maps.first.begin(), maps.first.end());
@@ -1925,17 +1893,8 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
 
 
         } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
+       
             // std::cout << "Made it to hard" << std::endl;
-
-            // evolve_individual_nbody_hard_cpu(
-            //     time,
-            //     parity * std::get<0>(term),
-            //     Cin,
-            //     Cout,
-            //     crea,
-            //     anna, 
-            //     creb,
-            //     annb);
 
             std::vector<int> dagworka(crea);
             std::vector<int> dagworkb(creb);
@@ -1944,24 +1903,20 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
             std::vector<int> numbera;
             std::vector<int> numberb;
             
-            // int parity = 0;
-            // parity += isolate_number_operators_cpu(
-            //     crea,
-            //     anna,
-            //     dagworka,
-            //     undagworka,
-            //     numbera);
+            int parity = 0;
+            parity += isolate_number_operators_cpu(
+                crea,
+                anna,
+                dagworka,
+                undagworka,
+                numbera);
 
-            // parity += isolate_number_operators_cpu(
-            //     creb,
-            //     annb,
-            //     dagworkb,
-            //     undagworkb,
-            //     numberb);
-
-            // std::complex<double> ncoeff = coeff * std::pow(-1.0, parity);
-            // std::complex<double> absol = std::abs(ncoeff);
-            // std::complex<double> sinfactor = std::sin(time * absol) / absol;
+            parity += isolate_number_operators_cpu(
+                creb,
+                annb,
+                dagworkb,
+                undagworkb,
+                numberb);
 
             std::vector<int> numbera_dagworka(numbera.begin(), numbera.end());
             numbera_dagworka.insert(numbera_dagworka.end(), dagworka.begin(), dagworka.end());
@@ -1975,27 +1930,6 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
             std::vector<int> numberb_undagworkb(numberb.begin(), numberb.end());
             numberb_undagworkb.insert(numberb_undagworkb.end(), undagworkb.begin(), undagworkb.end());
 
-            // int phase = std::pow(-1, (crea.size() + anna.size()) * (creb.size() + annb.size()));
-            // std::complex<double> work_cof = std::conj(coeff) * static_cast<double>(phase) * std::complex<double>(0.0, -1.0);
-
-            // void FCIComputerThrust::apply_cos_inplace_cpu(
-            //     const std::complex<double> time,
-            //     const std::complex<double> coeff,
-            //     const std::vector<int>& crea,
-            //     const std::vector<int>& anna,
-            //     const std::vector<int>& creb,
-            //     const std::vector<int>& annb,
-            //     TensorThrust& Cout)
-
-            // apply_cos_inplace_cpu(
-            //     time,
-            //     ncoeff,
-            //     numbera_dagworka,
-            //     undagworka,
-            //     numberb_dagworkb,
-            //     undagworkb,
-            //     Cout);
-
             std::pair<std::vector<int>, std::vector<int>> maps1 = evaluate_map_cpu(
                 numbera_dagworka, 
                 undagworka, 
@@ -2004,15 +1938,6 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
 
             thrust::device_vector<int> d_alfa_1st(maps1.first.begin(), maps1.first.end());
             thrust::device_vector<int> d_beta_1st(maps1.second.begin(), maps1.second.end());
-
-            // apply_cos_inplace_cpu(
-            //     time,
-            //     ncoeff,
-            //     numbera_undagworka,
-            //     dagworka,
-            //     numberb_undagworkb,
-            //     dagworkb,
-            //     Cout);
 
             std::pair<std::vector<int>, std::vector<int>> maps2 = evaluate_map_cpu(
                 numbera_undagworka, 
@@ -2029,29 +1954,6 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
             pool.terms_scale_indsb_dag_gpu().emplace_back(d_beta_1st);
             pool.terms_scale_indsb_undag_gpu().emplace_back(d_beta_2nd);
 
-      
-            // apply_individual_nbody_accumulate_gpu(
-            //     work_cof * sinfactor,
-            //     Cin,
-            //     Cout, 
-            //     anna,
-            //     crea,
-            //     annb,
-            //     creb);
-
-            // void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
-            // const std::complex<double> coeff,
-            // TensorThrust& Cin,
-            // TensorThrust& Cout,
-            // const std::vector<int>& daga,
-            // const std::vector<int>& undaga, 
-            // const std::vector<int>& dagb,
-            // const std::vector<int>& undagb)
-        
-            // gpu_error();
-
-            // YOU ARE HERE!!! BELOW NEEDS TO BE REVISED!
-
             if((anna.size() != crea.size()) or (annb.size() != creb.size())){
                 throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
             }
@@ -2059,7 +1961,6 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
             int counta = 0;
             int countb = 0;
 
-            // TODO:Nick need a v3 that resizes stp_gpu and populates it...
             graph_.make_mapping_each_gpu_v3(
                 true,
                 anna,
@@ -2069,9 +1970,6 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
                 pool.terms_targeta_dag_gpu(), // targeta_gpu_,  
                 pool.terms_paritya_dag_gpu()); // paritya_gpu_); 
 
-            if (counta == 0) {
-                continue;
-            }
 
             graph_.make_mapping_each_gpu_v3(
                 false,
@@ -2079,30 +1977,8 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
                 creb,
                 &countb,
                 pool.terms_sourceb_dag_gpu(), // sourceb_gpu_, 
-                pool.terms_sourceb_dag_gpu(), // targetb_gpu_, 
+                pool.terms_targetb_dag_gpu(), // targetb_gpu_, 
                 pool.terms_parityb_dag_gpu()); // parityb_gpu_); 
-
-            if (countb == 0) {
-                continue;
-            }
-
-            // void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
-            // const std::complex<double> coeff,
-            // TensorThrust& Cin,
-            // TensorThrust& Cout,
-            // const std::vector<int>& daga,
-            // const std::vector<int>& undaga, 
-            // const std::vector<int>& dagb,
-            // const std::vector<int>& undagb)
-
-            // apply_individual_nbody_accumulate_gpu(
-            //     coeff * std::complex<double>(0.0, -1.0) * sinfactor,
-            //     Cin,
-            //     Cout, 
-            //     crea,
-            //     anna,
-            //     creb,
-            //     annb);
 
             if((anna.size() != crea.size()) or (annb.size() != creb.size())){
                 throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
@@ -2111,32 +1987,24 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
             counta = 0;
             countb = 0;
 
-            // TODO:Nick need a v3 that resizes stp_gpu and populates it...
             graph_.make_mapping_each_gpu_v3(
                 true,
-                anna,
-                crea,
+                crea, // anna,
+                anna, // crea,
                 &counta,
                 pool.terms_sourcea_undag_gpu(), // sourcea_gpu_,  
                 pool.terms_targeta_undag_gpu(), // targeta_gpu_,  
                 pool.terms_paritya_undag_gpu()); // paritya_gpu_); 
 
-            if (counta == 0) {
-                continue;
-            }
 
             graph_.make_mapping_each_gpu_v3(
                 false,
-                annb,
-                creb,
+                creb, // annb,
+                annb, // creb,
                 &countb,
                 pool.terms_sourceb_undag_gpu(), // sourceb_gpu_, 
-                pool.terms_sourceb_undag_gpu(), // targetb_gpu_, 
+                pool.terms_targetb_undag_gpu(), // targetb_gpu_, 
                 pool.terms_parityb_undag_gpu()); // parityb_gpu_); 
-
-            if (countb == 0) {
-                continue;
-            }
 
         } else {
             throw std::invalid_argument("Evolved state must remain in spin and particle-number symmetry sector");

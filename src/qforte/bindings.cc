@@ -142,6 +142,9 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_qubit_operator", &SQOpPoolThrust::get_qubit_operator, py::arg("order_type"),
              py::arg("combine_like_terms") = true, py::arg("qubit_excitations") = false)
         .def("fill_pool", &SQOpPoolThrust::fill_pool)
+        .def("check_mu_tuple_container_sizes", &SQOpPoolThrust::check_mu_tuple_container_sizes)
+        .def("print_mu_tuple_dims", &SQOpPoolThrust::print_mu_tuple_dims)
+        .def("print_mu_tuple_elements", &SQOpPoolThrust::print_mu_tuple_elements)
         .def("str", &SQOpPoolThrust::str)
         .def("__getitem__", [](const SQOpPoolThrust &pool, size_t i) { return pool.terms()[i]; })
         .def("__iter__", [](const SQOpPoolThrust &pool) { return py::make_iterator(pool.terms()); },
