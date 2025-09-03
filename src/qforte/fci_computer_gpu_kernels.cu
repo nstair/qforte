@@ -546,3 +546,139 @@ extern "C" void scale_elements_wrapper(
         throw std::runtime_error("Kernel execution failed");
     }
 }
+
+// =========================
+// Fast-path accumulate kernels (row/column)
+// =========================
+
+__global__ void row_accumulate_kernel_atomic(
+    const cuDoubleComplex coeff,
+    const cuDoubleComplex* d_Cin,
+    cuDoubleComplex* d_Cout,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
+    int nbeta_strs_,
+    int targeta_size)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x; // alpha mapping index
+    int j   = blockIdx.y * blockDim.y + threadIdx.y; // beta column index
+
+    if (idx < targeta_size && j < nbeta_strs_) {
+        int sa_idx = d_sourcea[idx] * nbeta_strs_;
+        int ta_idx = d_targeta[idx] * nbeta_strs_;
+
+        cuDoubleComplex pref = cuCmul(coeff, d_paritya[idx]);
+        cuDoubleComplex term = cuCmul(pref, d_Cin[sa_idx + j]);
+
+        int out_index = ta_idx + j;
+        atomicAdd_double(&d_Cout[out_index].x, term.x);
+        atomicAdd_double(&d_Cout[out_index].y, term.y);
+    }
+}
+
+extern "C" void row_accumulate_wrapper(
+    const cuDoubleComplex coeff,
+    const cuDoubleComplex* d_Cin,
+    cuDoubleComplex* d_Cout,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
+    int nbeta_strs_,
+    int targeta_size,
+    int /*tensor_size*/)
+{
+    dim3 blockSize(16, 16);
+    dim3 gridSize((targeta_size + blockSize.x - 1) / blockSize.x,
+                  (nbeta_strs_   + blockSize.y - 1) / blockSize.y);
+
+    row_accumulate_kernel_atomic<<<gridSize, blockSize>>>(
+        coeff,
+        d_Cin,
+        d_Cout,
+        d_sourcea,
+        d_targeta,
+        d_paritya,
+        nbeta_strs_,
+        targeta_size);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Failed to launch row_accumulate_kernel_atomic (error code " << cudaGetErrorString(err) << ")!" << std::endl;
+        throw std::runtime_error("Kernel launch failed");
+    }
+
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "Kernel execution failed (error code " << cudaGetErrorString(err) << ")!" << std::endl;
+        throw std::runtime_error("Kernel execution failed");
+    }
+}
+
+__global__ void col_accumulate_kernel_atomic(
+    const cuDoubleComplex coeff,
+    const cuDoubleComplex* d_Cin,
+    cuDoubleComplex* d_Cout,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb,
+    int nbeta_strs_,
+    int alpha_states,
+    int targetb_size)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // alpha row index
+    int id = blockIdx.y * blockDim.y + threadIdx.y; // beta mapping index
+
+    if (i < alpha_states && id < targetb_size) {
+        int row_base = i * nbeta_strs_;
+        int sb = d_sourceb[id];
+        int tb = d_targetb[id];
+
+        cuDoubleComplex pref = cuCmul(coeff, d_parityb[id]);
+        cuDoubleComplex term = cuCmul(pref, d_Cin[row_base + sb]);
+
+        int out_index = row_base + tb;
+        atomicAdd_double(&d_Cout[out_index].x, term.x);
+        atomicAdd_double(&d_Cout[out_index].y, term.y);
+    }
+}
+
+extern "C" void col_accumulate_wrapper(
+    const cuDoubleComplex coeff,
+    const cuDoubleComplex* d_Cin,
+    cuDoubleComplex* d_Cout,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb,
+    int nbeta_strs_,
+    int alpha_states,
+    int targetb_size,
+    int /*tensor_size*/)
+{
+    dim3 blockSize(16, 16);
+    dim3 gridSize((alpha_states + blockSize.x - 1) / blockSize.x,
+                  (targetb_size + blockSize.y - 1) / blockSize.y);
+
+    col_accumulate_kernel_atomic<<<gridSize, blockSize>>>(
+        coeff,
+        d_Cin,
+        d_Cout,
+        d_sourceb,
+        d_targetb,
+        d_parityb,
+        nbeta_strs_,
+        alpha_states,
+        targetb_size);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Failed to launch col_accumulate_kernel_atomic (error code " << cudaGetErrorString(err) << ")!" << std::endl;
+        throw std::runtime_error("Kernel launch failed");
+    }
+
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "Kernel execution failed (error code " << cudaGetErrorString(err) << ")!" << std::endl;
+        throw std::runtime_error("Kernel execution failed");
+    }
+}
