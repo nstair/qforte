@@ -176,6 +176,23 @@ void antisymmetrize();
  **/
 void scale(std::complex<double> a);
 
+
+/**
+ * Gather elements from another 2D TensorThrust into this Tensor using provided index vectors.
+ * The indices specify which elements to copy from the source tensor.
+ * Throw if shapes or indices are incompatible.
+ *
+ * @param other Source TensorThrust to gather from
+ * @param i_inds Device vector of row indices
+ * @param j_inds Device vector of column indices
+ **/
+void gather_in_2D_gpu(
+    const TensorThrust& other,
+    const thrust::device_vector<int>& i_inds, //sourcea_dag,
+    const thrust::device_vector<int>& j_inds //sourceb_dag,
+    );
+
+
 /**
  * Copy the data of Tensor other to this Tensor
  * @param other Tensor to copy data from

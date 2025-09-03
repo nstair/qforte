@@ -692,6 +692,7 @@ int FCIComputerThrust::isolate_number_operators_cpu(
 
 
 /// NOTE: Cin should be const, changing for now
+/// NOTE: Cin is actually unused, should not be an arg.
 void FCIComputerThrust::evolve_individual_nbody_easy_cpu(
     const std::complex<double> time,
     const std::complex<double> coeff,
@@ -707,7 +708,6 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu(
 
     std::complex<double> factor = std::exp(-time * std::real(coeff) * std::complex<double>(0.0, 1.0));
     cuDoubleComplex factor_gpu = make_cuDoubleComplex(factor.real(), factor.imag());
-
 
     /// Optionally skip the on-the-fly device a/b-target idx formation
 
@@ -813,6 +813,31 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
 
     if(precomp){
 
+        // timer_.acc_begin("=>copy in Cin <- C_");
+        // Cin.copy_in_gpu(C_);
+        // timer_.acc_end("=>copy in Cin <- C_");
+
+
+        timer_.acc_begin("=>gather in Cin <- C_");
+
+        // TODO: Consider custom kernel implementaiton of the gather copy
+        // TODO: Try a gather for both sets of indicies (dag+undag sources) at once
+
+        // new funciton that will selectivly copy in 
+        Cin.gather_in_2D_gpu(
+            Cout,
+            std::get<6>(*precomp), //sourcea_dag,
+            std::get<8>(*precomp) //sourceb_dag,
+            );
+
+        Cin.gather_in_2D_gpu(
+            Cout,
+            std::get<7>(*precomp), //sourcea_undag,
+            std::get<9>(*precomp) // sourceb_undag,
+            );
+
+        timer_.acc_end("=>gather in Cin <- C_");
+
         const std::complex<double> cabs = std::abs(ncoeff);
         const std::complex<double> factor = std::cos(time * cabs);
         cuDoubleComplex factor_gpu = make_cuDoubleComplex(factor.real(), factor.imag());
@@ -838,6 +863,8 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
             factor_gpu);
 
         timer_.acc_end("===>hard: apply cos kernal");
+
+        timer_.acc_begin("===>hard nbody acc kernel");
 
 
         if ((std::get<10>(*precomp).size() != std::get<6>(*precomp).size()) or (std::get<6>(*precomp).size() != std::get<14>(*precomp).size())) {
@@ -915,8 +942,15 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
             throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
         }
 
+        timer_.acc_end("===>hard nbody acc kernel");
+
         
     } else {
+
+        timer_.acc_begin("=>copy in Cin <- C_");
+        Cin.copy_in_gpu(C_);
+        timer_.acc_end("=>copy in Cin <- C_");
+
         // std::cout << "\n Cout Before Cos Application Thrust \n" << Cout.str(true, true) << std::endl;
 
         timer_.acc_begin("==>hard: apply_cos_inplace");
@@ -943,6 +977,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
             Cout);
 
         timer_.acc_end("==>hard: apply_cos_inplace");
+
         // std::cout << "\n Cout After 2nd Cos Application Thrust \n" << Cout.str(true, true) << std::endl;
 
         timer_.acc_begin("==>hard: apply_individual_nbody_accumulate_gpu");
@@ -1248,9 +1283,9 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v2(
             for( int r = 0; r < trotter_steps; r++) {
                 for (int i = pool.terms().size() - 1; i >= 0; --i) {
                     
-                    timer_.acc_begin("=>copy in Cin <- C_");
-                    Cin.copy_in_gpu(C_);
-                    timer_.acc_end("=>copy in Cin <- C_");
+                    // timer_.acc_begin("=>copy in Cin <- C_");
+                    // Cin.copy_in_gpu(C_);
+                    // timer_.acc_end("=>copy in Cin <- C_");
 
                     evolve_individual_nbody_cpu(
                         prefactor * pool.terms()[i].first,
@@ -1268,9 +1303,9 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v2(
             for( int r = 0; r < trotter_steps; r++) {
                 for (const auto& sqop_term : pool.terms()) {
 
-                    timer_.acc_begin("=>copy in Cin <- C_");
-                    Cin.copy_in_gpu(C_);
-                    timer_.acc_end("=>copy in Cin <- C_");
+                    // timer_.acc_begin("=>copy in Cin <- C_");
+                    // Cin.copy_in_gpu(C_);
+                    // timer_.acc_end("=>copy in Cin <- C_");
 
                     evolve_individual_nbody_cpu(
                         prefactor * sqop_term.first,
@@ -1318,9 +1353,9 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v3(
             for( int r = 0; r < trotter_steps; r++) {
                 for (int i = pool.terms().size() - 1; i >= 0; --i) {
                     
-                    timer_.acc_begin("=>copy in Cin <- C_");
-                    Cin.copy_in_gpu(C_);
-                    timer_.acc_end("=>copy in Cin <- C_");
+                    // timer_.acc_begin("=>copy in Cin <- C_");
+                    // Cin.copy_in_gpu(C_);
+                    // timer_.acc_end("=>copy in Cin <- C_");
 
                     const auto& device_spt_arys = pool.get_mu_tuple(i);
 
@@ -1341,9 +1376,9 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v3(
             for( int r = 0; r < trotter_steps; r++) {
                 for (int i = 0; i < pool.terms().size(); ++i) {
 
-                    timer_.acc_begin("=>copy in Cin <- C_");
-                    Cin.copy_in_gpu(C_);
-                    timer_.acc_end("=>copy in Cin <- C_");
+                    // timer_.acc_begin("=>copy in Cin <- C_");
+                    // Cin.copy_in_gpu(C_);
+                    // timer_.acc_end("=>copy in Cin <- C_");
 
                     const auto& device_spt_arys = pool.get_mu_tuple(i);
 
