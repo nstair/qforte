@@ -12,6 +12,13 @@
 #include <thrust/copy.h>
 #include <thrust/execution_policy.h>
 
+
+#include <thrust/for_each.h>
+#include <thrust/iterator/counting_iterator.h>
+#include <thrust/extrema.h>                       // minmax_element
+#include <thrust/device_ptr.h>                    // raw_pointer_cast
+#include <thrust/system/cuda/execution_policy.h>  // thrust::cuda::par
+
 #include <iostream>
 #include <string>
 #include <cmath>
@@ -490,6 +497,95 @@ void TensorThrust::scale(std::complex<double> a)
             h_data_[i] *= a;
         }
     }
+}
+
+void TensorThrust::gather_in_2D_gpu(
+    const TensorThrust& other,
+    const thrust::device_vector<int>& i_inds,
+    const thrust::device_vector<int>& j_inds
+)
+{
+    // Catch any pending CUDA errors early (consistent with your stub)
+    gpu_error();
+    other.gpu_error();
+
+    // Dimensionality checks
+    if (ndim() != 2 || other.ndim() != 2) {
+        ndim_error(2);
+    }
+    // Shape check (your shape_error first calls ndim_error internally)
+    if (shape() != other.shape()) {
+        shape_error(other.shape());
+    }
+
+    // Must be operating on GPU buffers (can't mutate const other to move it)
+    if (!on_gpu_ || !other.on_gpu()) {
+        throw std::runtime_error(
+            "gather_in_2D_gpu requires both tensors to be on the GPU. "
+            "Call to_gpu() on each tensor before invoking this."
+        );
+    }
+
+    const int nrows = static_cast<int>(i_inds.size());
+    const int ncols = static_cast<int>(j_inds.size());
+    if (nrows == 0 || ncols == 0) {
+        gpu_error();
+        return; 
+    }
+
+    const int H = static_cast<int>(shape_[0]);
+    const int W = static_cast<int>(shape_[1]);
+
+    // Optional but helpful: validate index ranges on device (throws on invalid)
+    // NOTE:(Nick) Commented out for performance (very slow); assume caller is responsible
+    // {
+    //     auto ii_mm = thrust::minmax_element(thrust::device, i_inds.begin(), i_inds.end());
+    //     auto jj_mm = thrust::minmax_element(thrust::device, j_inds.begin(), j_inds.end());
+    //     const int ii_min = *ii_mm.first;
+    //     const int ii_max = *ii_mm.second;
+    //     const int jj_min = *jj_mm.first;
+    //     const int jj_max = *jj_mm.second;
+
+    //     if (ii_min < 0 || ii_max >= H) {
+    //         throw std::runtime_error("Row indices out of bounds in gather_in_2D_gpu.");
+    //     }
+    //     if (jj_min < 0 || jj_max >= W) {
+    //         throw std::runtime_error("Column indices out of bounds in gather_in_2D_gpu.");
+    //     }
+    // }
+
+    // Raw device pointers to data and index arrays
+    cuDoubleComplex* __restrict__ dst = thrust::raw_pointer_cast(d_data_.data());
+    
+    const cuDoubleComplex* __restrict__ src = thrust::raw_pointer_cast(other.d_data_.data());
+
+    const int* __restrict__ d_rows = thrust::raw_pointer_cast(i_inds.data());
+    const int* __restrict__ d_cols = thrust::raw_pointer_cast(j_inds.data());
+
+    const size_t N = static_cast<size_t>(nrows) * static_cast<size_t>(ncols);
+
+    // Execute: each k maps to (rsel, m) -> (i,j) -> single copy
+    // attach a stream with .on(stream_) if you track one
+    auto exec = thrust::cuda::par; 
+
+    thrust::for_each(
+        exec,
+        thrust::make_counting_iterator<size_t>(0),
+        thrust::make_counting_iterator<size_t>(N),
+        [=] __device__ (size_t k)
+        {
+            const int rsel = static_cast<int>(k / ncols);
+            const int m    = static_cast<int>(k % ncols);
+
+            const int i = d_rows[rsel];
+            const int j = d_cols[m];
+
+            // Prevalidated: 0 <= i < H, 0 <= j < W
+            const size_t off = static_cast<size_t>(i) * static_cast<size_t>(W) + static_cast<size_t>(j);
+            dst[off] = src[off];
+        });
+
+    // gpu_error();
 }
 
 void TensorThrust::copy_in(const TensorThrust& other)
