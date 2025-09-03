@@ -1177,6 +1177,7 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
 
     // Fast paths when one spin sector has zero excitations
     if (daga.size() == 0 && dagb.size() > 0) {
+        int counta = 0;
         int countb = 0;
         graph_.make_mapping_each_gpu_v2(
             false,
@@ -1193,10 +1194,12 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
             coeff,
             Cin,
             Cout,
+            counta,
             countb);
         return;
     } else if (dagb.size() == 0 && daga.size() > 0) {
         int counta = 0;
+        int countb = 0;
         graph_.make_mapping_each_gpu_v2(
             true,
             daga,
@@ -1212,7 +1215,8 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
             coeff,
             Cin,
             Cout,
-            counta);
+            counta,
+            countb);
         return;
     }
 
@@ -1355,19 +1359,24 @@ void FCIComputerThrust::apply_individual_nbody_row_accumulate_gpu(
     const std::complex<double> coeff,
     TensorThrust& Cin,
     TensorThrust& Cout,
-    int counta)
+    int counta,
+    int countb)
 {
     cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
 
     row_accumulate_wrapper(
-        cu_coeff,
-        thrust::raw_pointer_cast(Cin.read_d_data().data()),
-        thrust::raw_pointer_cast(Cout.d_data().data()),
+        cu_coeff, 
+        thrust::raw_pointer_cast(Cin.read_d_data().data()), 
+        thrust::raw_pointer_cast(Cout.d_data().data()), 
         thrust::raw_pointer_cast(sourcea_gpu_.data()),
         thrust::raw_pointer_cast(targeta_gpu_.data()),
         thrust::raw_pointer_cast(paritya_gpu_.data()),
+        thrust::raw_pointer_cast(sourceb_gpu_.data()),
+        thrust::raw_pointer_cast(targetb_gpu_.data()),
+        thrust::raw_pointer_cast(parityb_gpu_.data()),
         nbeta_strs_,
         counta,
+        countb,
         Cin.size() * sizeof(cuDoubleComplex));
 }
 
@@ -1376,19 +1385,23 @@ void FCIComputerThrust::apply_individual_nbody_col_accumulate_gpu(
     const std::complex<double> coeff,
     TensorThrust& Cin,
     TensorThrust& Cout,
+    int counta,
     int countb)
 {
     cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
 
     col_accumulate_wrapper(
-        cu_coeff,
-        thrust::raw_pointer_cast(Cin.read_d_data().data()),
-        thrust::raw_pointer_cast(Cout.d_data().data()),
+        cu_coeff, 
+        thrust::raw_pointer_cast(Cin.read_d_data().data()), 
+        thrust::raw_pointer_cast(Cout.d_data().data()), 
+        thrust::raw_pointer_cast(sourcea_gpu_.data()),
+        thrust::raw_pointer_cast(targeta_gpu_.data()),
+        thrust::raw_pointer_cast(paritya_gpu_.data()),
         thrust::raw_pointer_cast(sourceb_gpu_.data()),
         thrust::raw_pointer_cast(targetb_gpu_.data()),
         thrust::raw_pointer_cast(parityb_gpu_.data()),
         nbeta_strs_,
-        static_cast<int>(nalfa_strs_),
+        counta,
         countb,
         Cin.size() * sizeof(cuDoubleComplex));
 }

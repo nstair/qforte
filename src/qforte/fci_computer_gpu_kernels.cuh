@@ -80,47 +80,63 @@ extern "C" void apply_individual_nbody1_accumulate_wrapper_shared(
     int tensor_size);
     */
 
-__global__ void row_accumulate_kernel_atomic(
-    const cuDoubleComplex coeff,
-    const cuDoubleComplex* d_Cin,
-    cuDoubleComplex* d_Cout,
+__global__ void row_accumulate_kernel(
+    const cuDoubleComplex coeff, 
+    const cuDoubleComplex* d_Cin, 
+    cuDoubleComplex* d_Cout, 
     const int* d_sourcea,
     const int* d_targeta,
     const cuDoubleComplex* d_paritya,
-    int nbeta_strs_,
-    int targeta_size);
-
-extern "C" void row_accumulate_wrapper(
-    const cuDoubleComplex coeff,
-    const cuDoubleComplex* d_Cin,
-    cuDoubleComplex* d_Cout,
-    const int* d_sourcea,
-    const int* d_targeta,
-    const cuDoubleComplex* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb,
     int nbeta_strs_,
     int targeta_size,
+    int targetb_size,
     int tensor_size);
 
-__global__ void col_accumulate_kernel_atomic(
-    const cuDoubleComplex coeff,
-    const cuDoubleComplex* d_Cin,
-    cuDoubleComplex* d_Cout,
+extern "C" void row_accumulate_wrapper(
+    const cuDoubleComplex coeff, 
+    const cuDoubleComplex* d_Cin, 
+    cuDoubleComplex* d_Cout, 
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
     int nbeta_strs_,
-    int alpha_states,
-    int targetb_size);
+    int targeta_size,
+    int targetb_size,
+    int tensor_size);
+
+__global__ void col_accumulate_kernel(
+    const cuDoubleComplex coeff, 
+    const cuDoubleComplex* d_Cin, 
+    cuDoubleComplex* d_Cout, 
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb,
+    int nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    int tensor_size);
 
 extern "C" void col_accumulate_wrapper(
-    const cuDoubleComplex coeff,
-    const cuDoubleComplex* d_Cin,
-    cuDoubleComplex* d_Cout,
+    const cuDoubleComplex coeff, 
+    const cuDoubleComplex* d_Cin, 
+    cuDoubleComplex* d_Cout, 
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
     int nbeta_strs_,
-    int alpha_states,
+    int targeta_size,
     int targetb_size,
     int tensor_size);
 

@@ -235,12 +235,14 @@ class FCIComputerThrust {
       const std::complex<double> coeff,
       TensorThrust& Cin,
       TensorThrust& Cout,
-      int counta);
+      int counta,
+      int countb);
 
     void apply_individual_nbody_col_accumulate_gpu(
       const std::complex<double> coeff,
       TensorThrust& Cin,
       TensorThrust& Cout,
+      int counta,
       int countb);
 
     void apply_individual_nbody_accumulate_gpu(
