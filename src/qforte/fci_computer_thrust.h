@@ -230,6 +230,19 @@ class FCIComputerThrust {
       int counta,
       int countb);
 
+    // Specialized fast paths for whole-row/whole-column accumulates
+    void apply_individual_nbody_row_accumulate_gpu(
+      const std::complex<double> coeff,
+      TensorThrust& Cin,
+      TensorThrust& Cout,
+      int counta);
+
+    void apply_individual_nbody_col_accumulate_gpu(
+      const std::complex<double> coeff,
+      TensorThrust& Cin,
+      TensorThrust& Cout,
+      int countb);
+
     void apply_individual_nbody_accumulate_gpu(
       const std::complex<double> coeff,
       TensorThrust& Cin,
