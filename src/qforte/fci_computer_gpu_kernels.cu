@@ -251,14 +251,10 @@ __global__ void apply_individual_nbody1_accumulate_kernel_atomic(
             cuDoubleComplex term = cuCmul(pref, d_parityb[idy]);
             term = cuCmul(term, d_Cin[sa_idx + d_sourceb[idy]]);
 
-            int output_idx = ta_idx + d_targetb[idy];
-
-            // No atomic
-            d_Cout[output_idx] = cuCadd(d_Cout[output_idx], term);
-
             // Thread-safe atomic accumulation
-            // atomicAdd_double(&d_Cout[output_idx].x, term.x);
-            // atomicAdd_double(&d_Cout[output_idx].y, term.y);
+            int output_idx = ta_idx + d_targetb[idy];
+            atomicAdd_double(&d_Cout[output_idx].x, term.x);
+            atomicAdd_double(&d_Cout[output_idx].y, term.y);
         }
     }
 }
@@ -548,130 +544,5 @@ extern "C" void scale_elements_wrapper(
     if (err != cudaSuccess) {
         std::cerr << "Kernel execution failed (error code " << cudaGetErrorString(err) << ")!" << std::endl;
         throw std::runtime_error("Kernel execution failed");
-    }
-}
-
-// Optimized row-only accumulate kernel: for each alpha mapping, axpy across all beta columns
-__global__ void row_axpy_accumulate_kernel(
-    const cuDoubleComplex coeff,
-    const cuDoubleComplex* __restrict__ d_Cin,
-    cuDoubleComplex* __restrict__ d_Cout,
-    const int* __restrict__ d_sourcea,
-    const int* __restrict__ d_targeta,
-    const cuDoubleComplex* __restrict__ d_paritya,
-    int nbeta_strs_,
-    int counta)
-{
-    int ia = blockIdx.x * blockDim.x + threadIdx.x;   // alpha mapping index
-    int jb = blockIdx.y * blockDim.y + threadIdx.y;   // beta column index
-
-    if (ia < counta && jb < nbeta_strs_) {
-        int sa = d_sourcea[ia];
-        int ta = d_targeta[ia];
-        cuDoubleComplex pref = cuCmul(coeff, d_paritya[ia]);
-
-        int in_idx = sa * nbeta_strs_ + jb;
-        int out_idx = ta * nbeta_strs_ + jb;
-
-        cuDoubleComplex term = cuCmul(pref, d_Cin[in_idx]);
-        d_Cout[out_idx] = cuCadd(d_Cout[out_idx], term);
-    }
-}
-
-extern "C" void apply_row_accumulate_wrapper(
-    const cuDoubleComplex coeff,
-    const cuDoubleComplex* d_Cin,
-    cuDoubleComplex* d_Cout,
-    const int* d_sourcea,
-    const int* d_targeta,
-    const cuDoubleComplex* d_paritya,
-    int nbeta_strs_,
-    int counta,
-    int /*tensor_size*/)
-{
-    dim3 block(16, 16);
-    dim3 grid((counta + block.x - 1) / block.x, (nbeta_strs_ + block.y - 1) / block.y);
-
-    row_axpy_accumulate_kernel<<<grid, block>>>(
-        coeff,
-        d_Cin,
-        d_Cout,
-        d_sourcea,
-        d_targeta,
-        d_paritya,
-        nbeta_strs_,
-        counta);
-
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA kernel launch error in apply_row_accumulate_wrapper: " << cudaGetErrorString(err) << std::endl;
-    }
-    err = cudaDeviceSynchronize();
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA sync error in apply_row_accumulate_wrapper: " << cudaGetErrorString(err) << std::endl;
-    }
-}
-
-// Optimized column-only accumulate kernel: for each beta mapping, axpy down all alpha rows
-__global__ void col_axpy_accumulate_kernel(
-    const cuDoubleComplex coeff,
-    const cuDoubleComplex* __restrict__ d_Cin,
-    cuDoubleComplex* __restrict__ d_Cout,
-    const int* __restrict__ d_sourceb,
-    const int* __restrict__ d_targetb,
-    const cuDoubleComplex* __restrict__ d_parityb,
-    int nbeta_strs_,
-    int nalfa_strs_,
-    int countb)
-{
-    int ib = blockIdx.x * blockDim.x + threadIdx.x;   // beta mapping index
-    int ia = blockIdx.y * blockDim.y + threadIdx.y;   // alpha row index
-
-    if (ib < countb && ia < nalfa_strs_) {
-        int sb = d_sourceb[ib];
-        int tb = d_targetb[ib];
-        cuDoubleComplex pref = cuCmul(coeff, d_parityb[ib]);
-
-        int in_idx = ia * nbeta_strs_ + sb;
-        int out_idx = ia * nbeta_strs_ + tb;
-
-        cuDoubleComplex term = cuCmul(pref, d_Cin[in_idx]);
-        d_Cout[out_idx] = cuCadd(d_Cout[out_idx], term);
-    }
-}
-
-extern "C" void apply_col_accumulate_wrapper(
-    const cuDoubleComplex coeff,
-    const cuDoubleComplex* d_Cin,
-    cuDoubleComplex* d_Cout,
-    const int* d_sourceb,
-    const int* d_targetb,
-    const cuDoubleComplex* d_parityb,
-    int nbeta_strs_,
-    int nalfa_strs_,
-    int countb,
-    int /*tensor_size*/)
-{
-    dim3 block(16, 16);
-    dim3 grid((countb + block.x - 1) / block.x, (nalfa_strs_ + block.y - 1) / block.y);
-
-    col_axpy_accumulate_kernel<<<grid, block>>>(
-        coeff,
-        d_Cin,
-        d_Cout,
-        d_sourceb,
-        d_targetb,
-        d_parityb,
-        nbeta_strs_,
-        nalfa_strs_,
-        countb);
-
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA kernel launch error in apply_col_accumulate_wrapper: " << cudaGetErrorString(err) << std::endl;
-    }
-    err = cudaDeviceSynchronize();
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA sync error in apply_col_accumulate_wrapper: " << cudaGetErrorString(err) << std::endl;
     }
 }

@@ -1144,7 +1144,7 @@ void FCIComputerThrust::apply_individual_nbody1_accumulate_gpu(
         countb,
         Cin.size() * sizeof(cuDoubleComplex));
 
-    // std::cout << "cout: \n" << Cout.str() << std::endl;
+    std::cout << "cout: \n" << Cout.str() << std::endl;
 
     timer_.acc_record("calling gpu function");
     timer_.reset();
@@ -1177,25 +1177,6 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
 
     int counta = 0;
     int countb = 0;
-
-    // Want to check if I can just check counta and countb
-    // std::cout << "daga size: " << daga.size() << std::endl;
-    // std::cout << "undaga size: " << undaga.size() << std::endl;
-    // std::cout << "counta: " << counta << std::endl;
-
-    // std::cout << "dagb size: " << dagb.size() << std::endl;
-    // std::cout << "undagb size: " << undagb.size() << std::endl;
-    // std::cout << "countb: " << countb << std::endl;
-
-    // If one side is empty, take optimized path before building the other side unnecessarily
-    if (dagb.empty() && undagb.empty()) {
-        apply_individual_nbody_accumulate_gpu_row_only(coeff, Cin, Cout, daga, undaga);
-        return;
-    }
-    if (daga.empty() && undaga.empty()) {
-        apply_individual_nbody_accumulate_gpu_col_only(coeff, Cin, Cout, dagb, undagb);
-        return;
-    }
 
     graph_.make_mapping_each_gpu_v2(
         true,
@@ -1250,11 +1231,11 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
 
     // std::cout << "\n\n----------------------------------------------------------\n\n" << std::endl;
     
-    // print_vector_thrust(sourcea_cpu, "sourcea");
-    // print_vector_thrust(targeta_cpu, "targeta");
+    print_vector_thrust(sourcea_cpu, "sourcea");
+    print_vector_thrust(targeta_cpu, "targeta");
     // print_vector_thrust_cuDoubleComplex(paritya_cpu, "paritya");
-    // print_vector_thrust(sourceb_cpu, "sourceb");
-    // print_vector_thrust(targetb_cpu, "targetb");
+    print_vector_thrust(sourceb_cpu, "sourceb");
+    print_vector_thrust(targetb_cpu, "targetb");
     // print_vector_thrust_cuDoubleComplex(parityb_cpu, "parityb");
 
     // std::cout << "\n\n----------------------------------------------------------\n\n" << std::endl;
@@ -1268,196 +1249,318 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
         countb);
 }
 
-// Optimized path when beta-side is empty: perform row-wise accumulate (no column derefs in kernel)
-void FCIComputerThrust::apply_individual_nbody_accumulate_gpu_row_only(
-    const std::complex<double> coeff,
+/// NOTE: Cin should be const, changing for now
+void FCIComputerThrust::apply_individual_sqop_term_gpu(
+    const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
     TensorThrust& Cin,
-    TensorThrust& Cout,
-    const std::vector<int>& daga,
-    const std::vector<int>& undaga)
+    TensorThrust& Cout)
 {
-    int counta = 0;
+    std::vector<int> crea;
+    std::vector<int> anna;
 
-    graph_.make_mapping_each_gpu_v2(
-        true,
-        daga,
-        undaga,
-        &counta,
-        sourcea_gpu_,
-        targeta_gpu_,
-        paritya_gpu_);
+    std::vector<int> creb;
+    std::vector<int> annb;
 
-    if (counta == 0) return;
+    local_timer my_timer = local_timer();
+    timer_.reset();
 
-    cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
-
-    // Launch a kernel specialized for full-row axpy-like accumulate over all beta strings
-    apply_row_accumulate_wrapper(
-        cu_coeff,
-        thrust::raw_pointer_cast(Cin.read_d_data().data()),
-        thrust::raw_pointer_cast(Cout.d_data().data()),
-        thrust::raw_pointer_cast(sourcea_gpu_.data()),
-        thrust::raw_pointer_cast(targeta_gpu_.data()),
-        thrust::raw_pointer_cast(paritya_gpu_.data()),
-        static_cast<int>(nbeta_strs_),
-        counta,
-        static_cast<int>(Cin.size() * sizeof(cuDoubleComplex)));
-
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess) {
-        std::cerr << "CUDA error (row_only): " << cudaGetErrorString(error) << std::endl;
-        throw std::runtime_error("Failed in row-only accumulate on the GPU.");
+    for(size_t i = 0; i < std::get<1>(term).size(); i++){
+        if(std::get<1>(term)[i]%2 == 0){
+            crea.push_back(std::floor(std::get<1>(term)[i] / 2));
+        } else {
+            creb.push_back(std::floor(std::get<1>(term)[i] / 2));
+        }
     }
+
+    timer_.acc_record("first loop in apply_individual_sqop_term");
+    timer_.reset();
+
+    for(size_t i = 0; i < std::get<2>(term).size(); i++){
+        if(std::get<2>(term)[i]%2 == 0){
+            anna.push_back(std::floor(std::get<2>(term)[i] / 2));
+        } else {
+            annb.push_back(std::floor(std::get<2>(term)[i] / 2));
+        }
+    }
+
+    timer_.acc_record("second loop in apply_individual_sqop_term");
+    timer_.reset();
+
+    if (std::get<1>(term).size() != std::get<2>(term).size()) {
+        throw std::invalid_argument("Each term must have same number of anihilators and creators");
+    }   
+
+    std::vector<size_t> ops1(std::get<1>(term));
+    std::vector<size_t> ops2(std::get<2>(term));
+    ops1.insert(ops1.end(), ops2.begin(), ops2.end());
+
+    int nswaps = parity_sort(ops1);
+    timer_.acc_record("some parity things");
+    timer_.reset();
+    // std::cout << my_timer.str_table() << std::endl;
+
+    apply_individual_nbody_accumulate_gpu(
+        pow(-1, nswaps) * std::get<0>(term),
+        Cin,
+        Cout,
+        crea,
+        anna, 
+        creb,
+        annb);
 }
 
-// Optimized path when alpha-side is empty: perform column-wise accumulate (no row derefs in kernel)
-void FCIComputerThrust::apply_individual_nbody_accumulate_gpu_col_only(
-    const std::complex<double> coeff,
-    TensorThrust& Cin,
-    TensorThrust& Cout,
-    const std::vector<int>& dagb,
-    const std::vector<int>& undagb)
-{
-    int countb = 0;
-
-    graph_.make_mapping_each_gpu_v2(
-        false,
-        dagb,
-        undagb,
-        &countb,
-        sourceb_gpu_,
-        targetb_gpu_,
-        parityb_gpu_);
-
-    if (countb == 0) return;
-
-    cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
-
-    apply_col_accumulate_wrapper(
-        cu_coeff,
-        thrust::raw_pointer_cast(Cin.read_d_data().data()),
-        thrust::raw_pointer_cast(Cout.d_data().data()),
-        thrust::raw_pointer_cast(sourceb_gpu_.data()),
-        thrust::raw_pointer_cast(targetb_gpu_.data()),
-        thrust::raw_pointer_cast(parityb_gpu_.data()),
-        static_cast<int>(nbeta_strs_),
-        static_cast<int>(nalfa_strs_),
-        countb,
-        static_cast<int>(Cin.size() * sizeof(cuDoubleComplex)));
-
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess) {
-        std::cerr << "CUDA error (col_only): " << cudaGetErrorString(error) << std::endl;
-        throw std::runtime_error("Failed in col-only accumulate on the GPU.");
-    }
-}
-
-// Implement applying a full SQOperator by accumulating all its terms using the GPU accumulate path.
-// This works even when the class is currently in CPU mode by staging temporary GPU tensors.
 void FCIComputerThrust::apply_sqop_gpu(const SQOperator& sqop)
 {
-    // Prepare input (Cin) and output (Cout) tensors on GPU without changing class device state
-    const bool was_gpu = on_gpu_;
+     C_.gpu_error();
+    TensorThrust Cin(C_.shape(), "Cin", true);
+    Cin.copy_in_gpu(C_);
 
-    // Build GPU copies
-    TensorThrust Cin_gpu(C_.shape(), "Cin_gpu", true);
-    TensorThrust Cout_gpu(C_.shape(), "Cout_gpu", true);
-    Cout_gpu.zero_gpu();
 
-    // Copy C_ into Cin_gpu.d_data()
-    if (was_gpu) {
-        // Device-to-device copy
-        thrust::copy(
-            thrust::device,
-            C_.read_d_data().begin(),
-            C_.read_d_data().end(),
-            Cin_gpu.d_data().begin());
-    } else {
-        // Host-to-device copy with conversion
-        std::vector<cuDoubleComplex> tmp(C_.size());
-        const auto& hsrc = C_.read_h_data();
-        for (size_t i = 0; i < C_.size(); ++i) {
-            tmp[i] = make_cuDoubleComplex(hsrc[i].real(), hsrc[i].imag());
-        }
-        thrust::copy(tmp.begin(), tmp.end(), Cin_gpu.d_data().begin());
-    }
+    
+    local_timer my_timer = local_timer();
+    timer_.reset();
+    
+    // cudaMemcpy(Cin.d_data(), C_.d_data(), Cin.size() * sizeof(cuDoubleComplex))
 
-    // Accumulate each term into Cout_gpu
+    C_.zero_gpu();
+
+    timer_.acc_record("making tensor things");
+    timer_.reset();
+
     for (const auto& term : sqop.terms()) {
-        std::complex<double> c = std::get<0>(term);
-        if (std::abs(c) <= compute_threshold_) continue;
-
-        // Split creators/annihilators by spin
-        std::vector<int> crea, creb, anna, annb;
-        const auto& creators = std::get<1>(term);
-        const auto& annihils = std::get<2>(term);
-
-        if (creators.size() != annihils.size()) {
-            throw std::invalid_argument("Each term must have same number of annihilators and creators");
-        }
-
-        for (size_t i = 0; i < creators.size(); ++i) {
-            if (creators[i] % 2 == 0) {
-                crea.push_back(static_cast<int>(creators[i] / 2));
-            } else {
-                creb.push_back(static_cast<int>(creators[i] / 2));
-            }
-        }
-        for (size_t i = 0; i < annihils.size(); ++i) {
-            if (annihils[i] % 2 == 0) {
-                anna.push_back(static_cast<int>(annihils[i] / 2));
-            } else {
-                annb.push_back(static_cast<int>(annihils[i] / 2));
-            }
-        }
-
-        // Parity from sorting combined ops
-        std::vector<size_t> ops1 = creators;
-        std::vector<size_t> ops2 = annihils;
-        ops1.insert(ops1.end(), ops2.begin(), ops2.end());
-        int nswaps = parity_sort(ops1);
-        std::complex<double> coeff = std::pow(-1, nswaps) * c;
-
-        // Use the optimized accumulate path. Temporarily override class on_gpu_ so gpu_error() passes.
-        bool saved = on_gpu_;
-        on_gpu_ = true;
-        try {
-            apply_individual_nbody_accumulate_gpu(
-                coeff,
-                Cin_gpu,
-                Cout_gpu,
-                crea,
-                anna,
-                creb,
-                annb);
-        } catch (...) {
-            on_gpu_ = saved;
-            throw;
-        }
-        on_gpu_ = saved;
-    }
-
-    // Move Cout back into C_
-    if (was_gpu) {
-        // Device-to-device copy into C_.d_data()
-        thrust::copy(
-            thrust::device,
-            Cout_gpu.read_d_data().begin(),
-            Cout_gpu.read_d_data().end(),
-            C_.d_data().begin());
-    } else {
-        // Device-to-host with conversion into C_.h_data()
-        std::vector<cuDoubleComplex> tmp(C_.size());
-        thrust::copy(Cout_gpu.read_d_data().begin(), Cout_gpu.read_d_data().end(), tmp.begin());
-        auto& hdst = C_.h_data();
-        for (size_t i = 0; i < C_.size(); ++i) {
-            hdst[i] = std::complex<double>(cuCreal(tmp[i]), cuCimag(tmp[i]));
+        if(std::abs(std::get<0>(term)) > compute_threshold_){
+        apply_individual_sqop_term_gpu(
+            term,
+            Cin,
+            C_);
         }
     }
+
+    timer_.acc_record("first for loop in apply_sqop");
+    std::cout << timer_.acc_str_table() << std::endl;
+}
+
+void FCIComputerThrust::apply_diagonal_of_sqop_cpu(
+    const SQOperator& sq_op, 
+    const bool invert_coeff)
+{
+    cpu_error();
+
+    TensorThrust Cin = C_;
+    C_.zero();
+
+    for(const auto& term : sq_op.terms()){
+        std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>> temp_term;
+        std::vector<size_t> ann;
+        std::vector<size_t> cre;
+        cre = std::get<1>(term);
+        ann = std::get<2>(term);
+
+        std::sort(cre.begin(), cre.end());
+        std::sort(ann.begin(), ann.end());
+
+        if(std::equal(cre.begin(), cre.end(), ann.begin(), ann.end()) && std::abs(std::get<0>(term)) > compute_threshold_){
+            std::get<1>(temp_term) = cre;
+            std::get<2>(temp_term) = ann;
+
+            if(invert_coeff){
+                std::get<0>(temp_term) = 1.0 / std::get<0>(term);
+            } else {
+                std::get<0>(temp_term) = std::get<0>(term);
+            }
+
+            apply_individual_sqop_term_gpu(
+                temp_term,
+                Cin,
+                C_);
+        }
+    }
+}
+
+void FCIComputerThrust::apply_sqop_pool_cpu(const SQOpPool& sqop_pool)
+{
+    cpu_error();
+
+    TensorThrust Cin = C_;
+    C_.zero();
+
+    for (const auto& sqop : sqop_pool.terms()) {
+        std::complex<double> outer_coeff = sqop.first;
+        for (const auto& term : sqop.second.terms()) {
+            std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>> temp_term = term;
+
+            std::get<0>(temp_term) *= outer_coeff;
+
+            if(std::abs(std::get<0>(temp_term)) > compute_threshold_){
+                apply_individual_sqop_term_gpu(
+                    temp_term,
+                    Cin,
+                    C_);
+            }
+        }
+    }
+}
+
+std::complex<double> FCIComputerThrust::get_exp_val_cpu(const SQOperator& sqop)
+{
+    TensorThrust Cin = C_;
+    C_.zero();
+    for (const auto& term : sqop.terms()) {
+        if(std::abs(std::get<0>(term)) > compute_threshold_){
+        apply_individual_sqop_term_gpu(
+            term,
+            Cin,
+            C_);
+        }
+    }
+    std::complex<double> val = C_.vector_dot(Cin);
+    C_ = Cin;
+    return val;
+}
+
+std::complex<double> FCIComputerThrust::get_exp_val_tensor_cpu(
+    const std::complex<double> h0e, 
+    const TensorThrust& h1e, 
+    const TensorThrust& h2e, 
+    const TensorThrust& h2e_einsum, 
+    size_t norb)
+{
+    TensorThrust Cin = C_;
+
+    apply_tensor_spat_012bdy(
+        h0e,
+        h1e, 
+        h2e, 
+        h2e_einsum, 
+        norb
+    );
+
+    std::complex<double> val = C_.vector_dot(Cin);
+
+    C_ = Cin;
+    return val;
 }
 
 void FCIComputerThrust::scale_cpu(const std::complex<double> a)
 {
-    cpu_error();
     C_.scale(a);
+}
+
+/// TODO: This is commented out in TensorGPU
+/*
+std::vector<double> FCIComputerThrust::direct_expectation_value(const TensorOperator& top)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("");
+}*/
+
+/// TODO: Not implemented in TensorGPU
+/*
+std::complex<double> FCIComputerThrust::coeff(const QubitBasis& abasis, const QubitBasis& bbasis)
+{
+    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // This is a placeholder - full implementation would need to be added
+    throw std::runtime_error("");
+}*/
+
+void FCIComputerThrust::set_state_cpu(const TensorThrust& other_state)
+{
+    cpu_error();
+    other_state.cpu_error();
+    C_.copy_in(other_state);
+}
+
+void FCIComputerThrust::set_state_gpu(const TensorThrust& other_state)
+{
+    gpu_error();
+    other_state.gpu_error();
+    C_.copy_in_gpu(other_state);
+}
+
+void FCIComputerThrust::set_state_from_tensor_cpu(const Tensor& other_state)
+{
+    cpu_error();
+    C_.copy_in_from_tensor(other_state);
+}
+
+void FCIComputerThrust::zero_cpu()
+{
+    cpu_error();
+    C_.zero();
+}
+
+void FCIComputerThrust::hartree_fock_cpu()
+{
+    cpu_error();
+    C_.zero();
+    C_.set({0, 0}, 1.0);
+}
+
+void FCIComputerThrust::print_vector(const std::vector<int>& vec, const std::string& name)
+{
+    std::cout << name << ": ";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        std::cout << static_cast<int>(vec[i]);
+        if (i < vec.size() - 1) {
+           std::cout << ", "; 
+        }
+    }
+    std::cout << std::endl;
+}
+
+void FCIComputerThrust::print_vector_thrust(const thrust::host_vector<int>& vec, const std::string& name)
+{
+    std::cout << name << ": ";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        std::cout << static_cast<int>(vec[i]);
+        if (i < vec.size() - 1) {
+           std::cout << ", "; 
+        }
+    }
+    std::cout << std::endl;
+}
+
+void FCIComputerThrust::print_vector_uint(const std::vector<uint64_t>& vec, const std::string& name)
+{
+    std::cout << name << ": ";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        std::cout << vec[i];
+        if (i < vec.size() - 1) {
+            std::cout << ", "; 
+        }
+    }
+    std::cout << std::endl;
+}
+
+void FCIComputerThrust::print_vector_thrust_cuDoubleComplex(const thrust::host_vector<cuDoubleComplex>& vec, const std::string& name)
+{
+    std::cout << name << ": ";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        std::complex<double> tmp = {vec[i].x, vec[i].y};
+        std::cout << tmp;
+        if (i < vec.size() - 1) {
+            std::cout << ", "; 
+        }
+    }
+    std::cout << std::endl;
+}
+
+/* New methods for copying out data */
+void FCIComputerThrust::copy_to_tensor_cpu(Tensor& tensor) const
+{
+    cpu_error();
+    C_.copy_to_tensor(tensor);
+}
+
+void FCIComputerThrust::copy_to_tensor_thrust_gpu(TensorThrust& tensor) const
+{
+    gpu_error();
+    tensor.copy_in_gpu(C_);
+}
+
+void FCIComputerThrust::copy_to_tensor_thrust_cpu(TensorThrust& tensor) const
+{
+    cpu_error();
+    tensor.copy_in(C_);
 }
