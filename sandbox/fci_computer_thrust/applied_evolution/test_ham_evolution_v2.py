@@ -51,7 +51,12 @@ print(f" nel:       {nel}")
 fci_comp1 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 fci_comp2 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 
-fci_comp_thrust = qf.FCIComputerThrust(nel=nel, sz=sz, norb=norb)
+fci_comp_thrust = qf.FCIComputerThrust(
+    nel=nel, 
+    sz=sz, 
+    norb=norb,
+    on_gpu=False,
+    data_type="all")
 
 # reference = 'random'
 reference = 'hf'

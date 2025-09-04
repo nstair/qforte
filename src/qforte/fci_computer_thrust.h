@@ -54,7 +54,13 @@ class FCIComputerThrust {
     /// Implementation will be reminicient of modenrn determinant CI codes
     /// Implementation also borrows HEAVILY from the fermionic quantum emulator wfn class
     /// see (https://quantumai.google/openfermion/fqe) and related article
-    FCIComputerThrust(int nel, int sz, int norb, bool on_gpu = false);
+    FCIComputerThrust(
+      int nel, 
+      int sz, 
+      int norb, 
+      bool on_gpu = false, 
+      const std::string& data_type = "complex"
+      );
 
     /// apply a SQOperator to the current state.
     /// (this operation is generally not a physical quantum computing operation).
@@ -74,6 +80,10 @@ class FCIComputerThrust {
     void to_gpu();
 
     void to_cpu();
+
+    // void complex_to_soa();
+
+    // void soa_to_complex();
 
     /// Set a particular element of this TensorThrust, specified by idxs
     void add_to_element(const std::vector<size_t>& idxs,
@@ -377,6 +387,10 @@ class FCIComputerThrust {
   private:
 
     bool on_gpu_;
+
+    bool on_complex_; // true if data is complex, false if data is soa
+    std::string data_type_ = "complex"; 
+
     size_t nel_;
     size_t nalfa_el_;
     size_t nbeta_el_;
