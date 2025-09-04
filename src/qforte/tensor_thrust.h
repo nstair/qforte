@@ -37,7 +37,8 @@ public:
 TensorThrust(
     const std::vector<size_t>& shape,
     const std::string& name = "T",
-    bool on_gpu = false
+    const bool on_gpu = false,
+    const std::string& data_type = "complex"
     );
 
 TensorThrust();
@@ -47,6 +48,15 @@ TensorThrust();
 void to_gpu();
 
 void to_cpu();
+
+// The next four funcitons are just for testing purposes
+void complex_to_soa_gpu();
+
+void soa_to_complex_gpu();
+
+void complex_to_soa_cpu();
+
+void soa_to_complex_cpu();
 
 bool on_gpu() const { return on_gpu_; }
 
@@ -66,11 +76,37 @@ const thrust::device_vector<cuDoubleComplex>& read_d_data() const { return d_dat
 
 void add_thrust(const TensorThrust& other);
 
+// Throw if not on GPU
 void gpu_error() const;
 
+// Throw if not on CPU
 void cpu_error() const;
 
+// Throw if not "complex" data type OR
+// Throw if "all" data type but on_complex_ is false
+void complex_error() const;
+
+// Throw if on_complex_ is false
+void on_complex_error() const;
+
+// Throw if on_complex_ is true
+void on_soa_error() const;
+
+// Throw if not "real" data type
+void real_error() const;
+
+// Throw if not "soa" data type
+void soa_error() const;
+
+// Throw if not "all" data type
+void all_error() const;
+
+// Throw if this data type is not the same as other's
+void data_type_error(const std::string&) const;
+
 std::string name() const { return name_; }
+
+std::string data_type() const { return data_type_; }
 
 /// The number of dimensions of this Tensor, inferred from shape
 size_t ndim() const { return shape_.size(); }
@@ -124,7 +160,11 @@ void set_name(const std::string& name) { name_ = name; }
 void set_strides(const std::vector<size_t> strides) { strides_ = strides; } 
 
 /// Set this Tensor to all zeros with @param shape 
-void zero_with_shape(const std::vector<size_t>& shape, bool on_gpu);
+void zero_with_shape(
+    const std::vector<size_t>& shape, 
+    bool on_gpu,
+    const std::string& data_type = "complex"
+    );
 
 // => Clone Actions <= //
 
@@ -340,6 +380,11 @@ private:
 
 std::string name_;
 
+// Whether the data is real, complex or stored in structure of arrays (SoA) format
+// can be "complex" or "real" or "soa" or "all"
+// "all" should only be used for testing purposes
+std::string data_type_;
+
 std::vector<size_t> shape_;
 
 std::vector<size_t> strides_;
@@ -354,7 +399,23 @@ thrust::host_vector<std::complex<double>> h_data_;
 // The device side data using thrust
 thrust::device_vector<cuDoubleComplex> d_data_;
 
+// The real host side data using thrust
+thrust::host_vector<double> h_re_data_;
+
+// The real device side data using thrust
+thrust::device_vector<double> d_re_data_;
+
+// The imaginary host side data using thrust
+thrust::host_vector<double> h_im_data_;
+
+// The imaginary device side data using thrust
+thrust::device_vector<double> d_im_data_;
+
+// Whether the data is currently on the GPU
 bool on_gpu_;
+
+// If using all, is data complex or soa?
+bool on_complex_;
 
 // => Ed's special total memory thing <= //
 

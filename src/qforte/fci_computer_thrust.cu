@@ -25,11 +25,12 @@
 
 #include "fci_computer_gpu_kernels.cuh"
 
-FCIComputerThrust::FCIComputerThrust(int nel, int sz, int norb, bool on_gpu) : 
+FCIComputerThrust::FCIComputerThrust(int nel, int sz, int norb, bool on_gpu, const std::string& data_type) : 
     nel_(nel), 
     sz_(sz),
     norb_(norb),
-    on_gpu_(on_gpu) {
+    on_gpu_(on_gpu),
+    data_type_(data_type){
 
     if (nel_ < 0) {
         throw std::invalid_argument("Cannot have negative electrons");
@@ -64,7 +65,11 @@ FCIComputerThrust::FCIComputerThrust(int nel, int sz, int norb, bool on_gpu) :
         nbeta_strs_ = 0;
     }
 
-    C_.zero_with_shape({nalfa_strs_, nbeta_strs_}, on_gpu_);
+    C_.zero_with_shape(
+        {nalfa_strs_, nbeta_strs_}, 
+        on_gpu_,
+        data_type_);
+
     C_.set_name("FCI Computer");
 
     // Initialize the FCI graph tensors

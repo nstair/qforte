@@ -528,7 +528,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("__repr__", &TensorThrust::str);
 
     py::class_<FCIComputerThrust>(m, "FCIComputerThrust")
-        .def(py::init<int, int, int>(), "nel"_a, "sz"_a, "norb"_a, "Make a FCIComputerThrust with nel, sz, and norb")
+        .def(py::init<int, int, int, bool, std::string>(), "nel"_a, "sz"_a, "norb"_a, "on_gpu"_a, "data_type"_a, "Make a FCIComputerThrust with nel, sz, and norb")
         .def("hartree_fock_cpu", &FCIComputerThrust::hartree_fock_cpu)
         .def("get_hf_dot", &FCIComputerThrust::get_hf_dot)
         .def("set_element", &FCIComputerThrust::set_element)
