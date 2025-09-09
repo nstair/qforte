@@ -847,6 +847,32 @@ void FCIComputer::evolve_individual_nbody_easy(
     }
 }
 
+void FCIComputer::evolve_individual_nbody_easy_v2(
+    const std::complex<double> time,
+    const std::complex<double> coeff, 
+    Tensor& Cout,       
+    const std::vector<int>& crea,
+    const std::vector<int>& anna,
+    const std::vector<int>& creb,
+    const std::vector<int>& annb) 
+{
+    int n_a = anna.size();
+    int n_b = annb.size();
+
+    int power = n_a * (n_a - 1) / 2 + n_b * (n_b - 1) / 2;
+    std::complex<double> prefactor = coeff * std::pow(-1, power);
+    std::complex<double> factor = std::exp(-time * std::real(prefactor) * std::complex<double>(0.0, 1.0));
+    std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number(anna, annb);
+
+    if (maps.first.size() != 0 and maps.second.size() != 0){
+        for (size_t i = 0; i < maps.first.size(); i++){
+            for (size_t j = 0; j < maps.second.size(); j++){
+                Cout.data()[maps.first[i] * nbeta_strs_ +  maps.second[j]] *= factor;
+            }
+        }       
+    }
+}
+
 void FCIComputer::evolve_individual_nbody_hard(
     const std::complex<double> time,
     const std::complex<double> coeff,
@@ -935,6 +961,309 @@ void FCIComputer::evolve_individual_nbody_hard(
         annb);
 }
 
+void FCIComputer::evolve_individual_nbody_hard_v2(
+    const std::complex<double> time,
+    const std::complex<double> coeff,
+    Tensor& Cout,       
+    const std::vector<int>& crea,
+    const std::vector<int>& anna,
+    const std::vector<int>& creb,
+    const std::vector<int>& annb) 
+{
+    std::vector<int> dagworka(crea);
+    std::vector<int> dagworkb(creb);
+    std::vector<int> undagworka(anna);
+    std::vector<int> undagworkb(annb);
+    std::vector<int> numbera;
+    std::vector<int> numberb;
+
+    int parity = 0;
+    parity += isolate_number_operators(
+        crea,
+        anna,
+        dagworka,
+        undagworka,
+        numbera);
+
+    parity += isolate_number_operators(
+        creb,
+        annb,
+        dagworkb,
+        undagworkb,
+        numberb);
+
+    std::vector<int> numbera_dagworka(numbera.begin(), numbera.end());
+    numbera_dagworka.insert(numbera_dagworka.end(), dagworka.begin(), dagworka.end());
+
+    std::vector<int> numberb_dagworkb(numberb.begin(), numberb.end());
+    numberb_dagworkb.insert(numberb_dagworkb.end(), dagworkb.begin(), dagworkb.end());
+
+    std::pair<std::vector<int>, std::vector<int>> maps1 = evaluate_map(
+        numbera_dagworka,
+        undagworka,
+        numberb_dagworkb,
+        undagworkb);
+
+    std::vector<int> numbera_undagworka(numbera.begin(), numbera.end());
+    numbera_undagworka.insert(numbera_undagworka.end(), undagworka.begin(), undagworka.end());
+
+    std::vector<int> numberb_undagworkb(numberb.begin(), numberb.end());
+    numberb_undagworkb.insert(numberb_undagworkb.end(), undagworkb.begin(), undagworkb.end());
+
+    std::pair<std::vector<int>, std::vector<int>> maps2 = evaluate_map(
+        numbera_undagworka, 
+        dagworka, 
+        numberb_undagworkb, 
+        dagworkb);
+
+    // ===> Begin 1st Accumulate index generation <=== //
+
+    int phase = std::pow(-1, (crea.size() + anna.size()) * (creb.size() + annb.size()));
+    std::complex<double> work_cof = std::conj(coeff) * static_cast<double>(phase) * std::complex<double>(0.0, -1.0);
+
+    if((anna.size() != crea.size()) or (annb.size() != creb.size())){
+        throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
+    }
+
+    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ualfamap1 = graph_.make_mapping_each(
+        true,
+        anna,
+        crea);
+
+    if (std::get<0>(ualfamap1) == 0) {
+        return;
+    }
+
+    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ubetamap1 = graph_.make_mapping_each(
+        false,
+        annb,
+        creb);
+
+    if (std::get<0>(ubetamap1) == 0) {
+        return;
+    }
+
+    std::vector<int> sourcea1(std::get<0>(ualfamap1));
+    std::vector<int> targeta1(std::get<0>(ualfamap1));
+    std::vector<int> paritya1(std::get<0>(ualfamap1));
+    std::vector<int> sourceb1(std::get<0>(ubetamap1));
+    std::vector<int> targetb1(std::get<0>(ubetamap1));
+    std::vector<int> parityb1(std::get<0>(ubetamap1));
+
+    /// NICK: All this can be done in the make_mapping_each fucntion.
+    /// Maybe try like a make_abbrev_mapping_each
+
+    /// NICK: Might be slow, check this out...
+    for (int i = 0; i < std::get<0>(ualfamap1); i++) {
+        sourcea1[i] = std::get<1>(ualfamap1)[i];
+        targeta1[i] = graph_.get_aind_for_str(std::get<2>(ualfamap1)[i]);
+        paritya1[i] = 1.0 - 2.0 * std::get<3>(ualfamap1)[i];
+    }
+
+    for (int i = 0; i < std::get<0>(ubetamap1); i++) {
+        sourceb1[i] = std::get<1>(ubetamap1)[i];
+        targetb1[i] = graph_.get_bind_for_str(std::get<2>(ubetamap1)[i]);
+        parityb1[i] = 1.0 - 2.0 * std::get<3>(ubetamap1)[i];
+    }
+
+    // ===> Begin 2nd Accumulate index generation <=== //             
+
+    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ualfamap2 = graph_.make_mapping_each(
+        true,
+        crea,
+        anna);
+
+    if (std::get<0>(ualfamap2) == 0) {
+        return;
+    }
+
+    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ubetamap2 = graph_.make_mapping_each(
+        false,
+        creb,
+        annb);
+
+    if (std::get<0>(ubetamap2) == 0) {
+        return;
+    }
+
+    std::vector<int> sourcea2(std::get<0>(ualfamap2));
+    std::vector<int> targeta2(std::get<0>(ualfamap2));
+    std::vector<int> paritya2(std::get<0>(ualfamap2));
+    std::vector<int> sourceb2(std::get<0>(ubetamap2));
+    std::vector<int> targetb2(std::get<0>(ubetamap2));
+    std::vector<int> parityb2(std::get<0>(ubetamap2));
+
+    /// NICK: All this can be done in the make_mapping_each fucntion.
+    /// Maybe try like a make_abbrev_mapping_each
+
+    /// NICK: Might be slow, check this out...
+    for (int i = 0; i < std::get<0>(ualfamap2); i++) {
+        sourcea2[i] = std::get<1>(ualfamap2)[i];
+        targeta2[i] = graph_.get_aind_for_str(std::get<2>(ualfamap2)[i]);
+        paritya2[i] = 1.0 - 2.0 * std::get<3>(ualfamap2)[i];
+    }
+
+    for (int i = 0; i < std::get<0>(ubetamap2); i++) {
+        sourceb2[i] = std::get<1>(ubetamap2)[i];
+        targetb2[i] = graph_.get_bind_for_str(std::get<2>(ubetamap2)[i]);
+        parityb2[i] = 1.0 - 2.0 * std::get<3>(ubetamap2)[i];
+    }
+
+    // re-work coefficeints (dt * h_mu or t_mu )
+
+    std::complex<double> ncoeff = coeff * std::pow(-1.0, parity);
+    std::complex<double> absol = std::abs(ncoeff);
+    std::complex<double> sinfactor = std::sin(time * absol) / absol;
+
+    const std::complex<double> cabs = std::abs(ncoeff);
+    const std::complex<double> factor = std::cos(time * cabs);
+
+    std::complex<double>  acc_coeff1 = work_cof * sinfactor;
+
+    std::complex<double>  acc_coeff2 = coeff * std::complex<double>(0.0, -1.0) * sinfactor;
+
+    // ===> In-place 2×2 Givens-like update (replaces the 4 loops used previously) <===
+    //
+    // This assumes the pairing relationships hold:
+    //   sourcea1 == targeta2,  sourceb1 == targetb2
+    //   sourcea2 == targeta1,  sourceb2 == targetb1
+    // so that each coupled pair of determinants can be updated with a 2×2 block:
+    //
+    //   [ u' ] = [ factor                  acc_coeff2 * p2 ] [ u0 ]
+    //   [ v' ]   [ acc_coeff1 * p1         factor          ] [ v0 ]
+    //
+    // where
+    //   u ≡ Cout[sourcea1[i], sourceb1[j]]
+    //   v ≡ Cout[targeta1[i], targetb1[j]]
+    //   p1 = paritya1[i] * parityb1[j]  (for the g† leg)
+    //   p2 = paritya2[i] * parityb2[j]  (for the g   leg)
+    //
+    // Notes:
+    //   - factor  = cos(time * |ncoeff|)
+    //   - acc_coeff1 = conj(coeff) * phase * (-i) * sin(time*|ncoeff|)/|ncoeff|
+    //   - acc_coeff2 = coeff        *       (-i) * sin(time*|ncoeff|)/|ncoeff|
+    //   - We snapshot u0,v0 before writing so the update is safely in-place.
+    //
+
+    // (Optional) quick sanity guard to avoid out-of-bounds if any leg is empty
+    if (!sourcea1.empty() && !sourceb1.empty() &&
+        sourcea1.size() == targeta1.size() &&
+        sourceb1.size() == targetb1.size() &&
+        sourcea1.size() == sourcea2.size() && targeta1.size() == sourcea2.size() &&
+        sourceb1.size() == sourceb2.size() && targetb1.size() == sourceb2.size()) {
+
+        // (Optional) check the expected pairings; if you want hard asserts, replace with throws.
+        const bool pairA_ok = std::equal(sourcea1.begin(), sourcea1.end(), targeta2.begin())
+                        && std::equal(sourcea2.begin(), sourcea2.end(), targeta1.begin());
+        const bool pairB_ok = std::equal(sourceb1.begin(), sourceb1.end(), targetb2.begin())
+                        && std::equal(sourceb2.begin(), sourceb2.end(), targetb1.begin());
+
+        if (pairA_ok && pairB_ok) {
+            std::complex<double>* __restrict data = Cout.data().data();
+
+            for (std::size_t ia = 0; ia < sourcea1.size(); ++ia) {
+                const int sa = sourcea1[ia];
+                const int ta = targeta1[ia];
+
+                // Precompute row offsets
+                const std::size_t sa_row = static_cast<std::size_t>(sa) * static_cast<std::size_t>(nbeta_strs_);
+                const std::size_t ta_row = static_cast<std::size_t>(ta) * static_cast<std::size_t>(nbeta_strs_);
+
+                // Per-row parity for the two legs
+                const int pa1 = paritya1[ia]; // ±1
+                const int pa2 = paritya2[ia]; // ±1
+
+                for (std::size_t ib = 0; ib < sourceb1.size(); ++ib) {
+                    const int sb = sourceb1[ib];
+                    const int tb = targetb1[ib];
+
+                    // Column indices
+                    const std::size_t u_idx = sa_row + static_cast<std::size_t>(sb); // u ≡ (sa,sb)
+                    const std::size_t v_idx = ta_row + static_cast<std::size_t>(tb); // v ≡ (ta,tb)
+
+                    // Snapshot old values before writing (crucial for in-place correctness)
+                    const std::complex<double> u0 = data[u_idx];
+                    const std::complex<double> v0 = data[v_idx];
+
+                    // Per-column parity for the two legs
+                    const int pb1 = parityb1[ib]; // ±1
+                    const int pb2 = parityb2[ib]; // ±1
+
+                    // Combined parity prefactors for off-diagonal couplings
+                    const std::complex<double> p1 = static_cast<double>(pa1 * pb1); // for g† leg
+                    const std::complex<double> p2 = static_cast<double>(pa2 * pb2); // for g  leg
+
+                    // 2×2 update
+                    const std::complex<double> u_new = factor * u0 + acc_coeff2 * p2 * v0;
+                    const std::complex<double> v_new = factor * v0 + acc_coeff1 * p1 * u0;
+
+                    data[u_idx] = u_new;
+                    data[v_idx] = v_new;
+                }
+            }
+        } else {
+            // Fallback: if pairings don't hold, keep the original four-loop path (or throw).
+            // throw std::logic_error("Expected (A1,B1)<->(A2,B2) pairing does not hold; cannot use in-place 2x2 update.");
+        }
+    }
+
+    // ---- ultra-compact debug print ------------------------------------------
+    // {
+    //     std::cout << "\n ==> New Op <== \n" << std::endl;
+
+    //     auto print_vec = [](const char* label, const std::vector<int>& v) {
+    //         std::cout << label << " ";
+    //         for (std::size_t i = 0; i < v.size(); ++i) {
+    //             if (i) std::cout << ' ';
+    //             std::cout << v[i];
+    //         }
+    //         std::cout << "\n";
+    //     };
+    //     auto eq = [](const std::vector<int>& a, const std::vector<int>& b) {
+    //         return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin());
+    //     };
+
+    //     // maps (4 lines)
+    //     // print_vec("M1.A:", maps1.first);
+    //     // print_vec("M1.B:", maps1.second);
+    //     // print_vec("M2.A:", maps2.first);
+    //     // print_vec("M2.B:", maps2.second);
+
+    //     // Six lines: values only
+    //     print_vec("A1.src:", sourcea1);
+    //     print_vec("A2.tgt:", targeta2);
+    //     print_vec("M1.A:  ", maps1.first);
+    //     std::cout << "\n" << std::endl;
+
+    //     print_vec("A1.tgt:", targeta1);
+    //     print_vec("A2.src:", sourcea2);
+    //     print_vec("M2.A:  ", maps2.first);
+    //     std::cout << "\n" << std::endl;
+
+    //     print_vec("B1.src:", sourceb1);
+    //     print_vec("B2.tgt:", targetb2);
+    //     print_vec("M1.B:  ", maps1.second);
+    //     std::cout << "\n" << std::endl;
+
+    //     print_vec("B1.tgt:", targetb1);
+    //     print_vec("B2.src:", sourceb2);
+    //     print_vec("M2.B:  ", maps2.second);
+    //     std::cout << "\n" << std::endl;
+
+    //     // True/false equivalence checks (two directions)
+    //     std::cout << "eq(A1.src, A2.tgt)=" << (eq(sourcea1, targeta2) ? "true" : "false")
+    //             << "  eq(B1.src, B2.tgt)=" << (eq(sourceb1, targetb2) ? "true" : "false")
+    //             << "  eq(A2.src, A1.tgt)=" << (eq(sourcea2, targeta1) ? "true" : "false")
+    //             << "  eq(B2.src, B1.tgt)=" << (eq(sourceb2, targetb1) ? "true" : "false")
+    //             << "\n";
+
+    //     std::cout << "\n\n" << std::endl;
+    // }
+    // --------------------------------------------------------------------------
+
+
+}
+
 void FCIComputer::evolve_individual_nbody(
     const std::complex<double> time,
     const SQOperator& sqop,
@@ -1015,10 +1344,112 @@ void FCIComputer::evolve_individual_nbody(
             creb,
             annb);
     } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
+        
         evolve_individual_nbody_hard(
             time,
             parity * std::get<0>(term),
             Cin,
+            Cout,
+            crea,
+            anna, 
+            creb,
+            annb);
+
+    } else {
+        print_vector(crea, "crea");
+        print_vector(anna, "anna");
+        print_vector(creb, "creb");
+        print_vector(annb, "annb");
+        throw std::invalid_argument(
+            "Evolved state must remain in spin and particle-number symmetry sector, bad op above"
+        );
+    }
+}
+
+/// Same as above but all inplace
+void FCIComputer::evolve_individual_nbody_v2(
+    const std::complex<double> time,
+    const SQOperator& sqop,
+    Tensor& Cout,
+    const bool antiherm,
+    const bool adjoint) 
+{
+
+    if (sqop.terms().size() != 2) {
+        std::cout << "This sqop has " << sqop.terms().size() << " terms." << std::endl;
+        throw std::invalid_argument("Individual n-body code is called with multiple terms");
+    }
+
+    /// NICK: TODO, implement a hermitian check, at least for two term SQOperators
+    // sqop.hermitian_check();
+
+    auto term = sqop.terms()[0];
+
+    if(std::abs(std::get<0>(term)) < compute_threshold_){
+        return;
+    }
+
+    if(adjoint){
+        std::get<0>(term) *= -1.0;
+    }
+
+    if(antiherm){
+        std::complex<double> onei(0.0, 1.0);
+        std::get<0>(term) *= onei;
+    }
+
+    if(std::get<1>(term).size()==0 && std::get<2>(term).size()==0){
+        std::complex<double> twoi(0.0, -2.0);
+        Cout.scale(std::exp(twoi * time * std::get<0>(term)));
+        return;
+    }
+
+    std::vector<int> crea;
+    std::vector<int> anna;
+    std::vector<int> creb;
+    std::vector<int> annb;
+
+    for(size_t i = 0; i < std::get<1>(term).size(); i++){
+        if(std::get<1>(term)[i]%2 == 0){
+            crea.push_back(std::floor(std::get<1>(term)[i] / 2));
+        } else {
+            creb.push_back(std::floor(std::get<1>(term)[i] / 2));
+        }
+    }
+
+    for(size_t i = 0; i < std::get<2>(term).size(); i++){
+        if(std::get<2>(term)[i]%2 == 0){
+            anna.push_back(std::floor(std::get<2>(term)[i] / 2));
+        } else {
+            annb.push_back(std::floor(std::get<2>(term)[i] / 2));
+        }
+    }
+
+    std::vector<size_t> ops1(std::get<1>(term));
+    std::vector<size_t> ops2(std::get<2>(term));
+    ops1.insert(ops1.end(), ops2.begin(), ops2.end());
+
+    int nswaps = parity_sort(ops1);
+
+    std::complex<double> parity = std::pow(-1, nswaps);
+
+    if (crea == anna && creb == annb) {
+        
+        std::complex<double> factor;
+        evolve_individual_nbody_easy_v2(
+            time,
+            parity * 2.0 * std::get<0>(term), 
+            Cout,
+            crea,
+            anna, 
+            creb,
+            annb);
+
+    } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
+
+        evolve_individual_nbody_hard_v2(
+            time,
+            parity * std::get<0>(term),
             Cout,
             crea,
             anna, 
@@ -1254,6 +1685,31 @@ void FCIComputer::evolve_pool_trotter_basic(
     }
 }
 
+void FCIComputer::evolve_pool_trotter_basic_v2(
+      const SQOpPool& pool,
+      const bool antiherm,
+      const bool adjoint)
+
+{
+    if(adjoint){
+        for (int i = pool.terms().size() - 1; i >= 0; --i) {
+            apply_sqop_evolution_v2(
+                pool.terms()[i].first, 
+                pool.terms()[i].second,
+                antiherm,
+                adjoint);
+        }
+    } else {
+        for (const auto& sqop_term : pool.terms()) {
+            apply_sqop_evolution_v2(
+                sqop_term.first, 
+                sqop_term.second,
+                antiherm,
+                adjoint);
+            }
+    }
+}
+
 void FCIComputer::evolve_pool_trotter(
       const SQOpPool& pool,
       const double evolution_time,
@@ -1338,6 +1794,90 @@ void FCIComputer::evolve_pool_trotter(
     }
 }
 
+void FCIComputer::evolve_pool_trotter_v2(
+      const SQOpPool& pool,
+      const double evolution_time,
+      const int trotter_steps,
+      const int trotter_order,
+      const bool antiherm,
+      const bool adjoint)
+
+{
+    if(trotter_order == 1){
+
+        std::complex<double> prefactor = evolution_time / static_cast<std::complex<double>>(trotter_steps);
+
+        if(adjoint){
+            for( int r = 0; r < trotter_steps; r++) {
+                for (int i = pool.terms().size() - 1; i >= 0; --i) {
+                    apply_sqop_evolution_v2(
+                        prefactor * pool.terms()[i].first, 
+                        pool.terms()[i].second,
+                        antiherm,
+                        adjoint);
+                }
+            }
+                
+
+        } else {
+            for( int r = 0; r < trotter_steps; r++) {
+                for (const auto& sqop_term : pool.terms()) {
+                    apply_sqop_evolution_v2(
+                        prefactor * sqop_term.first, 
+                        sqop_term.second,
+                        antiherm,
+                        adjoint);
+                }
+            }
+        }
+
+    } else if (trotter_order == 2 ) {
+        std::complex<double> prefactor = 0.5 * evolution_time / static_cast<std::complex<double>>(trotter_steps);
+
+        if(adjoint){
+            for( int r = 0; r < trotter_steps; r++) {
+                for (int i = pool.terms().size() - 1; i >= 0; --i) {
+                    apply_sqop_evolution_v2(
+                        prefactor * pool.terms()[i].first, 
+                        pool.terms()[i].second,
+                        antiherm,
+                        adjoint);
+                }
+
+                for (const auto& sqop_term : pool.terms()) {
+                    apply_sqop_evolution_v2(
+                        prefactor * sqop_term.first, 
+                        sqop_term.second,
+                        antiherm,
+                        adjoint);
+                }
+            }
+                
+
+        } else {
+            for( int r = 0; r < trotter_steps; r++) {
+                for (const auto& sqop_term : pool.terms()) {
+                    apply_sqop_evolution_v2(
+                        prefactor * sqop_term.first, 
+                        sqop_term.second,
+                        antiherm,
+                        adjoint);
+                }
+
+                for (int i = pool.terms().size() - 1; i >= 0; --i) {
+                    apply_sqop_evolution_v2(
+                        prefactor * pool.terms()[i].first, 
+                        pool.terms()[i].second,
+                        antiherm,
+                        adjoint);
+                }
+            }
+        }
+    } else {
+        throw std::runtime_error("Higher than 2nd order trotter not yet implemented"); 
+    }
+}
+
 void FCIComputer::apply_sqop_evolution(
       const std::complex<double> time,
       const SQOperator& sqop,
@@ -1349,6 +1889,20 @@ void FCIComputer::apply_sqop_evolution(
         time,
         sqop,
         Cin,
+        C_,
+        antiherm,
+        adjoint); 
+}
+
+void FCIComputer::apply_sqop_evolution_v2(
+      const std::complex<double> time,
+      const SQOperator& sqop,
+      const bool antiherm,
+      const bool adjoint)
+{
+    evolve_individual_nbody_v2(
+        time,
+        sqop,
         C_,
         antiherm,
         adjoint); 
