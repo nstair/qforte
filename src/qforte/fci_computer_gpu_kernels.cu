@@ -546,3 +546,119 @@ extern "C" void scale_elements_wrapper(
         throw std::runtime_error("Kernel execution failed");
     }
 }
+
+// === New in-place 2x2 Givens-like update kernel implementation ===
+__global__ void inplace_givens_update_kernel(
+    cuDoubleComplex* __restrict__ d_Cout,
+    const int* __restrict__ sourcea1,
+    const int* __restrict__ targeta1,
+    const cuDoubleComplex* __restrict__ paritya1,
+    const int* __restrict__ sourcea2,
+    const int* __restrict__ targeta2,
+    const cuDoubleComplex* __restrict__ paritya2,
+    const int* __restrict__ sourceb1,
+    const int* __restrict__ targetb1,
+    const cuDoubleComplex* __restrict__ parityb1,
+    const int* __restrict__ sourceb2,
+    const int* __restrict__ targetb2,
+    const cuDoubleComplex* __restrict__ parityb2,
+    int na,
+    int nb,
+    int nbeta_strs_,
+    cuDoubleComplex factor,
+    cuDoubleComplex acc_coeff1,
+    cuDoubleComplex acc_coeff2)
+{
+    int ia = blockIdx.x * blockDim.x + threadIdx.x;
+    int ib = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (ia < na && ib < nb) {
+        // Indices for leg1
+        int sa1 = sourcea1[ia];
+        int ta1 = targeta1[ia];
+        int sb1 = sourceb1[ib];
+        int tb1 = targetb1[ib];
+
+        // Paired leg2 (assumes pairing relationships already validated on host)
+        int sa2 = sourcea2[ia];
+        int ta2 = targeta2[ia];
+        int sb2 = sourceb2[ib];
+        int tb2 = targetb2[ib];
+
+        // Row offsets
+        int sa1_row = sa1 * nbeta_strs_;
+        int ta1_row = ta1 * nbeta_strs_;
+        int sa2_row = sa2 * nbeta_strs_;
+        int ta2_row = ta2 * nbeta_strs_;
+
+        // Column indices
+        int idx_u = sa1_row + sb1; // u ≡ (sa1,sb1)
+        int idx_v = ta1_row + tb1; // v ≡ (ta1,tb1)
+
+        // Snapshot u0, v0 (in-place safety)
+        cuDoubleComplex u0 = d_Cout[idx_u];
+        cuDoubleComplex v0 = d_Cout[idx_v];
+
+        // Combined parity factors
+        cuDoubleComplex p1 = cuCmul(paritya1[ia], parityb1[ib]); // g† leg
+        cuDoubleComplex p2 = cuCmul(paritya2[ia], parityb2[ib]); // g  leg
+
+        // u' = factor * u0 + acc_coeff2 * p2 * v0
+        cuDoubleComplex term_u = cuCmul(acc_coeff2, cuCmul(p2, v0));
+        cuDoubleComplex u_new = cuCadd(cuCmul(factor, u0), term_u);
+
+        // v' = factor * v0 + acc_coeff1 * p1 * u0
+        cuDoubleComplex term_v = cuCmul(acc_coeff1, cuCmul(p1, u0));
+        cuDoubleComplex v_new = cuCadd(cuCmul(factor, v0), term_v);
+
+        d_Cout[idx_u] = u_new;
+        d_Cout[idx_v] = v_new;
+    }
+}
+
+extern "C" void inplace_givens_update_wrapper(
+    cuDoubleComplex* d_Cout,
+    const int* sourcea1,
+    const int* targeta1,
+    const cuDoubleComplex* paritya1,
+    const int* sourcea2,
+    const int* targeta2,
+    const cuDoubleComplex* paritya2,
+    const int* sourceb1,
+    const int* targetb1,
+    const cuDoubleComplex* parityb1,
+    const int* sourceb2,
+    const int* targetb2,
+    const cuDoubleComplex* parityb2,
+    int na,
+    int nb,
+    int nbeta_strs_,
+    cuDoubleComplex factor,
+    cuDoubleComplex acc_coeff1,
+    cuDoubleComplex acc_coeff2)
+{
+    if (na == 0 || nb == 0) return;
+
+    dim3 block(16, 16);
+    dim3 grid((na + block.x - 1) / block.x, (nb + block.y - 1) / block.y);
+
+    inplace_givens_update_kernel<<<grid, block>>>(
+        d_Cout,
+        sourcea1, targeta1, paritya1,
+        sourcea2, targeta2, paritya2,
+        sourceb1, targetb1, parityb1,
+        sourceb2, targetb2, parityb2,
+        na, nb, nbeta_strs_,
+        factor, acc_coeff1, acc_coeff2);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Failed to launch inplace_givens_update_kernel (" << cudaGetErrorString(err) << ")" << std::endl;
+        throw std::runtime_error("inplace_givens_update_kernel launch failed");
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "inplace_givens_update_kernel execution failed (" << cudaGetErrorString(err) << ")" << std::endl;
+        throw std::runtime_error("inplace_givens_update_kernel execution failed");
+    }
+}
