@@ -246,6 +246,17 @@ class FCIComputer {
       const std::vector<int>& creb,
       const std::vector<int>& annb); 
 
+    /// Same as above but in-place (although the above is also in-place)
+    /// and Cin should be removed as an argument.
+    void evolve_individual_nbody_easy_v2(
+      const std::complex<double> time,
+      const std::complex<double> coeff,
+      Tensor& Cout,
+      const std::vector<int>& crea,
+      const std::vector<int>& anna,
+      const std::vector<int>& creb,
+      const std::vector<int>& annb); 
+
     /// A lower-level helper function that applies the exponential of a
     /// two-term (hermitian) SQOperator to the FCIComputer.
     /**
@@ -271,6 +282,15 @@ class FCIComputer {
       const std::complex<double> time,
       const std::complex<double> coeff,
       const Tensor& Cin,
+      Tensor& Cout,
+      const std::vector<int>& crea,
+      const std::vector<int>& anna,
+      const std::vector<int>& creb,
+      const std::vector<int>& annb);
+
+    void evolve_individual_nbody_hard_v2(
+      const std::complex<double> time,
+      const std::complex<double> coeff,
       Tensor& Cout,
       const std::vector<int>& crea,
       const std::vector<int>& anna,
@@ -310,11 +330,25 @@ class FCIComputer {
       const bool antiherm = false,
       const bool adjoint = false);
 
+    /// Same as above but all in-place for Cout
+    void evolve_individual_nbody_v2(
+      const std::complex<double> time,
+      const SQOperator& sqop,
+      Tensor& Cout,
+      const bool antiherm = false,
+      const bool adjoint = false);
+
     /// A function that applies the exponential of a
     /// two-term (hermitian) SQOperator to the FCIComputer.
     /// The operator is multipled by by the evolution time
     /// Onus on the user to assure evolution is unitary.
     void apply_sqop_evolution(
+      const std::complex<double> time,
+      const SQOperator& sqop,
+      const bool antiherm = false,
+      const bool adjoint = false);
+
+    void apply_sqop_evolution_v2(
       const std::complex<double> time,
       const SQOperator& sqop,
       const bool antiherm = false,
@@ -331,11 +365,25 @@ class FCIComputer {
       const bool antiherm = false,
       const bool adjoint = false);
 
+    /// Same as above but all inplace for C_
+    void evolve_pool_trotter_basic_v2(
+      const SQOpPool& pool,
+      const bool antiherm = false,
+      const bool adjoint = false);
+
     /// A more flexable function that applies the exponentials of an ordered list of
     /// two-term (hermitian) SQOperators to the FCIComputer
     /// Onus on the user to assure evolution is unitary.
     /// Primary use of this funcion is for dUCC ansatz
     void evolve_pool_trotter(
+      const SQOpPool& pool,
+      const double evolution_time,
+      const int trotter_steps,
+      const int trotter_order,
+      const bool antiherm = false,
+      const bool adjoint = false);
+
+    void evolve_pool_trotter_v2(
       const SQOpPool& pool,
       const double evolution_time,
       const int trotter_steps,
