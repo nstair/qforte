@@ -97,3 +97,46 @@ extern "C" void scale_elements_wrapper(
     int second_size,
     int nbeta_strs_,
     cuDoubleComplex factor);
+
+// === New in-place 2x2 Givens-like update kernel (hard n-body, v4) ===
+__global__ void inplace_givens_update_kernel(
+    cuDoubleComplex* d_Cout,
+    const int* sourcea1,
+    const int* targeta1,
+    const cuDoubleComplex* paritya1,
+    const int* sourcea2,
+    const int* targeta2,
+    const cuDoubleComplex* paritya2,
+    const int* sourceb1,
+    const int* targetb1,
+    const cuDoubleComplex* parityb1,
+    const int* sourceb2,
+    const int* targetb2,
+    const cuDoubleComplex* parityb2,
+    int na,
+    int nb,
+    int nbeta_strs_,
+    cuDoubleComplex factor,
+    cuDoubleComplex acc_coeff1,
+    cuDoubleComplex acc_coeff2);
+
+extern "C" void inplace_givens_update_wrapper(
+    cuDoubleComplex* d_Cout,
+    const int* sourcea1,
+    const int* targeta1,
+    const cuDoubleComplex* paritya1,
+    const int* sourcea2,
+    const int* targeta2,
+    const cuDoubleComplex* paritya2,
+    const int* sourceb1,
+    const int* targetb1,
+    const cuDoubleComplex* parityb1,
+    const int* sourceb2,
+    const int* targetb2,
+    const cuDoubleComplex* parityb2,
+    int na,
+    int nb,
+    int nbeta_strs_,
+    cuDoubleComplex factor,
+    cuDoubleComplex acc_coeff1,
+    cuDoubleComplex acc_coeff2);
