@@ -569,51 +569,70 @@ __global__ void inplace_givens_update_kernel(
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2)
 {
-    int ia = blockIdx.x * blockDim.x + threadIdx.x;
-    int ib = blockIdx.y * blockDim.y + threadIdx.y;
+    int ta = threadIdx.x;
+    int tb = threadIdx.y;
 
-    if (ia < na && ib < nb) {
-        // Indices for leg1
-        int sa1 = sourcea1[ia];
-        int ta1 = targeta1[ia];
-        int sb1 = sourceb1[ib];
-        int tb1 = targetb1[ib];
+    int ia = blockIdx.x * blockDim.x + ta;
+    int ib = blockIdx.y * blockDim.y + tb;
 
-        // Paired leg2 (assumes pairing relationships already validated on host)
-        int sa2 = sourcea2[ia];
-        int ta2 = targeta2[ia];
-        int sb2 = sourceb2[ib];
-        int tb2 = targetb2[ib];
+    if (ia >= na || ib >= nb) return;
 
-        // Row offsets
-        int sa1_row = sa1 * nbeta_strs_;
-        int ta1_row = ta1 * nbeta_strs_;
-        int sa2_row = sa2 * nbeta_strs_;
-        int ta2_row = ta2 * nbeta_strs_;
+    __shared__ int s_sourcea1[16];
+    __shared__ int s_targeta1[16];
+    __shared__ cuDoubleComplex s_paritya1[16];
+    __shared__ cuDoubleComplex s_paritya2[16];
+    __shared__ int s_sourceb1[16];
+    __shared__ int s_targetb1[16];
+    __shared__ cuDoubleComplex s_parityb1[16];
+    __shared__ cuDoubleComplex s_parityb2[16];
 
-        // Column indices
-        int idx_u = sa1_row + sb1; // u ≡ (sa1,sb1)
-        int idx_v = ta1_row + tb1; // v ≡ (ta1,tb1)
+    // Load data into shared memory
+    s_sourcea1[ta] = sourcea1[ia];
+    s_targeta1[ta] = targeta1[ia];
+    s_paritya1[ta] = paritya1[ia];
+    s_paritya2[ta] = paritya2[ia];
+    s_sourceb1[tb] = sourceb1[ib];
+    s_targetb1[tb] = targetb1[ib];
+    s_parityb1[tb] = parityb1[ib];
+    s_parityb2[tb] = parityb2[ib];
 
-        // Snapshot u0, v0 (in-place safety)
-        cuDoubleComplex u0 = d_Cout[idx_u];
-        cuDoubleComplex v0 = d_Cout[idx_v];
+    /* do everything except final write with shared mem */
 
-        // Combined parity factors
-        cuDoubleComplex p1 = cuCmul(paritya1[ia], parityb1[ib]); // g† leg
-        cuDoubleComplex p2 = cuCmul(paritya2[ia], parityb2[ib]); // g  leg
+    // Indices for leg1
+    int sa1 = s_sourcea1[ta];
+    int ta1 = s_targeta1[ta];
+    int sb1 = s_sourceb1[tb];
+    int tb1 = s_targetb1[tb];
 
-        // u' = factor * u0 + acc_coeff2 * p2 * v0
-        cuDoubleComplex term_u = cuCmul(acc_coeff2, cuCmul(p2, v0));
-        cuDoubleComplex u_new = cuCadd(cuCmul(factor, u0), term_u);
+    // Row offsets
+    int sa1_row = sa1 * nbeta_strs_;
+    int ta1_row = ta1 * nbeta_strs_;
 
-        // v' = factor * v0 + acc_coeff1 * p1 * u0
-        cuDoubleComplex term_v = cuCmul(acc_coeff1, cuCmul(p1, u0));
-        cuDoubleComplex v_new = cuCadd(cuCmul(factor, v0), term_v);
+    // Column indices
+    int idx_u = sa1_row + sb1; // u ≡ (sa1,sb1)
+    int idx_v = ta1_row + tb1; // v ≡ (ta1,tb1)
 
-        d_Cout[idx_u] = u_new;
-        d_Cout[idx_v] = v_new;
-    }
+    // Snapshot u0, v0 (in-place safety)
+    cuDoubleComplex u0 = d_Cout[idx_u];
+    cuDoubleComplex v0 = d_Cout[idx_v];
+
+    // Combined parity factors
+    cuDoubleComplex p1 = cuCmul(s_paritya1[ta], s_parityb1[tb]); // g† leg
+    cuDoubleComplex p2 = cuCmul(s_paritya2[ta], s_parityb2[tb]); // g  leg
+
+    // u' = factor * u0 + acc_coeff2 * p2 * v0
+    cuDoubleComplex term_u = cuCmul(acc_coeff2, cuCmul(p2, v0));
+    cuDoubleComplex u_new = cuCadd(cuCmul(factor, u0), term_u);
+
+    // v' = factor * v0 + acc_coeff1 * p1 * u0
+    cuDoubleComplex term_v = cuCmul(acc_coeff1, cuCmul(p1, u0));
+    cuDoubleComplex v_new = cuCadd(cuCmul(factor, v0), term_v);
+
+    // Sync threads before writing back
+    __syncthreads();
+
+    d_Cout[idx_u] = u_new;
+    d_Cout[idx_v] = v_new;
 }
 
 extern "C" void inplace_givens_update_wrapper(
