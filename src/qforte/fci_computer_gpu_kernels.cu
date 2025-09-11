@@ -673,3 +673,117 @@ extern "C" void inplace_givens_update_wrapper(
         throw std::runtime_error("inplace_givens_update_kernel execution failed");
     }
 }
+
+// Rows-only, coalesced across columns.
+// One block processes one (sa1, ta1) pair; threads iterate j across nbeta_strs_.
+__global__ void inplace_givens_update_rows_kernel(
+    cuDoubleComplex* __restrict__ d_Cout,
+    const int* __restrict__ sourcea1,      // [na]
+    const int* __restrict__ targeta1,      // [na]
+    const cuDoubleComplex* __restrict__ paritya1, // [na]  (g† leg, row)
+    const cuDoubleComplex* __restrict__ paritya2, // [na]  (g  leg, row)
+    int na,
+    int nbeta_strs_,                        // number of columns
+
+    // Optional per-column parity (set to nullptr if not used)
+    const cuDoubleComplex* __restrict__ parityb1, // [nbeta_strs_] (g† leg, col)
+    const cuDoubleComplex* __restrict__ parityb2, // [nbeta_strs_] (g  leg, col)
+
+    cuDoubleComplex factor,
+    cuDoubleComplex acc_coeff1,
+    cuDoubleComplex acc_coeff2)
+{
+    int ia = blockIdx.x;        // each block handles one row-pair index
+    if (ia >= na) return;
+
+    int j   = threadIdx.x;      // sweep across columns
+    int stride = blockDim.x;
+
+    const int sa1 = sourcea1[ia];
+    const int ta1 = targeta1[ia];
+
+    const int base_u = sa1 * nbeta_strs_;
+    const int base_v = ta1 * nbeta_strs_;
+
+    // Row parity terms are constant across the whole row for this ia
+    const cuDoubleComplex pa1 = paritya1[ia]; // g† leg (row)
+    const cuDoubleComplex pa2 = paritya2[ia]; // g  leg (row)
+
+    for (int col = j; col < nbeta_strs_; col += stride) {
+        // Optional per-column parity (if provided)
+        cuDoubleComplex pb1 = make_cuDoubleComplex(1.0, 0.0);
+        cuDoubleComplex pb2 = make_cuDoubleComplex(1.0, 0.0);
+        if (parityb1) pb1 = parityb1[col];
+        if (parityb2) pb2 = parityb2[col];
+
+        // Combined parity factors for this element (row * column)
+        const cuDoubleComplex p1 = cuCmul(pa1, pb1); // g†
+        const cuDoubleComplex p2 = cuCmul(pa2, pb2); // g
+
+        const int idx_u = base_u + col;   // (sa1, col)
+        const int idx_v = base_v + col;   // (ta1, col)
+
+        const cuDoubleComplex u0 = d_Cout[idx_u];
+        const cuDoubleComplex v0 = d_Cout[idx_v];
+
+        // u' = factor * u0 + acc_coeff2 * p2 * v0
+        cuDoubleComplex u_new = cuCadd(cuCmul(factor, u0),
+                                       cuCmul(acc_coeff2, cuCmul(p2, v0)));
+
+        // v' = factor * v0 + acc_coeff1 * p1 * u0
+        cuDoubleComplex v_new = cuCadd(cuCmul(factor, v0),
+                                       cuCmul(acc_coeff1, cuCmul(p1, u0)));
+
+        // In-place writeback; safe because (idx_u, idx_v) are disjoint
+        d_Cout[idx_u] = u_new;
+        d_Cout[idx_v] = v_new;
+    }
+}
+
+
+extern "C" void inplace_givens_update_rows_wrapper(
+    cuDoubleComplex* d_Cout,
+    const int* sourcea1,
+    const int* targeta1,
+    const cuDoubleComplex* paritya1,
+    const cuDoubleComplex* paritya2,
+    const cuDoubleComplex* parityb1,               // optional, may be nullptr
+    const cuDoubleComplex* parityb2,               // optional, may be nullptr
+    int na,
+    int nbeta_strs_,
+    cuDoubleComplex factor,
+    cuDoubleComplex acc_coeff1,
+    cuDoubleComplex acc_coeff2)
+{
+    if (na == 0 || nbeta_strs_ == 0) return;
+
+    // Choose threads per block: cover columns with good occupancy.
+    // Clamp to device limits if you prefer; 256 is a good default.
+    int threads = std::min(256, nbeta_strs_);
+    // Keep at least one warp
+    if (threads < 32) threads = 32;
+
+    dim3 block(threads);
+    dim3 grid(na);  // one block per (sa1, ta1) pair
+
+    inplace_givens_update_rows_kernel<<<grid, block>>>(
+        d_Cout,
+        sourcea1, targeta1, paritya1, paritya2,
+        na, nbeta_strs_,
+        parityb1, parityb2,
+        factor, acc_coeff1, acc_coeff2);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Failed to launch inplace_givens_update_rows_kernel ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("inplace_givens_update_rows_kernel launch failed");
+    }
+    
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "inplace_givens_update_rows_kernel execution failed ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("inplace_givens_update_rows_kernel execution failed");
+    }
+}
