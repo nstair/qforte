@@ -1176,14 +1176,10 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v4(
                     thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
                     thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
                     thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
-                    thrust::raw_pointer_cast(std::get<7>(*precomp).data()),  // const int* sourcea2 (undag)
-                    thrust::raw_pointer_cast(std::get<11>(*precomp).data()), // const int* targeta2
                     thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
                     thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // const int* sourceb1 (dag)
                     thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // const int* targetb1
                     thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // const cuDoubleComplex* parityb1
-                    thrust::raw_pointer_cast(std::get<9>(*precomp).data()),  // const int* sourceb2 (undag)
-                    thrust::raw_pointer_cast(std::get<13>(*precomp).data()), // const int* targetb2
                     thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // const cuDoubleComplex* parityb2
                     std::get<6>(*precomp).size(), // int na
                     std::get<8>(*precomp).size(), // int nb
@@ -1297,14 +1293,10 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
                     thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
                     thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
                     thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
-                    thrust::raw_pointer_cast(std::get<7>(*precomp).data()),  // const int* sourcea2 (undag)
-                    thrust::raw_pointer_cast(std::get<11>(*precomp).data()), // const int* targeta2
                     thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
                     thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // const int* sourceb1 (dag)
                     thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // const int* targetb1
                     thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // const cuDoubleComplex* parityb1
-                    thrust::raw_pointer_cast(std::get<9>(*precomp).data()),  // const int* sourceb2 (undag)
-                    thrust::raw_pointer_cast(std::get<13>(*precomp).data()), // const int* targetb2
                     thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // const cuDoubleComplex* parityb2
                     std::get<6>(*precomp).size(), // int na
                     std::get<8>(*precomp).size(), // int nb

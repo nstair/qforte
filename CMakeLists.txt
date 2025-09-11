@@ -27,8 +27,8 @@ cmake_policy(SET CMP0074 NEW)         # find_package() respects *_ROOT vars
 set(BLA_VENDOR "Generic")             # bypass FindBLAS vendor picks
 
 # (Nick) kept as-is so CMake finds headers/libs inside the env.
-set(CMAKE_PREFIX_PATH "/home/nstair/anaconda3/envs/cuqf_8_25_25_v2")
-# set(CMAKE_PREFIX_PATH "/home/zach_gonzales/anaconda3/envs/qforte")
+# set(CMAKE_PREFIX_PATH "/home/nstair/anaconda3/envs/cuqf_8_25_25_v2")
+set(CMAKE_PREFIX_PATH "/home/zach_gonzales/anaconda3/envs/qforte")
 
 set(BLAS_LIBRARIES "${CMAKE_PREFIX_PATH}/lib")
 set(CBLAS_INCLUDE_DIR "${CMAKE_PREFIX_PATH}/include")         # need
