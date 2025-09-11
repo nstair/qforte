@@ -234,6 +234,16 @@ class FCIComputerThrust {
       const std::vector<int>& annb,
       const PrecompTuple* precomp = nullptr);
 
+    void evolve_individual_nbody_hard_cpu_v5(
+      const std::complex<double> time,
+      const std::complex<double> coeff,
+      TensorThrust& Cout,
+      const std::vector<int>& crea,
+      const std::vector<int>& anna,
+      const std::vector<int>& creb,
+      const std::vector<int>& annb,
+      const PrecompTuple* precomp = nullptr);
+
     void evolve_individual_nbody_cpu(
       const std::complex<double> time,
       const SQOperator& sqop,
@@ -244,6 +254,14 @@ class FCIComputerThrust {
       const PrecompTuple* precomp = nullptr);
 
     void evolve_individual_nbody_cpu_v4(
+      const std::complex<double> time,
+      const SQOperator& sqop,
+      TensorThrust& Cout,
+      const bool antiherm,
+      const bool adjoint,
+      const PrecompTuple* precomp = nullptr);
+
+    void evolve_individual_nbody_cpu_v5(
       const std::complex<double> time,
       const SQOperator& sqop,
       TensorThrust& Cout,
@@ -289,6 +307,14 @@ class FCIComputerThrust {
       bool adjoint);
 
     void evolve_pool_trotter_gpu_v4(
+      const SQOpPoolThrust& pool,
+      double evolution_time,
+      int trotter_steps,
+      int trotter_order,
+      bool antiherm,
+      bool adjoint);
+
+    void evolve_pool_trotter_gpu_v5(
       const SQOpPoolThrust& pool,
       double evolution_time,
       int trotter_steps,
