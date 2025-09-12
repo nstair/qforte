@@ -149,7 +149,7 @@ for _ in range(N):
     #     antiherm=False,
     #     adjoint=False)
 
-    fci_comp_thrust.evolve_pool_trotter_gpu_v4(
+    fci_comp_thrust.evolve_pool_trotter_gpu_v5(
         hp_gpu,
         time,
         r,

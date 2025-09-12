@@ -1288,6 +1288,55 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
 
                 timer_.acc_begin("===>hard nbody given kernel");
 
+                // condition here for all row or all col cases
+                if (crea.size() == 0 && creb.size() > 0) {
+                    timer_.acc_begin("===>hard nbody given kernel - col case");
+
+                    inplace_givens_update_wrapper(
+                        thrust::raw_pointer_cast(Cout.d_data().data()),   // Cout
+                        thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
+                        thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
+                        thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
+                        thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
+                        thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // const int* sourceb1 (dag)
+                        thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // const int* targetb1
+                        thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // const cuDoubleComplex* parityb1
+                        thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // const cuDoubleComplex* parityb2
+                        std::get<6>(*precomp).size(), // int na
+                        std::get<8>(*precomp).size(), // int nb
+                        nbeta_strs_,                  // int nbeta_strs_
+                        make_cuDoubleComplex(factor.real(), factor.imag()), // cuDoubleComplex cos_factor
+                        make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
+                        make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
+
+                    timer_.acc_end("===>hard nbody given kernel - col case");
+                    return;
+                } else if (creb.size() == 0 && crea.size() > 0) {
+                    timer_.acc_begin("===>hard nbody given kernel - row case");
+
+                    inplace_givens_update_wrapper(
+                        thrust::raw_pointer_cast(Cout.d_data().data()),   // Cout
+                        thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
+                        thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
+                        thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
+                        thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
+                        thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // const int* sourceb1 (dag)
+                        thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // const int* targetb1
+                        thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // const cuDoubleComplex* parityb1
+                        thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // const cuDoubleComplex* parityb2
+                        std::get<6>(*precomp).size(), // int na
+                        std::get<8>(*precomp).size(), // int nb
+                        nbeta_strs_,                  // int nbeta_strs_
+                        make_cuDoubleComplex(factor.real(), factor.imag()), // cuDoubleComplex cos_factor
+                        make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
+                        make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
+
+                    timer_.acc_end("===>hard nbody given kernel - row case");
+                    return;
+                }
+
+                timer_.acc_begin("===>hard nbody given kernel - general case");
+
                 inplace_givens_update_wrapper(
                     thrust::raw_pointer_cast(Cout.d_data().data()),   // Cout
                     thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
@@ -1304,6 +1353,8 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
                     make_cuDoubleComplex(factor.real(), factor.imag()), // cuDoubleComplex cos_factor
                     make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
                     make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
+
+                timer_.acc_end("===>hard nbody given kernel - general case");
 
                 cudaError_t error2 = cudaGetLastError();
                 if (error2 != cudaSuccess) {
