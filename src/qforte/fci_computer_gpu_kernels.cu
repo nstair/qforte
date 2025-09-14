@@ -703,8 +703,10 @@ __global__ void inplace_givens_update_rows_kernel(
     }
     __syncthreads();
 
-    const int base_u = s_sa1 * nbeta_strs_;
-    const int base_v = s_ta1 * nbeta_strs_;
+    const int sa1 = s_sa1, ta1 = s_ta1;
+    const cuDoubleComplex pa1 = s_pa1, pa2 = s_pa2;
+    const int base_u = sa1 * nbeta_strs_;
+    const int base_v = ta1 * nbeta_strs_;
 
     for (int col = threadIdx.x; col < nbeta_strs_; col += blockDim.x) {
         const int idx_u = base_u + col;   // (sa1, col)
@@ -713,8 +715,8 @@ __global__ void inplace_givens_update_rows_kernel(
         const cuDoubleComplex u0 = d_Cout[idx_u];
         const cuDoubleComplex v0 = d_Cout[idx_v];
 
-        const cuDoubleComplex u_new = cuCadd(cuCmul(factor, u0), cuCmul(acc_coeff2, cuCmul(s_pa2, v0)));
-        const cuDoubleComplex v_new = cuCadd(cuCmul(factor, v0), cuCmul(acc_coeff1, cuCmul(s_pa1, u0)));
+        const cuDoubleComplex u_new = cuCadd(cuCmul(factor, u0), cuCmul(acc_coeff2, cuCmul(pa2, v0)));
+        const cuDoubleComplex v_new = cuCadd(cuCmul(factor, v0), cuCmul(acc_coeff1, cuCmul(pa1, u0)));
 
         d_Cout[idx_u] = u_new;
         d_Cout[idx_v] = v_new;
