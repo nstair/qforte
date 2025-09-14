@@ -135,12 +135,12 @@ extern "C" void inplace_givens_update_wrapper(
 
 __global__ void inplace_givens_update_rows_kernel(
     cuDoubleComplex* __restrict__ d_Cout,
-    const int* __restrict__ sourcea1,      // [na]
-    const int* __restrict__ targeta1,      // [na]
-    const cuDoubleComplex* __restrict__ paritya1, // [na]  (g† leg, row)
-    const cuDoubleComplex* __restrict__ paritya2, // [na]  (g  leg, row)
+    const int* __restrict__ sourcea1,
+    const int* __restrict__ targeta1,
+    const cuDoubleComplex* __restrict__ paritya1,
+    const cuDoubleComplex* __restrict__ paritya2,
     int na,
-    int nbeta_strs_,                        // number of columns
+    int nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
@@ -153,6 +153,58 @@ extern "C" void inplace_givens_update_rows_wrapper(
     const cuDoubleComplex* paritya2,
     int na,
     int nbeta_strs_,
+    cuDoubleComplex factor,
+    cuDoubleComplex acc_coeff1,
+    cuDoubleComplex acc_coeff2);
+
+__global__ void inplace_givens_update_cols_kernel(
+    cuDoubleComplex* __restrict__ d_Cout,
+    const int* __restrict__ sourcea1,
+    const int* __restrict__ targeta1,
+    const cuDoubleComplex* __restrict__ paritya1,
+    const cuDoubleComplex* __restrict__ paritya2,
+    const int* __restrict__ sourceb1,
+    const int* __restrict__ targetb1,
+    const cuDoubleComplex* __restrict__ parityb1,
+    const cuDoubleComplex* __restrict__ parityb2,
+    int nalpha, 
+    int nb,
+    int nbeta_strs_,
+    cuDoubleComplex factor,
+    cuDoubleComplex acc_coeff1,
+    cuDoubleComplex acc_coeff2);
+
+__global__ void inplace_givens_update_cols_tiled(
+    cuDoubleComplex* __restrict__ d_Cout,
+    const int* __restrict__ sourcea1,
+    const int* __restrict__ targeta1,
+    const cuDoubleComplex* __restrict__ paritya1,
+    const cuDoubleComplex* __restrict__ paritya2,
+    const int* __restrict__ sourceb1,
+    const int* __restrict__ targetb1,
+    const cuDoubleComplex* __restrict__ parityb1,
+    const cuDoubleComplex* __restrict__ parityb2,
+    int nalpha,          // rows
+    int nb,              // number of column-pairs
+    int nbeta_strs_,
+    cuDoubleComplex factor,
+    cuDoubleComplex acc_coeff1,
+    cuDoubleComplex acc_coeff2);
+
+extern "C" void inplace_givens_update_cols_tiled_wrapper(
+    int BX_runtime,                      // pick 32 or 64 (must divide warp multiples)
+    cuDoubleComplex* d_Cout,
+    const int* sourcea1,
+    const int* targeta1,
+    const cuDoubleComplex* paritya1,
+    const cuDoubleComplex* paritya2,
+    const int* sourceb1,
+    const int* targetb1,
+    const cuDoubleComplex* parityb1,
+    const cuDoubleComplex* parityb2,
+    int nalpha,          // rows
+    int nb,              // number of column-pairs
+    int nbeta_strs_,     // leading dimension (num columns)
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
