@@ -655,7 +655,7 @@ void FCIComputerThrust::apply_cos_inplace_cpu(
     timer_.acc_end("===>hard: apply cos setup");
 
     timer_.acc_begin("===>hard: apply cos kernal");
-    scale_elements_wrapper(
+    scale_elements_wrapper_complex(
         thrust::raw_pointer_cast(Cout.d_data().data()),
         thrust::raw_pointer_cast(d_first.data()), 
         d_first.size(),
@@ -719,7 +719,7 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu(
     if(precomp){
         timer_.acc_begin("==>easy: scale elements kernel");
 
-        scale_elements_wrapper(
+        scale_elements_wrapper_complex(
             thrust::raw_pointer_cast(Cout.d_data().data()),
             thrust::raw_pointer_cast(std::get<2>(*precomp).data()), 
             std::get<2>(*precomp).size(),
@@ -742,7 +742,7 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu(
 
         timer_.acc_begin("==>easy: scale elements kernel");
 
-        scale_elements_wrapper(
+        scale_elements_wrapper_complex(
             thrust::raw_pointer_cast(Cout.d_data().data()),
             thrust::raw_pointer_cast(d_first.data()), 
             d_first.size(),
@@ -757,6 +757,7 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu(
 
 /// NOTE: Cin should be const, changing for now
 /// NOTE: Cin is actually unused, should not be an arg.
+template<class Precomp>
 void FCIComputerThrust::evolve_individual_nbody_easy_cpu_v4(
     const std::complex<double> time,
     const std::complex<double> coeff,
@@ -765,7 +766,7 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu_v4(
     const std::vector<int>& anna,
     const std::vector<int>& creb,
     const std::vector<int>& annb,
-    const PrecompTuple* precomp)
+    const Precomp* precomp)
 {
     /// TODO: Implement seperate CPU and GPU versions of this function
 
@@ -773,20 +774,90 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu_v4(
     cuDoubleComplex factor_gpu = make_cuDoubleComplex(factor.real(), factor.imag());
 
     /// Optionally skip the on-the-fly device a/b-target idx formation
-
+    
     if(precomp){
-        timer_.acc_begin("==>easy: scale elements kernel");
+        auto runtime_matches_compiletime = [&] {
+            if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
+                return (data_type_ == std::string("complex"));
+            } else if constexpr (std::is_same_v<Precomp, PrecompTupleSoA>) {
+                return (data_type_ == std::string("all"));
+            } else {
+                return false;
+            }
+        };
+        if (!runtime_matches_compiletime()) {
+            throw std::runtime_error("evolve_individual_nbody_easy_cpu_v4: data_type_/Precomp mismatch.");
+        }
 
-        scale_elements_wrapper(
-            thrust::raw_pointer_cast(Cout.d_data().data()),
-            thrust::raw_pointer_cast(std::get<2>(*precomp).data()), 
-            std::get<2>(*precomp).size(),
-            thrust::raw_pointer_cast(std::get<4>(*precomp).data()), 
-            std::get<4>(*precomp).size(),
-            nbeta_strs_,
-            factor_gpu);
+        timer_.acc_begin("==>easy: scale elements kernel (precomp)");
 
-        timer_.acc_end("==>easy: scale elements kernel");
+        if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
+            // AoS / "complex" path (your existing kernel)
+            auto const& first  = std::get<2>(*precomp); // e.g., device_vector<int> (const-ref inside tuple)
+            auto const& second = std::get<4>(*precomp);
+
+            scale_elements_wrapper_complex(
+                thrust::raw_pointer_cast(Cout.d_data().data()),
+                thrust::raw_pointer_cast(first.data()),
+                first.size(),
+                thrust::raw_pointer_cast(second.data()),
+                second.size(),
+                nbeta_strs_,
+                factor_gpu);
+
+        } else if constexpr (std::is_same_v<Precomp, PrecompTupleSoA>) {
+            // SoA / "all" path
+            auto const& first  = std::get<2>(*precomp); // e.g., device_vector<int> (const-ref inside tuple)
+            auto const& second = std::get<4>(*precomp);
+
+            // Move C data to soa
+
+            try {
+                // Move C data to SoA on GPU
+                Cout.complex_to_soa_gpu();
+            }
+            catch (const std::exception& e) {
+                // Keep the original as nested cause for debugging
+                std::throw_with_nested(std::runtime_error(
+                    "Cout::complex_to_soa_gpu failed while moving C data to SoA - individual_nbody_easy_cpu_v4"));
+            }
+            catch (...) {
+                // No std::exception payload — still give context
+                throw std::runtime_error(
+                    "Cout::complex_to_soa_gpu failed with a non-standard exception - individual_nbody_easy_cpu_v4");
+            }
+
+            int mode = (factor.imag() == 0.0) ? 0 : 1;
+
+            // get pointers to stuff we need depending on mode
+            double* cout_data;
+            double factor_part;
+            if (mode) {
+                // imaginary case
+                cout_data = thrust::raw_pointer_cast(Cout.d_im_data().data());
+                factor_part = factor_gpu.y;
+            } else {
+                // real case
+                cout_data = thrust::raw_pointer_cast(Cout.d_re_data().data());
+                factor_part = factor_gpu.x;
+            }
+
+            scale_elements_wrapper_soa(
+                cout_data,
+                thrust::raw_pointer_cast(std::get<2>(*precomp).data()), 
+                std::get<2>(*precomp).size(),
+                thrust::raw_pointer_cast(std::get<4>(*precomp).data()), 
+                std::get<4>(*precomp).size(),
+                nbeta_strs_,
+                factor_part);
+
+            Cout.soa_to_complex_gpu();
+
+        } else {
+            throw std::runtime_error("evolve_individual_nbody_easy_cpu_v4: Unsupported Precomp type.");
+        }
+
+        timer_.acc_end("==>easy: scale elements kernel (precomp)");
 
     } else {
         timer_.acc_begin("==>easy: setup");
@@ -795,12 +866,12 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu_v4(
 
         thrust::device_vector<int> d_first(maps.first.begin(), maps.first.end());
         thrust::device_vector<int> d_second(maps.second.begin(), maps.second.end());
-        
+            
         timer_.acc_end("==>easy: setup");
 
         timer_.acc_begin("==>easy: scale elements kernel");
 
-        scale_elements_wrapper(
+        scale_elements_wrapper_complex(
             thrust::raw_pointer_cast(Cout.d_data().data()),
             thrust::raw_pointer_cast(d_first.data()), 
             d_first.size(),
@@ -905,7 +976,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
 
         timer_.acc_begin("===>hard: apply cos kernal");        
         
-        scale_elements_wrapper(
+        scale_elements_wrapper_complex(
             thrust::raw_pointer_cast(Cout.d_data().data()),
             thrust::raw_pointer_cast(std::get<2>(*precomp).data()), 
             std::get<2>(*precomp).size(),
@@ -914,7 +985,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
             nbeta_strs_,
             factor_gpu);
 
-        scale_elements_wrapper(
+        scale_elements_wrapper_complex(
             thrust::raw_pointer_cast(Cout.d_data().data()),
             thrust::raw_pointer_cast(std::get<3>(*precomp).data()), 
             std::get<3>(*precomp).size(),
@@ -1206,6 +1277,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v4(
     // std::cout << "\n Cout After Second Accumulate Application Thrust \n" << Cout.str(true, true) << std::endl;
 }
 
+template<class Precomp>
 void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
     const std::complex<double> time,
     const std::complex<double> coeff,
@@ -1214,7 +1286,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
     const std::vector<int>& anna,
     const std::vector<int>& creb,
     const std::vector<int>& annb,
-    const PrecompTuple* precomp)
+    const Precomp* precomp)
 {
     /// TODO: Implement seperate CPU and GPU versions of this function
     // cpu_error();
@@ -1255,123 +1327,32 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
     std::complex<double> acc_coeff1 = work_cof * sinfactor;
     std::complex<double> acc_coeff2 = coeff * std::complex<double>(0.0, -1.0) * sinfactor;
 
-    // thrust::device_vector<int> *sourcea1 = std::get<6>(*precomp);
-    // thrust::device_vector<int> *sourcea2 = std::get<7>(*precomp);
-    // thrust::device_vector<int> *sourceb1 = std::get<8>(*precomp);
-    // thrust::device_vector<int> *sourceb2 = std::get<9>(*precomp);
-    // thrust::device_vector<int> *targeta1 = std::get<10>(*precomp);
-    // thrust::device_vector<int> *targeta2 = std::get<11>(*precomp);
-    // thrust::device_vector<int> *targetb1 = std::get<12>(*precomp);
-    // thrust::device_vector<int> *targetb2 = std::get<13>(*precomp);
-
     timer_.acc_end("==>hard: setup");
 
-    // timer_.acc_begin("===>hard: if stmts");
-
     if(precomp){
+        auto runtime_matches_compiletime = [&] {
+            if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
+                return (data_type_ == std::string("complex"));
+            } else if constexpr (std::is_same_v<Precomp, PrecompTupleSoA>) {
+                // Based on your main() snippet, "all" selects SoA.
+                return (data_type_ == std::string("all"));
+            } else {
+                return false;
+            }
+        };
+        if (!runtime_matches_compiletime()) {
+            throw std::runtime_error("evolve_individual_nbody_easy_cpu_v4: data_type_/Precomp mismatch.");
+        }
 
-        // if (!sourcea1->empty() && !sourceb1->empty() &&
-        //     sourcea1->size() == targeta1->size() &&
-        //     sourceb1->size() == targetb1->size() &&
-        //     sourcea1->size() == sourcea2->size() && targeta1->size() == sourcea2->size() &&
-        //     sourceb1->size() == sourceb2->size() && targetb1->size() == sourceb2->size()) {
+        if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
 
-        // // (Optional) check the expected pairings; if you want hard asserts, replace with throws.
-        // const bool pairA_ok = std::equal(sourcea1->begin(), sourcea1->end(), targeta2->begin())
-        //                 && std::equal(sourcea2->begin(), sourcea2->end(), targeta1->begin());
-        // const bool pairB_ok = std::equal(sourceb1->begin(), sourceb1->end(), targetb2->begin())
-        //                 && std::equal(sourceb2->begin(), sourceb2->end(), targetb1->begin());
+            timer_.acc_begin("===>hard nbody given kernel");
+                
+            // condition here for all row or all col cases
+            if (crea.size() == 0 && creb.size() > 0) {
+                timer_.acc_begin("===>hard nbody given kernel - col case");
 
-            // if (pairA_ok && pairB_ok) {
-
-                // timer_.acc_end("===>hard: if stmts");
-
-                timer_.acc_begin("===>hard nbody given kernel");
-
-                // condition here for all row or all col cases
-                if (crea.size() == 0 && creb.size() > 0) {
-                    timer_.acc_begin("===>hard nbody given kernel - col case");
-
-                    inplace_givens_update_cols_tiled_wrapper(
-                        32,
-                        thrust::raw_pointer_cast(Cout.d_data().data()),
-                        thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // sourcea1 (dag)
-                        thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // targeta1
-                        thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // paritya1
-                        thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // paritya2
-                        thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // sourceb1 (dag)
-                        thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // targetb1
-                        thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // parityb1
-                        thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // parityb2
-                        std::get<6>(*precomp).size(), // nalpha
-                        std::get<8>(*precomp).size(), // nb
-                        nbeta_strs_,
-                        make_cuDoubleComplex(factor.real(), factor.imag()),
-                        make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
-                        make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
-
-                    // inplace_givens_update_wrapper(
-                    //     thrust::raw_pointer_cast(Cout.d_data().data()),   // Cout
-                    //     thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
-                    //     thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
-                    //     thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
-                    //     thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
-                    //     thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // const int* sourceb1 (dag)
-                    //     thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // const int* targetb1
-                    //     thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // const cuDoubleComplex* parityb1
-                    //     thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // const cuDoubleComplex* parityb2
-                    //     std::get<6>(*precomp).size(), // int na
-                    //     std::get<8>(*precomp).size(), // int nb
-                    //     nbeta_strs_,                  // int nbeta_strs_
-                    //     make_cuDoubleComplex(factor.real(), factor.imag()), // cuDoubleComplex cos_factor
-                    //     make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
-                    //     make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
-
-                    timer_.acc_end("===>hard nbody given kernel - col case");
-                    timer_.acc_end("===>hard nbody given kernel");
-                    return;
-                } else if (creb.size() == 0 && crea.size() > 0) {
-                    timer_.acc_begin("===>hard nbody given kernel - row case");
-
-                    inplace_givens_update_rows_wrapper(
-                        thrust::raw_pointer_cast(Cout.d_data().data()),  // Cout
-                        thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
-                        thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
-                        thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
-                        thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
-                        // thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // const cuDoubleComplex* parityb1
-                        // thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // const cuDoubleComplex* parityb2
-                        std::get<6>(*precomp).size(), // int na
-                        nbeta_strs_,                  // int nbeta_strs_
-                        make_cuDoubleComplex(factor.real(), factor.imag()), // cuDoubleComplex cos_factor
-                        make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
-                        make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
-
-                    // inplace_givens_update_wrapper(
-                    // thrust::raw_pointer_cast(Cout.d_data().data()),   // Cout
-                    // thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
-                    // thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
-                    // thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
-                    // thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
-                    // thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // const int* sourceb1 (dag)
-                    // thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // const int* targetb1
-                    // thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // const cuDoubleComplex* parityb1
-                    // thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // const cuDoubleComplex* parityb2
-                    // std::get<6>(*precomp).size(), // int na
-                    // std::get<8>(*precomp).size(), // int nb
-                    // nbeta_strs_,                  // int nbeta_strs_
-                    // make_cuDoubleComplex(factor.real(), factor.imag()), // cuDoubleComplex cos_factor
-                    // make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
-                    // make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
-
-                    timer_.acc_end("===>hard nbody given kernel - row case");
-                    timer_.acc_end("===>hard nbody given kernel");
-                    return;
-                }
-
-                timer_.acc_begin("===>hard nbody given kernel - general case");
-
-                inplace_givens_update_cols_tiled_wrapper(
+                inplace_givens_update_complex_tiled_wrapper(
                     32,
                     thrust::raw_pointer_cast(Cout.d_data().data()),
                     thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // sourcea1 (dag)
@@ -1389,41 +1370,212 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
                     make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
                     make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
 
-                // inplace_givens_update_wrapper(
-                //     thrust::raw_pointer_cast(Cout.d_data().data()),   // Cout
-                //     thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
-                //     thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
-                //     thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
-                //     thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
-                //     thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // const int* sourceb1 (dag)
-                //     thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // const int* targetb1
-                //     thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // const cuDoubleComplex* parityb1
-                //     thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // const cuDoubleComplex* parityb2
-                //     std::get<6>(*precomp).size(), // int na
-                //     std::get<8>(*precomp).size(), // int nb
-                //     nbeta_strs_,                  // int nbeta_strs_
-                //     make_cuDoubleComplex(factor.real(), factor.imag()), // cuDoubleComplex cos_factor
-                //     make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
-                //     make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
+                timer_.acc_end("===>hard nbody given kernel - col case");
+                timer_.acc_end("===>hard nbody given kernel");
+                return;
+            } else if (creb.size() == 0 && crea.size() > 0) {
+                timer_.acc_begin("===>hard nbody given kernel - row case");
 
-                timer_.acc_end("===>hard nbody given kernel - general case");
+                inplace_givens_update_complex_rows_wrapper(
+                    thrust::raw_pointer_cast(Cout.d_data().data()),  // Cout
+                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
+                    thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
+                    thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
+                    thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
+                    // thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // const cuDoubleComplex* parityb1
+                    // thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // const cuDoubleComplex* parityb2
+                    std::get<6>(*precomp).size(), // int na
+                    nbeta_strs_,                  // int nbeta_strs_
+                    make_cuDoubleComplex(factor.real(), factor.imag()), // cuDoubleComplex cos_factor
+                    make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
+                    make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
 
-                cudaError_t error2 = cudaGetLastError();
-                if (error2 != cudaSuccess) {
-                    std::cerr << "CUDA error: " << cudaGetErrorString(error2) << std::endl;
+                timer_.acc_end("===>hard nbody given kernel - row case");
+                timer_.acc_end("===>hard nbody given kernel");
+                return;
+            }
+
+            timer_.acc_begin("===>hard nbody given kernel - general case");
+
+            inplace_givens_update_complex_tiled_wrapper(
+                32,
+                thrust::raw_pointer_cast(Cout.d_data().data()),
+                thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // sourcea1 (dag)
+                thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // targeta1
+                thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // paritya1
+                thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // paritya2
+                thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // sourceb1 (dag)
+                thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // targetb1
+                thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // parityb1
+                thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // parityb2
+                std::get<6>(*precomp).size(), // nalpha
+                std::get<8>(*precomp).size(), // nb
+                nbeta_strs_,
+                make_cuDoubleComplex(factor.real(), factor.imag()),
+                make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
+                make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
+
+            timer_.acc_end("===>hard nbody given kernel - general case");
+
+            cudaError_t error2 = cudaGetLastError();
+                
+            if (error2 != cudaSuccess) {
+                std::cerr << "CUDA error: " << cudaGetErrorString(error2) << std::endl;
                     throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
                 }
 
+            timer_.acc_end("===>hard nbody given kernel");
+        } else if constexpr (std::is_same_v<Precomp, PrecompTupleSoA>) {
+            // Handle PrecompTupleSoA case
+
+            timer_.acc_begin("===>hard all type case random stuff");
+
+            try {
+                // Move C data to SoA on GPU
+                Cout.complex_to_soa_gpu();
+            }
+            catch (const std::exception& e) {
+                // Keep the original as nested cause for debugging
+                std::throw_with_nested(std::runtime_error(
+                    "Cout::complex_to_soa_gpu failed while moving C data to SoA - individual_nbody_hard_cpu_v5"));
+            }
+            catch (...) {
+                // No std::exception payload — still give context
+                throw std::runtime_error(
+                    "Cout::complex_to_soa_gpu failed with a non-standard exception - individual_nbody_hard_cpu_v5");
+            }
+
+            int mode = (factor.imag() == 0.0) ? 0 : 1;
+
+            // get pointers to stuff we need depending on mode
+
+            double* cout_data = nullptr;
+            const double* paritya1 = nullptr;
+            const double* paritya2 = nullptr;
+            const double* parityb1 = nullptr;
+            const double* parityb2 = nullptr;
+            double factor_part = (mode) ? factor.imag() : factor.real();
+            double acc_coeff1_part = (mode) ? acc_coeff1.imag() : acc_coeff1.real();
+            double acc_coeff2_part = (mode) ? acc_coeff2.imag() : acc_coeff2.real();
+
+            if (mode) {
+                // imaginary case
+                cout_data = thrust::raw_pointer_cast(Cout.d_im_data().data());
+                paritya1 = thrust::raw_pointer_cast(std::get<15>(*precomp).data());
+                paritya2 = thrust::raw_pointer_cast(std::get<17>(*precomp).data());
+                parityb1 = thrust::raw_pointer_cast(std::get<19>(*precomp).data());
+                parityb2 = thrust::raw_pointer_cast(std::get<21>(*precomp).data());
+            } else {
+                // real case
+                cout_data = thrust::raw_pointer_cast(Cout.d_re_data().data());
+                paritya1 = thrust::raw_pointer_cast(std::get<14>(*precomp).data());
+                paritya2 = thrust::raw_pointer_cast(std::get<16>(*precomp).data());
+                parityb1 = thrust::raw_pointer_cast(std::get<18>(*precomp).data());
+                parityb2 = thrust::raw_pointer_cast(std::get<20>(*precomp).data());
+            }
+
+            timer_.acc_end("===>hard all type case random stuff");
+
+            timer_.acc_begin("===>hard nbody given kernel");
+
+            // condition here for all row or all col cases
+            if (crea.size() == 0 && creb.size() > 0) {
+                timer_.acc_begin("===>hard nbody given kernel - col case");
+
+                givens_update_tiled_wrapper_soa(
+                    32,
+                    cout_data,
+                    paritya1, // paritya1
+                    paritya2, // paritya2
+                    parityb1, // parityb1
+                    parityb2, // parityb2
+                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // sourcea1
+                    thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // targeta1
+                    thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // sourceb1
+                    thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // targetb1
+                    std::get<6>(*precomp).size(), // nalpha
+                    std::get<8>(*precomp).size(), // nb
+                    nbeta_strs_,
+                    factor_part,
+                    acc_coeff1_part,
+                    acc_coeff2_part);
+
+                timer_.acc_end("===>hard nbody given kernel - col case");
+
+                Cout.soa_to_complex_gpu();
+
                 timer_.acc_end("===>hard nbody given kernel");
-          //  }
-        //}
-            
+                return;
+            } else if (creb.size() == 0 && crea.size() > 0) {
+                timer_.acc_begin("===>hard nbody given kernel - row case");
+
+                givens_update_tiled_wrapper_soa(
+                    32,
+                    cout_data,
+                    paritya1, // paritya1
+                    paritya2, // paritya2
+                    parityb1, // parityb1
+                    parityb2, // parityb2
+                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // sourcea1
+                    thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // targeta1
+                    thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // sourceb1
+                    thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // targetb1
+                    std::get<6>(*precomp).size(), // nalpha
+                    std::get<8>(*precomp).size(), // nb
+                    nbeta_strs_,
+                    factor_part,
+                    acc_coeff1_part,
+                    acc_coeff2_part);
+
+                timer_.acc_end("===>hard nbody given kernel - row case");
+
+                Cout.soa_to_complex_gpu();
+
+                timer_.acc_end("===>hard nbody given kernel");
+                return;
+            }
+
+            timer_.acc_begin("===>hard nbody given kernel - general case");
+
+            givens_update_tiled_wrapper_soa(
+                32,
+                cout_data,
+                paritya1, // paritya1
+                paritya2, // paritya2
+                parityb1, // parityb1
+                parityb2, // parityb2
+                thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // sourcea1
+                thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // targeta1
+                thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // sourceb1
+                thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // targetb1
+                std::get<6>(*precomp).size(), // nalpha
+                std::get<8>(*precomp).size(), // nb
+                nbeta_strs_,
+                factor_part,
+                acc_coeff1_part,
+                acc_coeff2_part);
+
+            timer_.acc_end("===>hard nbody given kernel - general case");
+
+            Cout.soa_to_complex_gpu();
+
+            cudaError_t error2 = cudaGetLastError();
+                    
+            if (error2 != cudaSuccess) {
+                std::cerr << "CUDA error: " << cudaGetErrorString(error2) << std::endl;
+                throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
+            }
+
+            timer_.acc_end("===>hard nbody given kernel");
+
+        } else {
+            throw std::runtime_error("evolve_individual_nbody_easy_cpu_v5: Unsupported Precomp type.");
+        }
+                
     } else {
         // just throw an error for now
         throw std::invalid_argument("Precomputed data must be provided for v4 hard n-body evolution.");
     }
-
-    // std::cout << "\n Cout After Second Accumulate Application Thrust \n" << Cout.str(true, true) << std::endl;
 }
 
 /// NOTE: Cin should be const, changing for now
@@ -1646,13 +1798,14 @@ void FCIComputerThrust::evolve_individual_nbody_cpu_v4(
 }
 
 /// NOTE: Cin should be const, changing for now
+template<class Precomp>
 void FCIComputerThrust::evolve_individual_nbody_cpu_v5(
     const std::complex<double> time,
     const SQOperator& sqop,
     TensorThrust& Cout,
     const bool antiherm,
     const bool adjoint,
-    const PrecompTuple* precomp)
+    const Precomp* precomp)
 {
     /// TODO: Implement seperate CPU and GPU versions of this function
     // cpu_error();
@@ -1720,7 +1873,7 @@ void FCIComputerThrust::evolve_individual_nbody_cpu_v5(
 
         evolve_individual_nbody_easy_cpu_v4(
             time,
-            parity * std::get<0>(term), 
+            parity * std::get<0>(term),
             Cout,
             crea,
             anna, 
@@ -1729,7 +1882,6 @@ void FCIComputerThrust::evolve_individual_nbody_cpu_v5(
             precomp);
 
         timer_.acc_end("=>evolve_individual_nbody_easy_cpu_v4");
-
 
     } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
         // std::cout << "Made it to hard" << std::endl;
@@ -2122,6 +2274,11 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
         throw std::runtime_error("SQOpPoolThrust STP device arrays must be populated before evolution.");
     }
 
+    // now checking data type and getting appropriate precomp tuple
+    if (pool.data_type() != data_type_) {
+        throw std::runtime_error("Data type of SQOpPoolThrust does not match FCIComputerThrust data type.");
+    }
+
     timer_.acc_begin("evolve_pool_trotter_gpu(outer)");
 
     if(trotter_order == 1){
@@ -2136,20 +2293,33 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
                     // Cin.copy_in_gpu(C_);
                     // timer_.acc_end("=>copy in Cin <- C_");
 
-                    const auto& device_spt_arys = pool.get_mu_tuple(i);
-
-                    evolve_individual_nbody_cpu_v5(
-                        prefactor * pool.terms()[i].first,
-                        pool.terms()[i].second,
-                        C_,
-                        antiherm,
-                        adjoint,
-                        &device_spt_arys); 
-
+                    if (data_type_ == "complex") {
+                        const auto& device_spt_arys = pool.get_mu_tuple(i);
+                        evolve_individual_nbody_cpu_v5(
+                            prefactor * pool.terms()[i].first,
+                            pool.terms()[i].second,
+                            C_,
+                            antiherm,
+                            adjoint,
+                            &device_spt_arys); 
+                    } else if (data_type_ == "all") {
+                        const auto& device_spt_arys = pool.get_mu_tuple_soa(i);
+                        evolve_individual_nbody_cpu_v5(
+                            prefactor * pool.terms()[i].first,
+                            pool.terms()[i].second,
+                            C_,
+                            antiherm,
+                            adjoint,
+                            &device_spt_arys); 
+                    } else if (data_type_ == "real") {
+                        throw std::runtime_error("Real data type not supported in v5 evolution.");
+                    } else if (data_type_ == "soa") {
+                        throw std::runtime_error("SoA data type not supported in v5 evolution.");
+                    } else {
+                        throw std::runtime_error("Unsupported data type in v5 evolution.");
+                    }
                 }
             }
-                
-
         } else {
             for( int r = 0; r < trotter_steps; r++) {
                 for (int i = 0; i < pool.terms().size(); ++i) {
@@ -2158,16 +2328,31 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
                     // Cin.copy_in_gpu(C_);
                     // timer_.acc_end("=>copy in Cin <- C_");
 
-                    const auto& device_spt_arys = pool.get_mu_tuple(i);
-
-                    evolve_individual_nbody_cpu_v5(
-                        prefactor * pool.terms()[i].first,
-                        pool.terms()[i].second,
-                        C_,
-                        antiherm,
-                        adjoint,
-                        &device_spt_arys); 
-
+                    if (data_type_ == "complex") {
+                        const auto& device_spt_arys = pool.get_mu_tuple(i);
+                        evolve_individual_nbody_cpu_v5(
+                            prefactor * pool.terms()[i].first,
+                            pool.terms()[i].second,
+                            C_,
+                            antiherm,
+                            adjoint,
+                            &device_spt_arys); 
+                    } else if (data_type_ == "all") {
+                        const auto& device_spt_arys = pool.get_mu_tuple_soa(i);
+                        evolve_individual_nbody_cpu_v5(
+                            prefactor * pool.terms()[i].first,
+                            pool.terms()[i].second,
+                            C_,
+                            antiherm,
+                            adjoint,
+                            &device_spt_arys); 
+                    } else if (data_type_ == "real") {
+                        throw std::runtime_error("Real data type not supported in v5 evolution.");
+                    } else if (data_type_ == "soa") {
+                        throw std::runtime_error("SoA data type not supported in v5 evolution.");
+                    } else {
+                        throw std::runtime_error("Unsupported data type in v5 evolution.");
+                    }
                 }
             }
         }
@@ -2622,7 +2807,35 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
         return;
     }
 
-    for (int i=0; i<pool.terms().size(); ++i){
+    // Ensure data_type consistency between this computer and the pool
+    const std::string comp_dt = data_type_;
+    const std::string pool_dt = pool.data_type();
+    if (pool_dt != comp_dt && pool_dt != "all" && comp_dt != "all") {
+        throw std::runtime_error("Data type mismatch between FCIComputerThrust and SQOpPoolThrust. Use matching types or 'all'.");
+    }
+
+    // Determine which parity storage formats we need to populate
+    const bool need_complex = (pool_dt == "complex" || pool_dt == "all");
+    const bool need_soa     = (pool_dt == "soa"     || pool_dt == "real" || pool_dt == "all");
+
+    // Helper to move cuDoubleComplex parity device vector into SoA double device vectors
+    auto push_parity_soa = [&](const thrust::device_vector<cuDoubleComplex>& d_par,
+                               std::vector<thrust::device_vector<double>>& re_list,
+                               std::vector<thrust::device_vector<double>>& im_list) {
+        thrust::host_vector<cuDoubleComplex> h_par = d_par; // device -> host copy
+        thrust::host_vector<double> h_re(h_par.size());
+        thrust::host_vector<double> h_im(h_par.size());
+        for (size_t i = 0; i < h_par.size(); ++i) {
+            h_re[i] = h_par[i].x;
+            h_im[i] = h_par[i].y;
+        }
+        thrust::device_vector<double> d_re(h_re.begin(), h_re.end());
+        thrust::device_vector<double> d_im(h_im.begin(), h_im.end());
+        re_list.emplace_back(std::move(d_re));
+        im_list.emplace_back(std::move(d_im));
+    };
+
+    for (int i=0; i<static_cast<int>(pool.terms().size()); ++i){
 
         auto sqop = pool.terms()[i].second;
 
@@ -2633,9 +2846,6 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
 
         // append h_mu
         pool.outer_coeffs().push_back(pool.terms()[i].first);
-
-        /// NICK: TODO, implement a hermitian check, at least for two term SQOperators
-        // sqop.hermitian_check();
 
         auto term = sqop.terms()[0];
 
@@ -2673,41 +2883,49 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
 
         if (crea == anna && creb == annb) {
 
-            // std::cout << "Made it to easy" << std::endl;
-
+            // EASY BRANCH (pure number ops)
             std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number_cpu(anna, annb);
             thrust::device_vector<int> d_alfa(maps.first.begin(), maps.first.end());
             thrust::device_vector<int> d_beta(maps.second.begin(), maps.second.end());
 
-            // Indicies for scale inplace
+            // Indices for scale inplace
             pool.terms_scale_indsa_dag_gpu().emplace_back(d_alfa);
             pool.terms_scale_indsa_undag_gpu().emplace_back();
             pool.terms_scale_indsb_dag_gpu().emplace_back(d_beta);
             pool.terms_scale_indsb_undag_gpu().emplace_back();
 
-            // Accumulation (source) index maps
+            // Source/target maps (empty for pure number terms)
             pool.terms_sourcea_dag_gpu().emplace_back();
             pool.terms_sourcea_undag_gpu().emplace_back();
             pool.terms_sourceb_dag_gpu().emplace_back();
             pool.terms_sourceb_undag_gpu().emplace_back();
 
-            // Accumulation (target) index maps
             pool.terms_targeta_dag_gpu().emplace_back();
             pool.terms_targeta_undag_gpu().emplace_back();
             pool.terms_targetb_dag_gpu().emplace_back();
             pool.terms_targetb_undag_gpu().emplace_back();
 
-            // Parity/phase maps
-            pool.terms_paritya_dag_gpu().emplace_back();
-            pool.terms_paritya_undag_gpu().emplace_back();
-            pool.terms_parityb_dag_gpu().emplace_back();
-            pool.terms_parityb_undag_gpu().emplace_back();
-
+            // Parity/phase maps: push empties for the formats we’re maintaining
+            if (need_complex) {
+                pool.terms_paritya_dag_gpu().emplace_back();
+                pool.terms_paritya_undag_gpu().emplace_back();
+                pool.terms_parityb_dag_gpu().emplace_back();
+                pool.terms_parityb_undag_gpu().emplace_back();
+            }
+            if (need_soa) {
+                pool.terms_paritya_dag_re_gpu().emplace_back();
+                pool.terms_paritya_dag_im_gpu().emplace_back();
+                pool.terms_paritya_undag_re_gpu().emplace_back();
+                pool.terms_paritya_undag_im_gpu().emplace_back();
+                pool.terms_parityb_dag_re_gpu().emplace_back();
+                pool.terms_parityb_dag_im_gpu().emplace_back();
+                pool.terms_parityb_undag_re_gpu().emplace_back();
+                pool.terms_parityb_undag_im_gpu().emplace_back();
+            }
 
         } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
        
-            // std::cout << "Made it to hard" << std::endl;
-
+            // HARD BRANCH (general case)
             std::vector<int> dagworka(crea);
             std::vector<int> dagworkb(creb);
             std::vector<int> undagworka(anna);
@@ -2760,7 +2978,7 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
             thrust::device_vector<int> d_alfa_2nd(maps2.first.begin(), maps2.first.end());
             thrust::device_vector<int> d_beta_2nd(maps2.second.begin(), maps2.second.end());
 
-            // Indicies for scale inplace
+            // Indices for scale inplace
             pool.terms_scale_indsa_dag_gpu().emplace_back(d_alfa_1st);
             pool.terms_scale_indsa_undag_gpu().emplace_back(d_alfa_2nd);
             pool.terms_scale_indsb_dag_gpu().emplace_back(d_beta_1st);
@@ -2773,50 +2991,121 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
             int counta = 0;
             int countb = 0;
 
-            graph_.make_mapping_each_gpu_v3(
-                true,
-                anna,
-                crea,
-                &counta,
-                pool.terms_sourcea_dag_gpu(), // sourcea_gpu_,  
-                pool.terms_targeta_dag_gpu(), // targeta_gpu_,  
-                pool.terms_paritya_dag_gpu()); // paritya_gpu_); 
+            // ---- DAG MAPPINGS ----
+            if (need_complex) {
+                // v3: complex path (optionally convert to SoA later if 'all')
+                graph_.make_mapping_each_gpu_v3(
+                    true,
+                    anna,
+                    crea,
+                    &counta,
+                    pool.terms_sourcea_dag_gpu(),
+                    pool.terms_targeta_dag_gpu(),
+                    pool.terms_paritya_dag_gpu());
+            } else if (need_soa) {
+                // v4: SoA-only path
+                graph_.make_mapping_each_gpu_v4(
+                    true,
+                    anna,
+                    crea,
+                    &counta,
+                    pool.terms_sourcea_dag_gpu(),
+                    pool.terms_targeta_dag_gpu(),
+                    pool.terms_paritya_dag_re_gpu(),
+                    pool.terms_paritya_dag_im_gpu());
+            }
 
-
-            graph_.make_mapping_each_gpu_v3(
-                false,
-                annb,
-                creb,
-                &countb,
-                pool.terms_sourceb_dag_gpu(), // sourceb_gpu_, 
-                pool.terms_targetb_dag_gpu(), // targetb_gpu_, 
-                pool.terms_parityb_dag_gpu()); // parityb_gpu_); 
+            if (need_complex) {
+                graph_.make_mapping_each_gpu_v3(
+                    false,
+                    annb,
+                    creb,
+                    &countb,
+                    pool.terms_sourceb_dag_gpu(),
+                    pool.terms_targetb_dag_gpu(),
+                    pool.terms_parityb_dag_gpu());
+            } else if (need_soa) {
+                graph_.make_mapping_each_gpu_v4(
+                    false,
+                    annb,
+                    creb,
+                    &countb,
+                    pool.terms_sourceb_dag_gpu(),
+                    pool.terms_targetb_dag_gpu(),
+                    pool.terms_parityb_dag_re_gpu(),
+                    pool.terms_parityb_dag_im_gpu());
+            }
 
             if((anna.size() != crea.size()) or (annb.size() != creb.size())){
                 throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
             }
 
+            // ---- UNDAG MAPPINGS ----
             counta = 0;
             countb = 0;
 
-            graph_.make_mapping_each_gpu_v3(
-                true,
-                crea, // anna,
-                anna, // crea,
-                &counta,
-                pool.terms_sourcea_undag_gpu(), // sourcea_gpu_,  
-                pool.terms_targeta_undag_gpu(), // targeta_gpu_,  
-                pool.terms_paritya_undag_gpu()); // paritya_gpu_); 
+            if (need_complex) {
+                graph_.make_mapping_each_gpu_v3(
+                    true,
+                    crea,
+                    anna,
+                    &counta,
+                    pool.terms_sourcea_undag_gpu(),
+                    pool.terms_targeta_undag_gpu(),
+                    pool.terms_paritya_undag_gpu());
+            } else if (need_soa) {
+                graph_.make_mapping_each_gpu_v4(
+                    true,
+                    crea,
+                    anna,
+                    &counta,
+                    pool.terms_sourcea_undag_gpu(),
+                    pool.terms_targeta_undag_gpu(),
+                    pool.terms_paritya_undag_re_gpu(),
+                    pool.terms_paritya_undag_im_gpu());
+            }
 
+            if (need_complex) {
+                graph_.make_mapping_each_gpu_v3(
+                    false,
+                    creb,
+                    annb,
+                    &countb,
+                    pool.terms_sourceb_undag_gpu(),
+                    pool.terms_targetb_undag_gpu(),
+                    pool.terms_parityb_undag_gpu());
+            } else if (need_soa) {
+                graph_.make_mapping_each_gpu_v4(
+                    false,
+                    creb,
+                    annb,
+                    &countb,
+                    pool.terms_sourceb_undag_gpu(),
+                    pool.terms_targetb_undag_gpu(),
+                    pool.terms_parityb_undag_re_gpu(),
+                    pool.terms_parityb_undag_im_gpu());
+            }
 
-            graph_.make_mapping_each_gpu_v3(
-                false,
-                creb, // annb,
-                annb, // creb,
-                &countb,
-                pool.terms_sourceb_undag_gpu(), // sourceb_gpu_, 
-                pool.terms_targetb_undag_gpu(), // targetb_gpu_, 
-                pool.terms_parityb_undag_gpu()); // parityb_gpu_); 
+            // If we also need SoA in addition to complex (i.e., data_type == "all"),
+            // convert the last appended complex parity arrays into SoA and append.
+            if (need_complex && need_soa) {
+                // alpha dag
+                push_parity_soa(pool.terms_paritya_dag_gpu().back(),
+                                pool.terms_paritya_dag_re_gpu(),
+                                pool.terms_paritya_dag_im_gpu());
+                // beta dag
+                push_parity_soa(pool.terms_parityb_dag_gpu().back(),
+                                pool.terms_parityb_dag_re_gpu(),
+                                pool.terms_parityb_dag_im_gpu());
+                // alpha undag
+                push_parity_soa(pool.terms_paritya_undag_gpu().back(),
+                                pool.terms_paritya_undag_re_gpu(),
+                                pool.terms_paritya_undag_im_gpu());
+                // beta undag
+                push_parity_soa(pool.terms_parityb_undag_gpu().back(),
+                                pool.terms_parityb_undag_re_gpu(),
+                                pool.terms_parityb_undag_im_gpu());
+            }
 
         } else {
             throw std::invalid_argument("Evolved state must remain in spin and particle-number symmetry sector");

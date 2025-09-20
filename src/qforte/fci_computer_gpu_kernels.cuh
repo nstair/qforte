@@ -89,7 +89,7 @@ __global__ void scale_elements_kernel(
     int nbeta_strs_,
     cuDoubleComplex factor);
 
-extern "C" void scale_elements_wrapper(
+extern "C" void scale_elements_wrapper_complex(
     cuDoubleComplex* d_Cout,
     const int* d_first, 
     int first_size,
@@ -145,7 +145,7 @@ __global__ void inplace_givens_update_rows_kernel(
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
 
-extern "C" void inplace_givens_update_rows_wrapper(
+extern "C" void inplace_givens_update_complex_rows_wrapper(
     cuDoubleComplex* d_Cout,
     const int* sourcea1,
     const int* targeta1,
@@ -174,7 +174,7 @@ __global__ void inplace_givens_update_cols_kernel(
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
 
-__global__ void inplace_givens_update_cols_tiled(
+__global__ void inplace_givens_update_complex_tiled(
     cuDoubleComplex* __restrict__ d_Cout,
     const int* __restrict__ sourcea1,
     const int* __restrict__ targeta1,
@@ -191,7 +191,7 @@ __global__ void inplace_givens_update_cols_tiled(
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
 
-extern "C" void inplace_givens_update_cols_tiled_wrapper(
+extern "C" void inplace_givens_update_complex_tiled_wrapper(
     int BX_runtime,                      // pick 32 or 64 (must divide warp multiples)
     cuDoubleComplex* d_Cout,
     const int* sourcea1,
@@ -208,3 +208,73 @@ extern "C" void inplace_givens_update_cols_tiled_wrapper(
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
+
+__global__ void givens_update_soa_tiled(
+    double* __restrict__ dC,          // C_data
+    const int* __restrict__ sourcea1,
+    const int* __restrict__ targeta1,
+    const double* __restrict__ paritya1,  // pa1
+    const double* __restrict__ paritya2,  // pa2
+    const int* __restrict__ sourceb1,
+    const int* __restrict__ targetb1,
+    const double* __restrict__ parityb1,  // pb1
+    const double* __restrict__ parityb2,  // pb2
+    int nalpha,
+    int nb,
+    int nbeta_strs_,
+    double factor,
+    double acc1,
+    double acc2);
+
+static void launch_givens_soa(
+    double* dC,
+    const double* paritya1,
+    const double* paritya2,
+    const double* parityb1,
+    const double* parityb2,
+    const int* sourcea1,
+    const int* targeta1,
+    const int* sourceb1,
+    const int* targetb1,
+    int nalpha,
+    int nb,
+    int nbeta_strs_,
+    double factor,
+    double acc1,
+    double acc2);
+
+extern "C" void givens_update_tiled_wrapper_soa(
+    int BX_runtime,
+    double* dC,
+    const double* paritya1,
+    const double* paritya2,
+    const double* parityb1,
+    const double* parityb2,
+    const int* sourcea1,
+    const int* targeta1,
+    const int* sourceb1,
+    const int* targetb1,
+    int nalpha,
+    int nb,
+    int nbeta_strs_,
+    double factor,
+    double acc1,
+    double acc2);
+
+__global__ void scale_elements_kernel_soa(
+    double* __restrict__ d_Cout,
+    const int* __restrict__ d_first, 
+    int first_size,
+    const int* __restrict__ d_second, 
+    int second_size,
+    int nbeta_strs_,
+    double factor);
+
+extern "C" void scale_elements_wrapper_soa(
+    double* d_Cout,
+    const int* d_first, 
+    int first_size,
+    const int* d_second, 
+    int second_size,
+    int nbeta_strs_,
+    double factor);

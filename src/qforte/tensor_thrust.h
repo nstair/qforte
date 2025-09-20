@@ -66,13 +66,25 @@ void zero();
 
 void zero_gpu();
 
-thrust::host_vector<std::complex<double>>& h_data() { return h_data_; }
+thrust::host_vector<std::complex<double>>& h_data();
 
-const thrust::host_vector<std::complex<double>>& read_h_data() const { return h_data_; }
+const thrust::host_vector<std::complex<double>>& read_h_data() const;
 
-thrust::device_vector<cuDoubleComplex>& d_data() { return d_data_; }
+const thrust::host_vector<double>& read_h_re_data() const;
 
-const thrust::device_vector<cuDoubleComplex>& read_d_data() const { return d_data_; }
+const thrust::host_vector<double>& read_h_im_data() const;
+
+thrust::device_vector<cuDoubleComplex>& d_data();
+
+thrust::device_vector<double>& d_re_data();
+
+thrust::device_vector<double>& d_im_data();
+
+const thrust::device_vector<cuDoubleComplex>& read_d_data() const;
+
+const thrust::device_vector<double>& read_d_re_data() const;
+
+const thrust::device_vector<double>& read_d_im_data() const;
 
 void add_thrust(const TensorThrust& other);
 
