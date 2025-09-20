@@ -517,7 +517,7 @@ __global__ void scale_elements_kernel(
     }
 }
 
-extern "C" void scale_elements_wrapper(
+extern "C" void scale_elements_wrapper_complex(
     cuDoubleComplex* d_Cout,
     const int* d_first, 
     int first_size,
@@ -543,6 +543,59 @@ extern "C" void scale_elements_wrapper(
     err = cudaDeviceSynchronize();
     if (err != cudaSuccess) {
         std::cerr << "Kernel execution failed (error code " << cudaGetErrorString(err) << ")!" << std::endl;
+        throw std::runtime_error("Kernel execution failed");
+    }
+}
+
+__global__ void scale_elements_kernel_soa(
+    double* __restrict__ d_Cout,
+    const int* __restrict__ d_first, 
+    int first_size,
+    const int* __restrict__ d_second, 
+    int second_size,
+    int nbeta_strs_,
+    double factor) 
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (i < first_size && j < second_size) {
+        int idx = d_first[i] * nbeta_strs_ + d_second[j];
+        d_Cout[idx] *= factor;
+    }
+}
+
+
+extern "C" void scale_elements_wrapper_soa(
+    double* d_Cout,
+    const int* d_first, 
+    int first_size,
+    const int* d_second, 
+    int second_size,
+    int nbeta_strs_,
+    double factor) 
+{
+    dim3 blockSize(16, 16);
+    dim3 gridSize((first_size  + blockSize.x - 1) / blockSize.x, 
+                  (second_size + blockSize.y - 1) / blockSize.y);
+
+    // Real-valued kernel launch (provide this kernel or a templated alias)
+    scale_elements_kernel_soa<<<gridSize, blockSize>>>(
+        d_Cout, d_first, first_size, d_second, second_size, nbeta_strs_, factor);
+
+    // Check for launch errors
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Failed to launch scale_elements_kernel_soa ("
+                  << cudaGetErrorString(err) << ")!" << std::endl;
+        throw std::runtime_error("Kernel launch failed");
+    }
+
+    // Sync and check for runtime errors
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "Kernel execution failed ("
+                  << cudaGetErrorString(err) << ")!" << std::endl;
         throw std::runtime_error("Kernel execution failed");
     }
 }
@@ -724,7 +777,7 @@ __global__ void inplace_givens_update_rows_kernel(
 }
 
 
-extern "C" void inplace_givens_update_rows_wrapper(
+extern "C" void inplace_givens_update_complex_rows_wrapper(
     cuDoubleComplex* d_Cout,
     const int* sourcea1,
     const int* targeta1,
@@ -769,7 +822,7 @@ extern "C" void inplace_givens_update_rows_wrapper(
 }
 
 template<int BX>  // number of column-pairs handled per block (e.g., 32)
-__global__ void inplace_givens_update_cols_tiled(
+__global__ void inplace_givens_update_complex_tiled(
     cuDoubleComplex* __restrict__ d_Cout,
     const int* __restrict__ sourcea1,
     const int* __restrict__ targeta1,
@@ -869,7 +922,7 @@ __global__ void inplace_givens_update_cols_tiled(
 
 // Internal helper to launch a particular BX specialization
 template<int BX>
-static void launch_inplace_givens_update_cols_tiled(
+static void launch_inplace_givens_update_complex_tiled(
     cuDoubleComplex* d_Cout,
     const int* sourcea1,
     const int* targeta1,
@@ -904,7 +957,7 @@ static void launch_inplace_givens_update_cols_tiled(
         throw std::invalid_argument("Block size BX*AY exceeds device limit");
     }
 
-    inplace_givens_update_cols_tiled<BX><<<grid, block>>>(
+    inplace_givens_update_complex_tiled<BX><<<grid, block>>>(
         d_Cout,
         sourcea1, targeta1, paritya1, paritya2,
         sourceb1, targetb1, parityb1, parityb2,
@@ -913,22 +966,22 @@ static void launch_inplace_givens_update_cols_tiled(
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
-        std::cerr << "Failed to launch inplace_givens_update_cols_tiled<"
+        std::cerr << "Failed to launch inplace_givens_update_complex_tiled<"
                   << BX << "> (" << cudaGetErrorString(err) << ")\n";
-        throw std::runtime_error("inplace_givens_update_cols_tiled launch failed");
+        throw std::runtime_error("inplace_givens_update_complex_tiled launch failed");
     }
 
     err = cudaDeviceSynchronize();
     if (err != cudaSuccess) {
-        std::cerr << "inplace_givens_update_cols_tiled<" << BX
+        std::cerr << "inplace_givens_update_complex_tiled<" << BX
                   << "> execution failed (" << cudaGetErrorString(err) << ")\n";
-        throw std::runtime_error("inplace_givens_update_cols_tiled execution failed");
+        throw std::runtime_error("inplace_givens_update_complex_tiled execution failed");
     }
 }
 
 // Extern "C" wrapper with runtime BX selection.
 // Supported BX values are 32 and 64 by default (add more cases as you like).
-extern "C" void inplace_givens_update_cols_tiled_wrapper(
+extern "C" void inplace_givens_update_complex_tiled_wrapper(
     int BX_runtime,                      // pick 32 or 64 (must divide warp multiples)
     cuDoubleComplex* d_Cout,
     const int* sourcea1,
@@ -950,14 +1003,14 @@ extern "C" void inplace_givens_update_cols_tiled_wrapper(
 
     switch (BX_runtime) {
         case 64:
-            launch_inplace_givens_update_cols_tiled<64>(
+            launch_inplace_givens_update_complex_tiled<64>(
                 d_Cout, sourcea1, targeta1, paritya1, paritya2,
                 sourceb1, targetb1, parityb1, parityb2,
                 nalpha, nb, nbeta_strs_,
                 factor, acc_coeff1, acc_coeff2);
             break;
         case 32:
-            launch_inplace_givens_update_cols_tiled<32>(
+            launch_inplace_givens_update_complex_tiled<32>(
                 d_Cout, sourcea1, targeta1, paritya1, paritya2,
                 sourceb1, targetb1, parityb1, parityb2,
                 nalpha, nb, nbeta_strs_,
@@ -967,11 +1020,196 @@ extern "C" void inplace_givens_update_cols_tiled_wrapper(
             // Fallback or throw—here we fallback to 32 for convenience.
             std::cerr << "Warning: unsupported BX=" << BX_runtime
                       << " — defaulting to BX=32.\n";
-            launch_inplace_givens_update_cols_tiled<32>(
+            launch_inplace_givens_update_complex_tiled<32>(
                 d_Cout, sourcea1, targeta1, paritya1, paritya2,
                 sourceb1, targetb1, parityb1, parityb2,
                 nalpha, nb, nbeta_strs_,
                 factor, acc_coeff1, acc_coeff2);
+            break;
+    }
+}
+
+// =============================
+// All / SoA kernel
+// u' = factor * u + acc2 * ((pa2*pb2) * v)
+// v' = factor * v + acc1 * ((pa1*pb1) * u)
+// Everything here is either real / imaginary scalars.
+// =============================
+template<int BX>
+__global__ void givens_update_soa_tiled(
+    double* __restrict__ dC,          // C_data
+    const int* __restrict__ sourcea1,
+    const int* __restrict__ targeta1,
+    const double* __restrict__ paritya1,  // pa1
+    const double* __restrict__ paritya2,  // pa2
+    const int* __restrict__ sourceb1,
+    const int* __restrict__ targetb1,
+    const double* __restrict__ parityb1,  // pb1
+    const double* __restrict__ parityb2,  // pb2
+    int nalpha,
+    int nb,
+    int nbeta_strs_,
+    double factor,
+    double acc1,
+    double acc2)
+{
+    constexpr int AY = 8;
+    static_assert(BX % 32 == 0, "BX must be a multiple of 32");
+
+    const int ib0 = blockIdx.x * BX;
+    if (ib0 >= nb) return;
+
+    const int tx = threadIdx.x;
+    const int ty = threadIdx.y;
+
+    __shared__ int    s_sb1[BX], s_tb1[BX];
+    __shared__ double s_pb1[BX], s_pb2[BX];
+
+    __shared__ int    s_sa1[AY], s_ta1[AY];
+    __shared__ double s_pa1[AY], s_pa2[AY];
+
+    // Load column-pair metadata (once per block along y)
+    if (tx + ib0 < nb && ty == 0) {
+        const int ib = ib0 + tx;
+        s_sb1[tx] = sourceb1[ib];
+        s_tb1[tx] = targetb1[ib];
+        s_pb1[tx] = parityb1[ib];
+        s_pb2[tx] = parityb2[ib];
+    }
+    __syncthreads();
+
+    for (int ia0 = blockIdx.y * AY; ia0 < nalpha; ia0 += gridDim.y * AY) {
+        // Load row metadata (once per block along x)
+        if (ty < AY && tx == 0) {
+            const int ia = ia0 + ty;
+            if (ia < nalpha) {
+                s_sa1[ty] = sourcea1[ia];
+                s_ta1[ty] = targeta1[ia];
+                s_pa1[ty] = paritya1[ia];
+                s_pa2[ty] = paritya2[ia];
+            }
+        }
+        __syncthreads();
+
+        const int ia = ia0 + ty;
+        if (ia < nalpha && tx + ib0 < nb) {
+            const int sa1 = s_sa1[ty];
+            const int ta1 = s_ta1[ty];
+            const int sb1 = s_sb1[tx];
+            const int tb1 = s_tb1[tx];
+
+            const double pa1 = s_pa1[ty];
+            const double pa2 = s_pa2[ty];
+            const double pb1 = s_pb1[tx];
+            const double pb2 = s_pb2[tx];
+
+            const int idx_u = sa1 * nbeta_strs_ + sb1;
+            const int idx_v = ta1 * nbeta_strs_ + tb1;
+
+            const double u0 = dC[idx_u];
+            const double v0 = dC[idx_v];
+
+            const double p1 = pa1 * pb1;
+            const double p2 = pa2 * pb2;
+
+            const double u_new = factor * u0 + acc2 * (p2 * v0);
+            const double v_new = factor * v0 + acc1 * (p1 * u0);
+
+            dC[idx_u] = u_new;
+            dC[idx_v] = v_new;
+        }
+        __syncthreads();
+    }
+}
+
+// =============================
+// Launchers
+// =============================
+template<int BX>
+static void launch_givens_soa(
+    double* dC,
+    const double* paritya1,
+    const double* paritya2,
+    const double* parityb1,
+    const double* parityb2,
+    const int* sourcea1,
+    const int* targeta1,
+    const int* sourceb1,
+    const int* targetb1,
+    int nalpha,
+    int nb,
+    int nbeta_strs_,
+    double factor,
+    double acc1,
+    double acc2)
+{
+    if (nalpha == 0 || nb == 0 || nbeta_strs_ == 0) return;
+
+    constexpr int AY = 8;
+    const int grid_x = (nb + BX - 1) / BX;
+    const int grid_y = std::max(1, (nalpha + AY - 1) / AY);
+    dim3 block(BX, AY), grid(grid_x, grid_y);
+
+    if (block.x * block.y > 1024)
+        throw std::invalid_argument("Block size BX*AY exceeds device limit");
+
+    givens_update_soa_tiled<BX><<<grid, block>>>(
+        dC, sourcea1, targeta1, paritya1, paritya2,
+        sourceb1, targetb1, parityb1, parityb2,
+        nalpha, nb, nbeta_strs_,
+        factor, acc1, acc2);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "givens_update_soa_tiled<" << BX << "> launch failed: "
+                  << cudaGetErrorString(err) << "\n";
+        throw std::runtime_error("kernel launch failed");
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "givens_update_soa_tiled<" << BX << "> exec failed: "
+                  << cudaGetErrorString(err) << "\n";
+        throw std::runtime_error("kernel exec failed");
+    }
+}
+
+// =============================
+// Single extern "C" wrapper
+// =============================
+extern "C" void givens_update_tiled_wrapper_soa(
+    int BX_runtime,
+    double* dC,
+    const double* paritya1,
+    const double* paritya2,
+    const double* parityb1,
+    const double* parityb2,
+    const int* sourcea1,
+    const int* targeta1,
+    const int* sourceb1,
+    const int* targetb1,
+    int nalpha,
+    int nb,
+    int nbeta_strs_,
+    double factor,
+    double acc1,
+    double acc2)
+{
+    if (nalpha == 0 || nb == 0 || nbeta_strs_ == 0) return;
+
+    switch (BX_runtime) {
+        case 64:
+            launch_givens_soa<64>(
+                dC, paritya1, paritya2, parityb1, parityb2,
+                sourcea1, targeta1, sourceb1, targetb1,
+                nalpha, nb, nbeta_strs_, factor, acc1, acc2
+            );
+            break;
+        case 32: default:
+            launch_givens_soa<32>(
+                dC, paritya1, paritya2, parityb1, parityb2,
+                sourcea1, targeta1, sourceb1, targetb1,
+                nalpha, nb, nbeta_strs_, factor, acc1, acc2
+            );
             break;
     }
 }

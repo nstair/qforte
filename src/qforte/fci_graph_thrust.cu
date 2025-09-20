@@ -11,7 +11,7 @@
 
 #include <bitset>
 
-/// Custom construcotr
+/// Custom construcotor
 FCIGraphThrust::FCIGraphThrust(int nalfa, int nbeta, int norb) 
 {
     if (norb < 0)
@@ -463,6 +463,85 @@ void FCIGraphThrust::make_mapping_each_gpu_v3(
     terms_source_gpu.emplace_back(source_gpu);
     terms_target_gpu.emplace_back(target_gpu);
     terms_parity_gpu.emplace_back(parity_gpu);
+}
+
+void FCIGraphThrust::make_mapping_each_gpu_v4(
+    bool alpha,
+    const std::vector<int>& dag,
+    const std::vector<int>& undag,
+    int* count,
+    std::vector<thrust::device_vector<int>>& terms_source_gpu,
+    std::vector<thrust::device_vector<int>>& terms_target_gpu,
+    std::vector<thrust::device_vector<double>>& terms_parity_re_gpu,
+    std::vector<thrust::device_vector<double>>& terms_parity_im_gpu)
+{
+    std::vector<uint64_t> strings;
+    int length;
+
+    if (alpha) {
+        strings = get_astr();
+        length = lena_;
+    } else {
+        strings = get_bstr();
+        length = lenb_;
+    }
+
+    thrust::host_vector<int> source(length);
+    thrust::host_vector<int> target(length);
+    thrust::host_vector<double> parity_re(length);
+    thrust::host_vector<double> parity_im(length);
+
+    uint64_t dag_mask = 0;
+    uint64_t undag_mask = 0;
+
+    for (uint64_t i : dag) {
+        if (std::find(undag.begin(), undag.end(), i) == undag.end()) {
+            dag_mask = set_bit(dag_mask, i);
+        }
+    }
+
+    for (uint64_t i : undag) { undag_mask = set_bit(undag_mask, i); }
+
+    for (uint64_t index = 0; index < static_cast<uint64_t>(length); index++) {
+        uint64_t current = strings[index];
+        bool check = ((current & dag_mask) == 0) && ((current & undag_mask ^ undag_mask) == 0);
+
+        if (check) {
+            uint64_t parity_value = 0;
+            for (size_t i = undag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, undag[i - 1]);
+                current = unset_bit(current, undag[i - 1]);
+            }
+
+            for (size_t i = dag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, dag[i - 1]);
+                current = set_bit(current, dag[i - 1]);
+            }
+
+            source[*count] = static_cast<int>(index);
+            target[*count] = get_aind_for_str(static_cast<int>(current));
+            parity_re[*count] = 1.0 - 2.0 * static_cast<int>(parity_value % 2);
+            parity_im[*count] = 0.0;
+            (*count)++;
+        }
+    }
+
+    thrust::device_vector<int> source_gpu(*count);
+    thrust::device_vector<int> target_gpu(*count);
+    thrust::device_vector<double> parity_re_gpu(*count);
+    thrust::device_vector<double> parity_im_gpu(*count);
+
+    thrust::copy(source.begin(), source.begin() + *count, source_gpu.begin());
+    thrust::copy(target.begin(), target.begin() + *count, target_gpu.begin());
+    thrust::copy(parity_re.begin(), parity_re.begin() + *count, parity_re_gpu.begin());
+    thrust::copy(parity_im.begin(), parity_im.begin() + *count, parity_im_gpu.begin());
+
+    terms_source_gpu.emplace_back(source_gpu);
+    terms_target_gpu.emplace_back(target_gpu);
+    terms_parity_re_gpu.emplace_back(parity_re_gpu);
+    terms_parity_im_gpu.emplace_back(parity_im_gpu);
+
+    timer_.acc_record("make_mapping_each_v4");
 }
 
 /// NICK: 1. Consider a faster blas veriosn, 2. consider using qubit basis, 3. rename (too long)

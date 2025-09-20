@@ -130,7 +130,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("__repr__", &SQOpPool::str);
 
     py::class_<SQOpPoolThrust>(m, "SQOpPoolThrust")
-        .def(py::init<>())
+        .def(py::init<std::string>(), "data_type"_a)
         .def("add", &SQOpPoolThrust::add_term)
         .def("add_hermitian_pairs", &SQOpPoolThrust::add_hermitian_pairs)
         .def("add_term", &SQOpPoolThrust::add_term)

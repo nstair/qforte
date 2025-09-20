@@ -510,6 +510,80 @@ void TensorThrust::zero_gpu()
                  make_cuDoubleComplex(0.0, 0.0));
 }
 
+// ==========================================
+// These now should throw error depending on 
+// data_type_ and on_complex_
+// ==========================================
+thrust::host_vector<std::complex<double>>& TensorThrust::h_data() 
+{
+    cpu_error();
+    on_complex_error();
+    return h_data_;
+}
+
+const thrust::host_vector<double>& TensorThrust::read_h_re_data() const 
+{
+    cpu_error();
+    on_soa_error();
+    return h_re_data_;
+}
+
+const thrust::host_vector<double>& TensorThrust::read_h_im_data() const 
+{
+    cpu_error();
+    on_soa_error();
+    return h_im_data_;
+}
+
+const thrust::host_vector<std::complex<double>>& TensorThrust::read_h_data() const 
+{
+    cpu_error();
+    on_complex_error();
+    return h_data_; 
+}
+
+thrust::device_vector<cuDoubleComplex>& TensorThrust::d_data() 
+{
+    gpu_error();
+    on_complex_error();
+    return d_data_; 
+}
+
+thrust::device_vector<double>& TensorThrust::d_re_data() 
+{
+    gpu_error();
+    on_soa_error();
+    return d_re_data_;
+}
+
+thrust::device_vector<double>& TensorThrust::d_im_data() 
+{
+    gpu_error();
+    on_soa_error();
+    return d_im_data_;
+}
+
+const thrust::device_vector<cuDoubleComplex>& TensorThrust::read_d_data() const 
+{
+    gpu_error();
+    on_complex_error();
+    return d_data_; 
+}
+
+const thrust::device_vector<double>& TensorThrust::read_d_re_data() const 
+{
+    gpu_error();
+    on_soa_error();
+    return d_re_data_;
+}
+
+const thrust::device_vector<double>& TensorThrust::read_d_im_data() const 
+{
+    gpu_error();
+    on_soa_error();
+    return d_im_data_;
+}
+
 void TensorThrust::set(
     const std::vector<size_t>& idxs,
     const std::complex<double> val

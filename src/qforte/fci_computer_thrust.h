@@ -45,6 +45,10 @@ class FCIComputerThrust {
     // Alias for the big tuple type (tuple of const references) returned by get_mu_tuple()
     using PrecompTuple =
         decltype(std::declval<const SQOpPoolThrust&>().get_mu_tuple(std::size_t{}));
+    
+    // Alias for the SoA tuple type (tuple of const references) returned by get_mu_tuple_soa()
+    using PrecompTupleSoA =
+        decltype(std::declval<const SQOpPoolThrust&>().get_mu_tuple_soa(std::size_t{}));
 
     /// default constructor: create a 'FCI' quantum computer 
     /// the computer represends a restricted hilbert space for 'chemistry'
@@ -203,6 +207,7 @@ class FCIComputerThrust {
       const std::vector<int>& annb,
       const PrecompTuple* precomp = nullptr); 
 
+    template<class Precomp>
     void evolve_individual_nbody_easy_cpu_v4(
       const std::complex<double> time,
       const std::complex<double> coeff,
@@ -211,7 +216,7 @@ class FCIComputerThrust {
       const std::vector<int>& anna,
       const std::vector<int>& creb,
       const std::vector<int>& annb,
-      const PrecompTuple* precomp = nullptr);
+      const Precomp* precomp = nullptr);
 
     void evolve_individual_nbody_hard_cpu(
       const std::complex<double> time,
@@ -234,6 +239,7 @@ class FCIComputerThrust {
       const std::vector<int>& annb,
       const PrecompTuple* precomp = nullptr);
 
+    template<class Precomp>
     void evolve_individual_nbody_hard_cpu_v5(
       const std::complex<double> time,
       const std::complex<double> coeff,
@@ -242,7 +248,7 @@ class FCIComputerThrust {
       const std::vector<int>& anna,
       const std::vector<int>& creb,
       const std::vector<int>& annb,
-      const PrecompTuple* precomp = nullptr);
+      const Precomp* precomp = nullptr);
 
     void evolve_individual_nbody_cpu(
       const std::complex<double> time,
@@ -261,13 +267,14 @@ class FCIComputerThrust {
       const bool adjoint,
       const PrecompTuple* precomp = nullptr);
 
+    template<class Precomp>
     void evolve_individual_nbody_cpu_v5(
       const std::complex<double> time,
       const SQOperator& sqop,
       TensorThrust& Cout,
       const bool antiherm,
       const bool adjoint,
-      const PrecompTuple* precomp = nullptr);
+      const Precomp* precomp = nullptr);
 
     void apply_sqop_evolution_gpu(
       const std::complex<double> time,
