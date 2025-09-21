@@ -827,29 +827,11 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu_v4(
                     "Cout::complex_to_soa_gpu failed with a non-standard exception - individual_nbody_easy_cpu_v4");
             }
 
-            int mode = (factor.imag() == 0.0) ? 0 : 1;
-
-            // get pointers to stuff we need depending on mode
-            double* cout_data;
-            double factor_part;
-            if (mode) {
-                // imaginary case
-                cout_data = thrust::raw_pointer_cast(Cout.d_im_data().data());
-                factor_part = factor_gpu.y;
-            } else {
-                // real case
-                cout_data = thrust::raw_pointer_cast(Cout.d_re_data().data());
-                factor_part = factor_gpu.x;
-            }
-
             scale_elements_wrapper_soa(
-                cout_data,
-                thrust::raw_pointer_cast(std::get<2>(*precomp).data()), 
-                std::get<2>(*precomp).size(),
-                thrust::raw_pointer_cast(std::get<4>(*precomp).data()), 
-                std::get<4>(*precomp).size(),
-                nbeta_strs_,
-                factor_part);
+                thrust::raw_pointer_cast(Cout.d_re_data().data()), thrust::raw_pointer_cast(Cout.d_im_data().data()), // C (SoA)
+                thrust::raw_pointer_cast(first.data()), first.size(),
+                thrust::raw_pointer_cast(second.data()), second.size(),
+                nbeta_strs_, factor_gpu.x, factor_gpu.y);
 
             Cout.soa_to_complex_gpu();
 
@@ -1445,34 +1427,40 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
                     "Cout::complex_to_soa_gpu failed with a non-standard exception - individual_nbody_hard_cpu_v5");
             }
 
+            if (factor.real() != 0.0 && factor.imag() != 0.0) {
+                // Both parts are non-zero, proceed with scaling
+                std::cerr << "Warning: evolve_individual_nbody_easy_cpu_v4: Complex factor with both real and imaginary parts non-zero. This is not supported in the current implementation. factor: " << factor << std::endl;
+                throw std::runtime_error("evolve_individual_nbody_easy_cpu_v4: Cannot handle complex factor with both real and imaginary parts non-zero.");
+            }
+
             int mode = (factor.imag() == 0.0) ? 0 : 1;
 
             // get pointers to stuff we need depending on mode
 
-            double* cout_data = nullptr;
-            const double* paritya1 = nullptr;
-            const double* paritya2 = nullptr;
-            const double* parityb1 = nullptr;
-            const double* parityb2 = nullptr;
+            // double* cout_data = nullptr;
+            // const double* paritya1 = nullptr;
+            // const double* paritya2 = nullptr;
+            // const double* parityb1 = nullptr;
+            // const double* parityb2 = nullptr;
             double factor_part = (mode) ? factor.imag() : factor.real();
-            double acc_coeff1_part = (mode) ? acc_coeff1.imag() : acc_coeff1.real();
-            double acc_coeff2_part = (mode) ? acc_coeff2.imag() : acc_coeff2.real();
+            // double acc_coeff1_part = (mode) ? acc_coeff1.imag() : acc_coeff1.real();
+            // double acc_coeff2_part = (mode) ? acc_coeff2.imag() : acc_coeff2.real();
 
-            if (mode) {
-                // imaginary case
-                cout_data = thrust::raw_pointer_cast(Cout.d_im_data().data());
-                paritya1 = thrust::raw_pointer_cast(std::get<15>(*precomp).data());
-                paritya2 = thrust::raw_pointer_cast(std::get<17>(*precomp).data());
-                parityb1 = thrust::raw_pointer_cast(std::get<19>(*precomp).data());
-                parityb2 = thrust::raw_pointer_cast(std::get<21>(*precomp).data());
-            } else {
-                // real case
-                cout_data = thrust::raw_pointer_cast(Cout.d_re_data().data());
-                paritya1 = thrust::raw_pointer_cast(std::get<14>(*precomp).data());
-                paritya2 = thrust::raw_pointer_cast(std::get<16>(*precomp).data());
-                parityb1 = thrust::raw_pointer_cast(std::get<18>(*precomp).data());
-                parityb2 = thrust::raw_pointer_cast(std::get<20>(*precomp).data());
-            }
+            // if (mode) {
+            //     // imaginary case
+            //     cout_data = thrust::raw_pointer_cast(Cout.d_im_data().data());
+            //     paritya1 = thrust::raw_pointer_cast(std::get<15>(*precomp).data());
+            //     paritya2 = thrust::raw_pointer_cast(std::get<17>(*precomp).data());
+            //     parityb1 = thrust::raw_pointer_cast(std::get<19>(*precomp).data());
+            //     parityb2 = thrust::raw_pointer_cast(std::get<21>(*precomp).data());
+            // } else {
+            //     // real case
+            //     cout_data = thrust::raw_pointer_cast(Cout.d_re_data().data());
+            //     paritya1 = thrust::raw_pointer_cast(std::get<14>(*precomp).data());
+            //     paritya2 = thrust::raw_pointer_cast(std::get<16>(*precomp).data());
+            //     parityb1 = thrust::raw_pointer_cast(std::get<18>(*precomp).data());
+            //     parityb2 = thrust::raw_pointer_cast(std::get<20>(*precomp).data());
+            // }
 
             timer_.acc_end("===>hard all type case random stuff");
 
@@ -1483,22 +1471,19 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
                 timer_.acc_begin("===>hard nbody given kernel - col case");
 
                 givens_update_tiled_wrapper_soa(
-                    32,
-                    cout_data,
-                    paritya1, // paritya1
-                    paritya2, // paritya2
-                    parityb1, // parityb1
-                    parityb2, // parityb2
-                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // sourcea1
-                    thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // targeta1
-                    thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // sourceb1
-                    thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // targetb1
-                    std::get<6>(*precomp).size(), // nalpha
-                    std::get<8>(*precomp).size(), // nb
-                    nbeta_strs_,
-                    factor_part,
-                    acc_coeff1_part,
-                    acc_coeff2_part);
+                    32, // block size
+                    thrust::raw_pointer_cast(Cout.d_re_data().data()), thrust::raw_pointer_cast(Cout.d_im_data().data()), // C (SoA)
+                    thrust::raw_pointer_cast(std::get<14>(*precomp).data()), thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // paritya1
+                    thrust::raw_pointer_cast(std::get<16>(*precomp).data()), thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // paritya2
+                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()), thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // souracea1 / targeta1
+                    thrust::raw_pointer_cast(std::get<18>(*precomp).data()), thrust::raw_pointer_cast(std::get<19>(*precomp).data()), // parityb1
+                    thrust::raw_pointer_cast(std::get<20>(*precomp).data()), thrust::raw_pointer_cast(std::get<21>(*precomp).data()), // parityb2
+                    thrust::raw_pointer_cast(std::get<8>(*precomp).data()), thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // sourceb1 / targetb1
+                    std::get<6>(*precomp).size(), std::get<8>(*precomp).size(), nbeta_strs_, // sizes (na, nb, nbeta_strs_)
+                    mode,         // mode: 0 => real, 1 => imaginary
+                    factor_part,          // if real: factor = factor_val; if imag: factor = i*factor_val
+                    acc_coeff1.real(), acc_coeff1.imag(),   // accumulator (complex)
+                    acc_coeff2.real(), acc_coeff2.imag());  // accumulator (complex)
 
                 timer_.acc_end("===>hard nbody given kernel - col case");
 
@@ -1510,22 +1495,19 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
                 timer_.acc_begin("===>hard nbody given kernel - row case");
 
                 givens_update_tiled_wrapper_soa(
-                    32,
-                    cout_data,
-                    paritya1, // paritya1
-                    paritya2, // paritya2
-                    parityb1, // parityb1
-                    parityb2, // parityb2
-                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // sourcea1
-                    thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // targeta1
-                    thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // sourceb1
-                    thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // targetb1
-                    std::get<6>(*precomp).size(), // nalpha
-                    std::get<8>(*precomp).size(), // nb
-                    nbeta_strs_,
-                    factor_part,
-                    acc_coeff1_part,
-                    acc_coeff2_part);
+                    32, // block size
+                    thrust::raw_pointer_cast(Cout.d_re_data().data()), thrust::raw_pointer_cast(Cout.d_im_data().data()), // C (SoA)
+                    thrust::raw_pointer_cast(std::get<14>(*precomp).data()), thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // paritya1
+                    thrust::raw_pointer_cast(std::get<16>(*precomp).data()), thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // paritya2
+                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()), thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // souracea1 / targeta1
+                    thrust::raw_pointer_cast(std::get<18>(*precomp).data()), thrust::raw_pointer_cast(std::get<19>(*precomp).data()), // parityb1
+                    thrust::raw_pointer_cast(std::get<20>(*precomp).data()), thrust::raw_pointer_cast(std::get<21>(*precomp).data()), // parityb2
+                    thrust::raw_pointer_cast(std::get<8>(*precomp).data()), thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // sourceb1 / targetb1
+                    std::get<6>(*precomp).size(), std::get<8>(*precomp).size(), nbeta_strs_, // sizes (na, nb, nbeta_strs_)
+                    mode,         // mode: 0 => real, 1 => imaginary
+                    factor_part,          // if real: factor = factor_val; if imag: factor = i*factor_val
+                    acc_coeff1.real(), acc_coeff1.imag(),   // accumulator (complex)
+                    acc_coeff2.real(), acc_coeff2.imag());  // accumulator (complex)
 
                 timer_.acc_end("===>hard nbody given kernel - row case");
 
@@ -1538,22 +1520,19 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
             timer_.acc_begin("===>hard nbody given kernel - general case");
 
             givens_update_tiled_wrapper_soa(
-                32,
-                cout_data,
-                paritya1, // paritya1
-                paritya2, // paritya2
-                parityb1, // parityb1
-                parityb2, // parityb2
-                thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // sourcea1
-                thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // targeta1
-                thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // sourceb1
-                thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // targetb1
-                std::get<6>(*precomp).size(), // nalpha
-                std::get<8>(*precomp).size(), // nb
-                nbeta_strs_,
-                factor_part,
-                acc_coeff1_part,
-                acc_coeff2_part);
+                32, // block size
+                thrust::raw_pointer_cast(Cout.d_re_data().data()), thrust::raw_pointer_cast(Cout.d_im_data().data()), // C (SoA)
+                thrust::raw_pointer_cast(std::get<14>(*precomp).data()), thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // paritya1
+                thrust::raw_pointer_cast(std::get<16>(*precomp).data()), thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // paritya2
+                thrust::raw_pointer_cast(std::get<6>(*precomp).data()), thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // souracea1 / targeta1
+                thrust::raw_pointer_cast(std::get<18>(*precomp).data()), thrust::raw_pointer_cast(std::get<19>(*precomp).data()), // parityb1
+                thrust::raw_pointer_cast(std::get<20>(*precomp).data()), thrust::raw_pointer_cast(std::get<21>(*precomp).data()), // parityb2
+                thrust::raw_pointer_cast(std::get<8>(*precomp).data()), thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // sourceb1 / targetb1
+                std::get<6>(*precomp).size(), std::get<8>(*precomp).size(), nbeta_strs_, // sizes (na, nb, nbeta_strs_)
+                mode,         // mode: 0 => real, 1 => imaginary
+                factor_part,          // if real: factor = factor_val; if imag: factor = i*factor_val
+                acc_coeff1.real(), acc_coeff1.imag(),   // accumulator (complex)
+                acc_coeff2.real(), acc_coeff2.imag());  // accumulator (complex)
 
             timer_.acc_end("===>hard nbody given kernel - general case");
 
@@ -1807,6 +1786,43 @@ void FCIComputerThrust::evolve_individual_nbody_cpu_v5(
     const bool adjoint,
     const Precomp* precomp)
 {
+    // // DEBUG STUFF:
+    // auto dump_tensor = [&](const char* tag, TensorThrust& T) {
+    //     std::cout << "\n==== " << tag << " ====\n";
+    //     // If TensorThrust::norm() exists, uncomment the line below:
+    //     // std::cout << "||C|| = " << T.norm() << "\n";
+    //     // Use the tensor class stringifier as requested
+    //     std::cout << T.str(/*print_complex=*/true) << std::endl;
+    // };
+
+    // auto dump_step_header = [&](const char* which,
+    //                             const std::complex<double>& eff_coeff,
+    //                             const std::vector<int>& crea,
+    //                             const std::vector<int>& anna,
+    //                             const std::vector<int>& creb,
+    //                             const std::vector<int>& annb,
+    //                             int nswaps,
+    //                             const std::complex<double>& parity)
+    // {
+    //     std::cout << "\n----------------------------------------\n";
+    //     std::cout << which << "\n";
+    //     std::cout << "  effective coeff (after adj/antiherm & parity) = "
+    //               << eff_coeff << "\n";
+    //     std::cout << "  parity swaps = " << nswaps << "  => parity = " << parity << "\n";
+    //     auto print_vec = [](const char* n, const std::vector<int>& v){
+    //         std::cout << "  " << n << " = [";
+    //         for (size_t i = 0; i < v.size(); ++i) {
+    //             std::cout << v[i] << (i+1<v.size()? ", ":"");
+    //         }
+    //         std::cout << "]\n";
+    //     };
+    //     print_vec("crea(α)", crea);
+    //     print_vec("anna(α)", anna);
+    //     print_vec("creb(β)", creb);
+    //     print_vec("annb(β)", annb);
+    // };
+
+
     /// TODO: Implement seperate CPU and GPU versions of this function
     // cpu_error();
 
@@ -1869,6 +1885,12 @@ void FCIComputerThrust::evolve_individual_nbody_cpu_v5(
     if (crea == anna && creb == annb) {
         // std::cout << "Made it to easy" << std::endl;
 
+        // // DEBUG:
+        // dump_step_header("[EASY] (scaling)", parity * std::get<0>(term), crea, anna, creb, annb, nswaps, parity);
+
+        // // DEBUG: Optional: dump state just before
+        // dump_tensor("  EASY: before", Cout);
+
         timer_.acc_begin("=>evolve_individual_nbody_easy_cpu_v4");
 
         evolve_individual_nbody_easy_cpu_v4(
@@ -1881,12 +1903,19 @@ void FCIComputerThrust::evolve_individual_nbody_cpu_v5(
             annb,
             precomp);
 
+        // // DEBUG: After
+        // dump_tensor("  EASY: after", Cout);
+
         timer_.acc_end("=>evolve_individual_nbody_easy_cpu_v4");
 
     } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
         // std::cout << "Made it to hard" << std::endl;
 
         timer_.acc_begin("=>evolve_individual_nbody_hard_cpu_v5");
+
+        // // DEBUG:
+        // dump_step_header("[HARD] (Givens)", parity * std::get<0>(term), crea, anna, creb, annb, nswaps, parity);
+        // dump_tensor("  HARD: before", Cout);
 
         evolve_individual_nbody_hard_cpu_v5(
             time,
@@ -1897,6 +1926,9 @@ void FCIComputerThrust::evolve_individual_nbody_cpu_v5(
             creb,
             annb,
             precomp);
+
+        // // DEBUG: After
+        // dump_tensor("  HARD: after", Cout);
 
         timer_.acc_end("=>evolve_individual_nbody_hard_cpu_v5");
 
