@@ -547,58 +547,179 @@ extern "C" void scale_elements_wrapper_complex(
     }
 }
 
+// __global__ void scale_elements_kernel_soa(
+//     double* __restrict__ d_Cout,
+//     const int* __restrict__ d_first, 
+//     int first_size,
+//     const int* __restrict__ d_second, 
+//     int second_size,
+//     int nbeta_strs_,
+//     double factor) 
+// {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     int j = blockIdx.y * blockDim.y + threadIdx.y;
+
+//     if (i < first_size && j < second_size) {
+//         int idx = d_first[i] * nbeta_strs_ + d_second[j];
+//         d_Cout[idx] *= factor;
+//     }
+// }
+
+// extern "C" void scale_elements_wrapper_soa(
+//     double* d_Cout,
+//     const int* d_first, 
+//     int first_size,
+//     const int* d_second, 
+//     int second_size,
+//     int nbeta_strs_,
+//     double factor) 
+// {
+//     dim3 blockSize(16, 16);
+//     dim3 gridSize((first_size  + blockSize.x - 1) / blockSize.x, 
+//                   (second_size + blockSize.y - 1) / blockSize.y);
+
+//     // Real-valued kernel launch (provide this kernel or a templated alias)
+//     scale_elements_kernel_soa<<<gridSize, blockSize>>>(
+//         d_Cout, d_first, first_size, d_second, second_size, nbeta_strs_, factor);
+
+//     // Check for launch errors
+//     cudaError_t err = cudaGetLastError();
+//     if (err != cudaSuccess) {
+//         std::cerr << "Failed to launch scale_elements_kernel_soa ("
+//                   << cudaGetErrorString(err) << ")!" << std::endl;
+//         throw std::runtime_error("Kernel launch failed");
+//     }
+
+//     // Sync and check for runtime errors
+//     err = cudaDeviceSynchronize();
+//     if (err != cudaSuccess) {
+//         std::cerr << "Kernel execution failed ("
+//                   << cudaGetErrorString(err) << ")!" << std::endl;
+//         throw std::runtime_error("Kernel execution failed");
+//     }
+// }
+
 __global__ void scale_elements_kernel_soa(
-    double* __restrict__ d_Cout,
-    const int* __restrict__ d_first, 
-    int first_size,
-    const int* __restrict__ d_second, 
-    int second_size,
+    double* __restrict__ dCr, double* __restrict__ dCi,
+    const int* __restrict__ d_first, int first_size,
+    const int* __restrict__ d_second, int second_size,
     int nbeta_strs_,
-    double factor) 
+    double fr, double fi)   // factor = fr + i*fi
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (i < first_size && j < second_size) {
         int idx = d_first[i] * nbeta_strs_ + d_second[j];
-        d_Cout[idx] *= factor;
+        double a = dCr[idx];
+        double b = dCi[idx];
+        // (a + i b) * (fr + i fi)
+        dCr[idx] = fr*a - fi*b;
+        dCi[idx] = fr*b + fi*a;
     }
 }
 
-
 extern "C" void scale_elements_wrapper_soa(
-    double* d_Cout,
-    const int* d_first, 
-    int first_size,
-    const int* d_second, 
-    int second_size,
-    int nbeta_strs_,
-    double factor) 
+    double* dCr, double* dCi,
+    const int* d_first, int first_size,
+    const int* d_second, int second_size,
+    int nbeta_strs_, double fr, double fi)
 {
     dim3 blockSize(16, 16);
-    dim3 gridSize((first_size  + blockSize.x - 1) / blockSize.x, 
+    dim3 gridSize((first_size + blockSize.x - 1) / blockSize.x,
                   (second_size + blockSize.y - 1) / blockSize.y);
 
-    // Real-valued kernel launch (provide this kernel or a templated alias)
     scale_elements_kernel_soa<<<gridSize, blockSize>>>(
-        d_Cout, d_first, first_size, d_second, second_size, nbeta_strs_, factor);
+        dCr, dCi, d_first, first_size, d_second, second_size, nbeta_strs_, fr, fi);
 
-    // Check for launch errors
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
-        std::cerr << "Failed to launch scale_elements_kernel_soa ("
-                  << cudaGetErrorString(err) << ")!" << std::endl;
+        std::cerr << "Failed to launch scale_elements_kernel_soa: "
+                  << cudaGetErrorString(err) << std::endl;
         throw std::runtime_error("Kernel launch failed");
     }
-
-    // Sync and check for runtime errors
     err = cudaDeviceSynchronize();
     if (err != cudaSuccess) {
-        std::cerr << "Kernel execution failed ("
-                  << cudaGetErrorString(err) << ")!" << std::endl;
+        std::cerr << "Kernel execution failed: " << cudaGetErrorString(err) << std::endl;
         throw std::runtime_error("Kernel execution failed");
     }
 }
+
+// __global__ void scale_elements_kernel_soa_factor_real(
+//     double* __restrict__ dCr, double* __restrict__ dCi,
+//     const int* __restrict__ d_first, int first_size,
+//     const int* __restrict__ d_second, int second_size,
+//     int nbeta_strs_, double fr)  // factor = fr
+// {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     int j = blockIdx.y * blockDim.y + threadIdx.y;
+
+//     if (i < first_size && j < second_size) {
+//         int idx = d_first[i] * nbeta_strs_ + d_second[j];
+//         dCr[idx] *= fr;
+//         dCi[idx] *= fr;
+//     }
+// }
+
+// __global__ void scale_elements_kernel_soa_factor_imag(
+//     double* __restrict__ dCr, double* __restrict__ dCi,
+//     const int* __restrict__ d_first, int first_size,
+//     const int* __restrict__ d_second, int second_size,
+//     int nbeta_strs_, double fi)  // factor = i*fi
+// {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     int j = blockIdx.y * blockDim.y + threadIdx.y;
+
+//     if (i < first_size && j < second_size) {
+//         int idx = d_first[i] * nbeta_strs_ + d_second[j];
+//         double xr = dCr[idx], xi = dCi[idx];
+//         // (xr + i*xi) * (i*fi) = (-fi*xi) + i*(fi*xr)
+//         dCr[idx] = -fi * xi;
+//         dCi[idx] =  fi * xr;
+//     }
+// }
+
+// extern "C" void scale_elements_wrapper_soa_factor_real(
+//     double* dCr, double* dCi,
+//     const int* d_first, int first_size,
+//     const int* d_second, int second_size,
+//     int nbeta_strs_, double fr)
+// {
+//     dim3 blockSize(16,16);
+//     dim3 gridSize((first_size  + blockSize.x - 1)/blockSize.x,
+//                   (second_size + blockSize.y - 1)/blockSize.y);
+
+//     scale_elements_kernel_soa_factor_real<<<gridSize, blockSize>>>(
+//         dCr, dCi, d_first, first_size, d_second, second_size, nbeta_strs_, fr);
+
+//     cudaError_t err = cudaGetLastError();
+//     if (err != cudaSuccess) { std::cerr << "real launch failed: "
+//         << cudaGetErrorString(err) << "\n"; throw std::runtime_error("launch"); }
+//     err = cudaDeviceSynchronize();
+//     if (err != cudaSuccess) { std::cerr << "real exec failed: "
+//         << cudaGetErrorString(err) << "\n"; throw std::runtime_error("exec"); }
+// }
+
+// extern "C" void scale_elements_wrapper_soa_factor_imag(
+//     double* dCr, double* dCi,
+//     const int* d_first, int first_size,
+//     const int* d_second, int second_size,
+//     int nbeta_strs_, double fi)
+// {
+//     dim3 blockSize(16,16);
+//     dim3 gridSize((first_size  + blockSize.x - 1)/blockSize.x,
+//                   (second_size + blockSize.y - 1)/blockSize.y);
+
+//     scale_elements_kernel_soa_factor_imag<<<gridSize, blockSize>>>(
+//         dCr, dCi, d_first, first_size, d_second, second_size, nbeta_strs_, fi);
+
+//     cudaError_t err = cudaGetLastError();
+//     if (err != cudaSuccess) { std::cerr << "imag launch failed: "
+//         << cudaGetErrorString(err) << "\n"; throw std::runtime_error("launch"); }
+//     err = cudaDeviceSynchronize();
+//     if (err != cudaSuccess) { std::cerr << "imag exec failed: "
+//         << cudaGetErrorString(err) << "\n"; throw std::runtime_error("exec"); }
+// }
 
 // === New in-place 2x2 Givens-like update kernel implementation ===
 __global__ void inplace_givens_update_kernel(
@@ -1029,29 +1150,29 @@ extern "C" void inplace_givens_update_complex_tiled_wrapper(
     }
 }
 
-// =============================
-// All / SoA kernel
-// u' = factor * u + acc2 * ((pa2*pb2) * v)
-// v' = factor * v + acc1 * ((pa1*pb1) * u)
-// Everything here is either real / imaginary scalars.
-// =============================
+// ==========================================================
+// Kernels: complex-accurate SoA, specialized by factor type
+// ==========================================================
 template<int BX>
-__global__ void givens_update_soa_tiled(
-    double* __restrict__ dC,          // C_data
+__global__ void givens_update_soa_tiled_factor_real(
+    // C (in-place)
+    double* __restrict__ dCr, double* __restrict__ dCi,
+    // row metadata
     const int* __restrict__ sourcea1,
     const int* __restrict__ targeta1,
-    const double* __restrict__ paritya1,  // pa1
-    const double* __restrict__ paritya2,  // pa2
+    const double* __restrict__ pa1r, const double* __restrict__ pa1i,
+    const double* __restrict__ pa2r, const double* __restrict__ pa2i,
+    // column metadata
     const int* __restrict__ sourceb1,
     const int* __restrict__ targetb1,
-    const double* __restrict__ parityb1,  // pb1
-    const double* __restrict__ parityb2,  // pb2
-    int nalpha,
-    int nb,
-    int nbeta_strs_,
-    double factor,
-    double acc1,
-    double acc2)
+    const double* __restrict__ pb1r, const double* __restrict__ pb1i,
+    const double* __restrict__ pb2r, const double* __restrict__ pb2i,
+    // sizes
+    int nalpha, int nb, int nbeta_strs_,
+    // scalars
+    double factor_real,                 // purely real
+    double acc1r, double acc1i,        // complex
+    double acc2r, double acc2i)        // complex
 {
     constexpr int AY = 8;
     static_assert(BX % 32 == 0, "BX must be a multiple of 32");
@@ -1062,31 +1183,31 @@ __global__ void givens_update_soa_tiled(
     const int tx = threadIdx.x;
     const int ty = threadIdx.y;
 
-    __shared__ int    s_sb1[BX], s_tb1[BX];
-    __shared__ double s_pb1[BX], s_pb2[BX];
+    __shared__ int s_sb1[BX], s_tb1[BX];
+    __shared__ double s_pb1r[BX], s_pb1i[BX], s_pb2r[BX], s_pb2i[BX];
 
-    __shared__ int    s_sa1[AY], s_ta1[AY];
-    __shared__ double s_pa1[AY], s_pa2[AY];
+    __shared__ int s_sa1[AY], s_ta1[AY];
+    __shared__ double s_pa1r[AY], s_pa1i[AY], s_pa2r[AY], s_pa2i[AY];
 
-    // Load column-pair metadata (once per block along y)
     if (tx + ib0 < nb && ty == 0) {
         const int ib = ib0 + tx;
         s_sb1[tx] = sourceb1[ib];
         s_tb1[tx] = targetb1[ib];
-        s_pb1[tx] = parityb1[ib];
-        s_pb2[tx] = parityb2[ib];
+        s_pb1r[tx] = pb1r[ib];
+        s_pb1i[tx] = pb1i[ib];
+        s_pb2r[tx] = pb2r[ib];
+        s_pb2i[tx] = pb2i[ib];
     }
     __syncthreads();
 
     for (int ia0 = blockIdx.y * AY; ia0 < nalpha; ia0 += gridDim.y * AY) {
-        // Load row metadata (once per block along x)
         if (ty < AY && tx == 0) {
             const int ia = ia0 + ty;
             if (ia < nalpha) {
                 s_sa1[ty] = sourcea1[ia];
                 s_ta1[ty] = targeta1[ia];
-                s_pa1[ty] = paritya1[ia];
-                s_pa2[ty] = paritya2[ia];
+                s_pa1r[ty] = pa1r[ia]; s_pa1i[ty] = pa1i[ia];
+                s_pa2r[ty] = pa2r[ia]; s_pa2i[ty] = pa2i[ia];
             }
         }
         __syncthreads();
@@ -1098,118 +1219,334 @@ __global__ void givens_update_soa_tiled(
             const int sb1 = s_sb1[tx];
             const int tb1 = s_tb1[tx];
 
-            const double pa1 = s_pa1[ty];
-            const double pa2 = s_pa2[ty];
-            const double pb1 = s_pb1[tx];
-            const double pb2 = s_pb2[tx];
-
             const int idx_u = sa1 * nbeta_strs_ + sb1;
             const int idx_v = ta1 * nbeta_strs_ + tb1;
 
-            const double u0 = dC[idx_u];
-            const double v0 = dC[idx_v];
+            const double ur0 = dCr[idx_u], ui0 = dCi[idx_u];
+            const double vr0 = dCr[idx_v], vi0 = dCi[idx_v];
 
-            const double p1 = pa1 * pb1;
-            const double p2 = pa2 * pb2;
+            // p1 = pa1 * pb1
+            const double p1r = s_pa1r[ty]*s_pb1r[tx] - s_pa1i[ty]*s_pb1i[tx];
+            const double p1i = s_pa1r[ty]*s_pb1i[tx] + s_pa1i[ty]*s_pb1r[tx];
 
-            const double u_new = factor * u0 + acc2 * (p2 * v0);
-            const double v_new = factor * v0 + acc1 * (p1 * u0);
+            // p2 = pa2 * pb2
+            const double p2r = s_pa2r[ty]*s_pb2r[tx] - s_pa2i[ty]*s_pb2i[tx];
+            const double p2i = s_pa2r[ty]*s_pb2i[tx] + s_pa2i[ty]*s_pb2r[tx];
 
-            dC[idx_u] = u_new;
-            dC[idx_v] = v_new;
+            // t2 = p2 * v0
+            const double t2r = p2r*vr0 - p2i*vi0;
+            const double t2i = p2r*vi0 + p2i*vr0;
+
+            // acc2 * t2
+            const double a2t2r = acc2r*t2r - acc2i*t2i;
+            const double a2t2i = acc2r*t2i + acc2i*t2r;
+
+            // t1 = p1 * u0
+            const double t1r = p1r*ur0 - p1i*ui0;
+            const double t1i = p1r*ui0 + p1i*ur0;
+
+            // acc1 * t1
+            const double a1t1r = acc1r*t1r - acc1i*t1i;
+            const double a1t1i = acc1r*t1i + acc1i*t1r;
+
+            // factor is real
+            const double fu_r = factor_real * ur0;
+            const double fu_i = factor_real * ui0;
+            const double fv_r = factor_real * vr0;
+            const double fv_i = factor_real * vi0;
+
+            dCr[idx_u] = fu_r + a2t2r;
+            dCi[idx_u] = fu_i + a2t2i;
+            dCr[idx_v] = fv_r + a1t1r;
+            dCi[idx_v] = fv_i + a1t1i;
         }
         __syncthreads();
     }
 }
 
-// =============================
-// Launchers
-// =============================
 template<int BX>
-static void launch_givens_soa(
-    double* dC,
-    const double* paritya1,
-    const double* paritya2,
-    const double* parityb1,
-    const double* parityb2,
-    const int* sourcea1,
-    const int* targeta1,
-    const int* sourceb1,
-    const int* targetb1,
-    int nalpha,
-    int nb,
-    int nbeta_strs_,
-    double factor,
-    double acc1,
-    double acc2)
+__global__ void givens_update_soa_tiled_factor_imag(
+    // C (in-place)
+    double* __restrict__ dCr, double* __restrict__ dCi,
+    // row metadata
+    const int* __restrict__ sourcea1,
+    const int* __restrict__ targeta1,
+    const double* __restrict__ pa1r, const double* __restrict__ pa1i,
+    const double* __restrict__ pa2r, const double* __restrict__ pa2i,
+    // column metadata
+    const int* __restrict__ sourceb1,
+    const int* __restrict__ targetb1,
+    const double* __restrict__ pb1r, const double* __restrict__ pb1i,
+    const double* __restrict__ pb2r, const double* __restrict__ pb2i,
+    // sizes
+    int nalpha, int nb, int nbeta_strs_,
+    // scalars
+    double factor_imag,                 // purely imaginary: i*factor_imag
+    double acc1r, double acc1i,        // complex
+    double acc2r, double acc2i)        // complex
+{
+    constexpr int AY = 8;
+    static_assert(BX % 32 == 0, "BX must be a multiple of 32");
+
+    const int ib0 = blockIdx.x * BX;
+    if (ib0 >= nb) return;
+
+    const int tx = threadIdx.x;
+    const int ty = threadIdx.y;
+
+    __shared__ int s_sb1[BX], s_tb1[BX];
+    __shared__ double s_pb1r[BX], s_pb1i[BX], s_pb2r[BX], s_pb2i[BX];
+
+    __shared__ int s_sa1[AY], s_ta1[AY];
+    __shared__ double s_pa1r[AY], s_pa1i[AY], s_pa2r[AY], s_pa2i[AY];
+
+    if (tx + ib0 < nb && ty == 0) {
+        const int ib = ib0 + tx;
+        s_sb1[tx] = sourceb1[ib];
+        s_tb1[tx] = targetb1[ib];
+        s_pb1r[tx] = pb1r[ib];
+        s_pb1i[tx] = pb1i[ib];
+        s_pb2r[tx] = pb2r[ib];
+        s_pb2i[tx] = pb2i[ib];
+    }
+    __syncthreads();
+
+    for (int ia0 = blockIdx.y * AY; ia0 < nalpha; ia0 += gridDim.y * AY) {
+        if (ty < AY && tx == 0) {
+            const int ia = ia0 + ty;
+            if (ia < nalpha) {
+                s_sa1[ty] = sourcea1[ia];
+                s_ta1[ty] = targeta1[ia];
+                s_pa1r[ty] = pa1r[ia]; s_pa1i[ty] = pa1i[ia];
+                s_pa2r[ty] = pa2r[ia]; s_pa2i[ty] = pa2i[ia];
+            }
+        }
+        __syncthreads();
+
+        const int ia = ia0 + ty;
+        if (ia < nalpha && tx + ib0 < nb) {
+            const int sa1 = s_sa1[ty];
+            const int ta1 = s_ta1[ty];
+            const int sb1 = s_sb1[tx];
+            const int tb1 = s_tb1[tx];
+
+            const int idx_u = sa1 * nbeta_strs_ + sb1;
+            const int idx_v = ta1 * nbeta_strs_ + tb1;
+
+            const double ur0 = dCr[idx_u], ui0 = dCi[idx_u];
+            const double vr0 = dCr[idx_v], vi0 = dCi[idx_v];
+
+            // p1 = pa1 * pb1
+            const double p1r = s_pa1r[ty]*s_pb1r[tx] - s_pa1i[ty]*s_pb1i[tx];
+            const double p1i = s_pa1r[ty]*s_pb1i[tx] + s_pa1i[ty]*s_pb1r[tx];
+
+            // p2 = pa2 * pb2
+            const double p2r = s_pa2r[ty]*s_pb2r[tx] - s_pa2i[ty]*s_pb2i[tx];
+            const double p2i = s_pa2r[ty]*s_pb2i[tx] + s_pa2i[ty]*s_pb2r[tx];
+
+            // t2 = p2 * v0
+            const double t2r = p2r*vr0 - p2i*vi0;
+            const double t2i = p2r*vi0 + p2i*vr0;
+
+            // acc2 * t2
+            const double a2t2r = acc2r*t2r - acc2i*t2i;
+            const double a2t2i = acc2r*t2i + acc2i*t2r;
+
+            // t1 = p1 * u0
+            const double t1r = p1r*ur0 - p1i*ui0;
+            const double t1i = p1r*ui0 + p1i*ur0;
+
+            // acc1 * t1
+            const double a1t1r = acc1r*t1r - acc1i*t1i;
+            const double a1t1i = acc1r*t1i + acc1i*t1r;
+
+            // factor is purely imaginary: (i*fi)*(x+iy) = (-fi*y) + i*(fi*x)
+            const double fi = factor_imag;
+            const double fu_r = -fi * ui0;
+            const double fu_i =  fi * ur0;
+            const double fv_r = -fi * vi0;
+            const double fv_i =  fi * vr0;
+
+            dCr[idx_u] = fu_r + a2t2r;
+            dCi[idx_u] = fu_i + a2t2i;
+            dCr[idx_v] = fv_r + a1t1r;
+            dCi[idx_v] = fv_i + a1t1i;
+        }
+        __syncthreads();
+    }
+}
+
+// ===================================
+// Launchers for real vs imag factor
+// ===================================
+template<int BX>
+static void launch_givens_soa_real(
+    double* dCr, double* dCi,
+    const double* pa1r, const double* pa1i,
+    const double* pa2r, const double* pa2i,
+    const double* pb1r, const double* pb1i,
+    const double* pb2r, const double* pb2i,
+    const int* sourcea1, const int* targeta1,
+    const int* sourceb1, const int* targetb1,
+    int nalpha, int nb, int nbeta_strs_,
+    double factor_real,
+    double acc1r, double acc1i,
+    double acc2r, double acc2i)
 {
     if (nalpha == 0 || nb == 0 || nbeta_strs_ == 0) return;
 
     constexpr int AY = 8;
     const int grid_x = (nb + BX - 1) / BX;
-    const int grid_y = std::max(1, (nalpha + AY - 1) / AY);
+    const int grid_y = max(1, (nalpha + AY - 1) / AY);
     dim3 block(BX, AY), grid(grid_x, grid_y);
 
     if (block.x * block.y > 1024)
         throw std::invalid_argument("Block size BX*AY exceeds device limit");
 
-    givens_update_soa_tiled<BX><<<grid, block>>>(
-        dC, sourcea1, targeta1, paritya1, paritya2,
-        sourceb1, targetb1, parityb1, parityb2,
+    givens_update_soa_tiled_factor_real<BX><<<grid, block>>>(
+        dCr, dCi,
+        sourcea1, targeta1, pa1r, pa1i, pa2r, pa2i,
+        sourceb1, targetb1, pb1r, pb1i, pb2r, pb2i,
         nalpha, nb, nbeta_strs_,
-        factor, acc1, acc2);
+        factor_real,
+        acc1r, acc1i,
+        acc2r, acc2i);
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
-        std::cerr << "givens_update_soa_tiled<" << BX << "> launch failed: "
+        std::cerr << "givens_update_soa_tiled_factor_real<" << BX << "> launch failed: "
                   << cudaGetErrorString(err) << "\n";
         throw std::runtime_error("kernel launch failed");
     }
     err = cudaDeviceSynchronize();
     if (err != cudaSuccess) {
-        std::cerr << "givens_update_soa_tiled<" << BX << "> exec failed: "
+        std::cerr << "givens_update_soa_tiled_factor_real<" << BX << "> exec failed: "
                   << cudaGetErrorString(err) << "\n";
         throw std::runtime_error("kernel exec failed");
     }
 }
 
-// =============================
-// Single extern "C" wrapper
-// =============================
+template<int BX>
+static void launch_givens_soa_imag(
+    double* dCr, double* dCi,
+    const double* pa1r, const double* pa1i,
+    const double* pa2r, const double* pa2i,
+    const double* pb1r, const double* pb1i,
+    const double* pb2r, const double* pb2i,
+    const int* sourcea1, const int* targeta1,
+    const int* sourceb1, const int* targetb1,
+    int nalpha, int nb, int nbeta_strs_,
+    double factor_imag,
+    double acc1r, double acc1i,
+    double acc2r, double acc2i)
+{
+    if (nalpha == 0 || nb == 0 || nbeta_strs_ == 0) return;
+
+    constexpr int AY = 8;
+    const int grid_x = (nb + BX - 1) / BX;
+    const int grid_y = max(1, (nalpha + AY - 1) / AY);
+    dim3 block(BX, AY), grid(grid_x, grid_y);
+
+    if (block.x * block.y > 1024)
+        throw std::invalid_argument("Block size BX*AY exceeds device limit");
+
+    givens_update_soa_tiled_factor_imag<BX><<<grid, block>>>(
+        dCr, dCi,
+        sourcea1, targeta1, pa1r, pa1i, pa2r, pa2i,
+        sourceb1, targetb1, pb1r, pb1i, pb2r, pb2i,
+        nalpha, nb, nbeta_strs_,
+        factor_imag,
+        acc1r, acc1i,
+        acc2r, acc2i);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "givens_update_soa_tiled_factor_imag<" << BX << "> launch failed: "
+                  << cudaGetErrorString(err) << "\n";
+        throw std::runtime_error("kernel launch failed");
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "givens_update_soa_tiled_factor_imag<" << BX << "> exec failed: "
+                  << cudaGetErrorString(err) << "\n";
+        throw std::runtime_error("kernel exec failed");
+    }
+}
+
+// =====================================================
+// Single extern "C" wrapper (updated for SoA + 2 kernels)
+// =====================================================
 extern "C" void givens_update_tiled_wrapper_soa(
     int BX_runtime,
-    double* dC,
-    const double* paritya1,
-    const double* paritya2,
-    const double* parityb1,
-    const double* parityb2,
-    const int* sourcea1,
-    const int* targeta1,
-    const int* sourceb1,
-    const int* targetb1,
-    int nalpha,
-    int nb,
-    int nbeta_strs_,
-    double factor,
-    double acc1,
-    double acc2)
+    // C (SoA)
+    double* dCr, double* dCi,
+    // row metadata
+    const double* paritya1_r, const double* paritya1_i,
+    const double* paritya2_r, const double* paritya2_i,
+    const int* sourcea1, const int* targeta1,
+    // column metadata
+    const double* parityb1_r, const double* parityb1_i,
+    const double* parityb2_r, const double* parityb2_i,
+    const int* sourceb1, const int* targetb1,
+    // sizes
+    int nalpha, int nb, int nbeta_strs_,
+    // factor selection
+    int factor_is_imag,         // 0 => real, 1 => imaginary
+    double factor_val,          // if real: factor = factor_val; if imag: factor = i*factor_val
+    // accumulators (complex)
+    double acc1_r, double acc1_i,
+    double acc2_r, double acc2_i)
 {
     if (nalpha == 0 || nb == 0 || nbeta_strs_ == 0) return;
 
     switch (BX_runtime) {
         case 64:
-            launch_givens_soa<64>(
-                dC, paritya1, paritya2, parityb1, parityb2,
-                sourcea1, targeta1, sourceb1, targetb1,
-                nalpha, nb, nbeta_strs_, factor, acc1, acc2
-            );
+            if (!factor_is_imag) {
+                launch_givens_soa_real<64>(
+                    dCr, dCi,
+                    paritya1_r, paritya1_i, paritya2_r, paritya2_i,
+                    parityb1_r, parityb1_i, parityb2_r, parityb2_i,
+                    sourcea1, targeta1, sourceb1, targetb1,
+                    nalpha, nb, nbeta_strs_,
+                    factor_val,
+                    acc1_r, acc1_i, acc2_r, acc2_i
+                );
+            } else {
+                launch_givens_soa_imag<64>(
+                    dCr, dCi,
+                    paritya1_r, paritya1_i, paritya2_r, paritya2_i,
+                    parityb1_r, parityb1_i, parityb2_r, parityb2_i,
+                    sourcea1, targeta1, sourceb1, targetb1,
+                    nalpha, nb, nbeta_strs_,
+                    factor_val,
+                    acc1_r, acc1_i, acc2_r, acc2_i
+                );
+            }
             break;
-        case 32: default:
-            launch_givens_soa<32>(
-                dC, paritya1, paritya2, parityb1, parityb2,
-                sourcea1, targeta1, sourceb1, targetb1,
-                nalpha, nb, nbeta_strs_, factor, acc1, acc2
-            );
+
+        case 32:
+        default:
+            if (!factor_is_imag) {
+                launch_givens_soa_real<32>(
+                    dCr, dCi,
+                    paritya1_r, paritya1_i, paritya2_r, paritya2_i,
+                    parityb1_r, parityb1_i, parityb2_r, parityb2_i,
+                    sourcea1, targeta1, sourceb1, targetb1,
+                    nalpha, nb, nbeta_strs_,
+                    factor_val,
+                    acc1_r, acc1_i, acc2_r, acc2_i
+                );
+            } else {
+                launch_givens_soa_imag<32>(
+                    dCr, dCi,
+                    paritya1_r, paritya1_i, paritya2_r, paritya2_i,
+                    parityb1_r, parityb1_i, parityb2_r, parityb2_i,
+                    sourcea1, targeta1, sourceb1, targetb1,
+                    nalpha, nb, nbeta_strs_,
+                    factor_val,
+                    acc1_r, acc1_i, acc2_r, acc2_i
+                );
+            }
             break;
     }
 }
