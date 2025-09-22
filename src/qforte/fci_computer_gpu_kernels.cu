@@ -1200,6 +1200,15 @@ __global__ void givens_update_soa_tiled_factor_real(
     }
     __syncthreads();
 
+    const bool col_ok = (tx + ib0) < nb;
+    int    sb1_reg = 0, tb1_reg = 0;
+    double pb1r_reg= 0, pb1i_reg= 0, pb2r_reg= 0, pb2i_reg= 0;
+    if (col_ok) {
+        sb1_reg = s_sb1[tx]; tb1_reg = s_tb1[tx];
+        pb1r_reg = s_pb1r[tx]; pb1i_reg = s_pb1i[tx];
+        pb2r_reg = s_pb2r[tx]; pb2i_reg = s_pb2i[tx];
+    }
+
     for (int ia0 = blockIdx.y * AY; ia0 < nalpha; ia0 += gridDim.y * AY) {
         if (ty < AY && tx == 0) {
             const int ia = ia0 + ty;
@@ -1213,52 +1222,44 @@ __global__ void givens_update_soa_tiled_factor_real(
         __syncthreads();
 
         const int ia = ia0 + ty;
-        if (ia < nalpha && tx + ib0 < nb) {
-            const int sa1 = s_sa1[ty];
-            const int ta1 = s_ta1[ty];
-            const int sb1 = s_sb1[tx];
-            const int tb1 = s_tb1[tx];
+        const bool row_ok = ia < nalpha;
+        if (col_ok && row_ok) {
+            const int sa1 = s_sa1[ty], ta1 = s_ta1[ty];
+            const double pa1r_v = s_pa1r[ty], pa1i_v = s_pa1i[ty];
+            const double pa2r_v = s_pa2r[ty], pa2i_v = s_pa2i[ty];
 
-            const int idx_u = sa1 * nbeta_strs_ + sb1;
-            const int idx_v = ta1 * nbeta_strs_ + tb1;
+            const int idx_u = sa1 * nbeta_strs_ + sb1_reg;
+            const int idx_v = ta1 * nbeta_strs_ + tb1_reg;
 
             const double ur0 = dCr[idx_u], ui0 = dCi[idx_u];
             const double vr0 = dCr[idx_v], vi0 = dCi[idx_v];
 
-            // p1 = pa1 * pb1
-            const double p1r = s_pa1r[ty]*s_pb1r[tx] - s_pa1i[ty]*s_pb1i[tx];
-            const double p1i = s_pa1r[ty]*s_pb1i[tx] + s_pa1i[ty]*s_pb1r[tx];
+            // p1 = pa1 * pb1 ; p2 = pa2 * pb2   (use FMAs)
+            const double p1r = __fma_rn(-pa1i_v, pb1i_reg, pa1r_v * pb1r_reg);
+            const double p1i = __fma_rn( pa1i_v, pb1r_reg, pa1r_v * pb1i_reg);
+            const double p2r = __fma_rn(-pa2i_v, pb2i_reg, pa2r_v * pb2r_reg);
+            const double p2i = __fma_rn( pa2i_v, pb2r_reg, pa2r_v * pb2i_reg);
 
-            // p2 = pa2 * pb2
-            const double p2r = s_pa2r[ty]*s_pb2r[tx] - s_pa2i[ty]*s_pb2i[tx];
-            const double p2i = s_pa2r[ty]*s_pb2i[tx] + s_pa2i[ty]*s_pb2r[tx];
+            // t2 = p2 * v0 ; a2*t2
+            const double t2r   = __fma_rn(-p2i, vi0, p2r * vr0);
+            const double t2i   = __fma_rn( p2i, vr0, p2r * vi0);
+            const double a2t2r = __fma_rn(-acc2i, t2i, acc2r * t2r);
+            const double a2t2i = __fma_rn( acc2i, t2r, acc2r * t2i);
 
-            // t2 = p2 * v0
-            const double t2r = p2r*vr0 - p2i*vi0;
-            const double t2i = p2r*vi0 + p2i*vr0;
+            // t1 = p1 * u0 ; a1*t1
+            const double t1r   = __fma_rn(-p1i, ui0, p1r * ur0);
+            const double t1i   = __fma_rn( p1i, ur0, p1r * ui0);
+            const double a1t1r = __fma_rn(-acc1i, t1i, acc1r * t1r);
+            const double a1t1i = __fma_rn( acc1i, t1r, acc1r * t1i);
 
-            // acc2 * t2
-            const double a2t2r = acc2r*t2r - acc2i*t2i;
-            const double a2t2i = acc2r*t2i + acc2i*t2r;
+            // factor is real: u = fr*u0 + a2*(p2*v0), v = fr*v0 + a1*(p1*u0)
+            const double u_r = __fma_rn(factor_real, ur0, a2t2r);
+            const double u_i = __fma_rn(factor_real, ui0, a2t2i);
+            const double v_r = __fma_rn(factor_real, vr0, a1t1r);
+            const double v_i = __fma_rn(factor_real, vi0, a1t1i);
 
-            // t1 = p1 * u0
-            const double t1r = p1r*ur0 - p1i*ui0;
-            const double t1i = p1r*ui0 + p1i*ur0;
-
-            // acc1 * t1
-            const double a1t1r = acc1r*t1r - acc1i*t1i;
-            const double a1t1i = acc1r*t1i + acc1i*t1r;
-
-            // factor is real
-            const double fu_r = factor_real * ur0;
-            const double fu_i = factor_real * ui0;
-            const double fv_r = factor_real * vr0;
-            const double fv_i = factor_real * vi0;
-
-            dCr[idx_u] = fu_r + a2t2r;
-            dCi[idx_u] = fu_i + a2t2i;
-            dCr[idx_v] = fv_r + a1t1r;
-            dCi[idx_v] = fv_i + a1t1i;
+            dCr[idx_u] = u_r; dCi[idx_u] = u_i;
+            dCr[idx_v] = v_r; dCi[idx_v] = v_i;
         }
         __syncthreads();
     }
@@ -1311,6 +1312,15 @@ __global__ void givens_update_soa_tiled_factor_imag(
     }
     __syncthreads();
 
+    const bool col_ok = (tx + ib0) < nb;
+    int    sb1_reg = 0, tb1_reg = 0;
+    double pb1r_reg= 0, pb1i_reg= 0, pb2r_reg= 0, pb2i_reg= 0;
+    if (col_ok) {
+        sb1_reg = s_sb1[tx]; tb1_reg = s_tb1[tx];
+        pb1r_reg = s_pb1r[tx]; pb1i_reg = s_pb1i[tx];
+        pb2r_reg = s_pb2r[tx]; pb2i_reg = s_pb2i[tx];
+    }
+
     for (int ia0 = blockIdx.y * AY; ia0 < nalpha; ia0 += gridDim.y * AY) {
         if (ty < AY && tx == 0) {
             const int ia = ia0 + ty;
@@ -1324,53 +1334,45 @@ __global__ void givens_update_soa_tiled_factor_imag(
         __syncthreads();
 
         const int ia = ia0 + ty;
-        if (ia < nalpha && tx + ib0 < nb) {
-            const int sa1 = s_sa1[ty];
-            const int ta1 = s_ta1[ty];
-            const int sb1 = s_sb1[tx];
-            const int tb1 = s_tb1[tx];
+        const bool row_ok = ia < nalpha;
+        if (col_ok && row_ok) {
+            const int sa1 = s_sa1[ty], ta1 = s_ta1[ty];
+            const double pa1r_v = s_pa1r[ty], pa1i_v = s_pa1i[ty];
+            const double pa2r_v = s_pa2r[ty], pa2i_v = s_pa2i[ty];
 
-            const int idx_u = sa1 * nbeta_strs_ + sb1;
-            const int idx_v = ta1 * nbeta_strs_ + tb1;
+            const int idx_u = sa1 * nbeta_strs_ + sb1_reg;
+            const int idx_v = ta1 * nbeta_strs_ + tb1_reg;
 
             const double ur0 = dCr[idx_u], ui0 = dCi[idx_u];
             const double vr0 = dCr[idx_v], vi0 = dCi[idx_v];
 
-            // p1 = pa1 * pb1
-            const double p1r = s_pa1r[ty]*s_pb1r[tx] - s_pa1i[ty]*s_pb1i[tx];
-            const double p1i = s_pa1r[ty]*s_pb1i[tx] + s_pa1i[ty]*s_pb1r[tx];
+            // p1 = pa1 * pb1 ; p2 = pa2 * pb2
+            const double p1r = __fma_rn(-pa1i_v, pb1i_reg, pa1r_v * pb1r_reg);
+            const double p1i = __fma_rn( pa1i_v, pb1r_reg, pa1r_v * pb1i_reg);
+            const double p2r = __fma_rn(-pa2i_v, pb2i_reg, pa2r_v * pb2r_reg);
+            const double p2i = __fma_rn( pa2i_v, pb2r_reg, pa2r_v * pb2i_reg);
 
-            // p2 = pa2 * pb2
-            const double p2r = s_pa2r[ty]*s_pb2r[tx] - s_pa2i[ty]*s_pb2i[tx];
-            const double p2i = s_pa2r[ty]*s_pb2i[tx] + s_pa2i[ty]*s_pb2r[tx];
+            // t2 = p2 * v0 ; a2*t2
+            const double t2r   = __fma_rn(-p2i, vi0, p2r * vr0);
+            const double t2i   = __fma_rn( p2i, vr0, p2r * vi0);
+            const double a2t2r = __fma_rn(-acc2i, t2i, acc2r * t2r);
+            const double a2t2i = __fma_rn( acc2i, t2r, acc2r * t2i);
 
-            // t2 = p2 * v0
-            const double t2r = p2r*vr0 - p2i*vi0;
-            const double t2i = p2r*vi0 + p2i*vr0;
+            // t1 = p1 * u0 ; a1*t1
+            const double t1r   = __fma_rn(-p1i, ui0, p1r * ur0);
+            const double t1i   = __fma_rn( p1i, ur0, p1r * ui0);
+            const double a1t1r = __fma_rn(-acc1i, t1i, acc1r * t1r);
+            const double a1t1i = __fma_rn( acc1i, t1r, acc1r * t1i);
 
-            // acc2 * t2
-            const double a2t2r = acc2r*t2r - acc2i*t2i;
-            const double a2t2i = acc2r*t2i + acc2i*t2r;
-
-            // t1 = p1 * u0
-            const double t1r = p1r*ur0 - p1i*ui0;
-            const double t1i = p1r*ui0 + p1i*ur0;
-
-            // acc1 * t1
-            const double a1t1r = acc1r*t1r - acc1i*t1i;
-            const double a1t1i = acc1r*t1i + acc1i*t1r;
-
-            // factor is purely imaginary: (i*fi)*(x+iy) = (-fi*y) + i*(fi*x)
+            // factor = i * fi
             const double fi = factor_imag;
-            const double fu_r = -fi * ui0;
-            const double fu_i =  fi * ur0;
-            const double fv_r = -fi * vi0;
-            const double fv_i =  fi * vr0;
+            const double u_r = __fma_rn(-fi, ui0, a2t2r);
+            const double u_i = __fma_rn( fi, ur0, a2t2i);
+            const double v_r = __fma_rn(-fi, vi0, a1t1r);
+            const double v_i = __fma_rn( fi, vr0, a1t1i);
 
-            dCr[idx_u] = fu_r + a2t2r;
-            dCi[idx_u] = fu_i + a2t2i;
-            dCr[idx_v] = fv_r + a1t1r;
-            dCi[idx_v] = fv_i + a1t1i;
+            dCr[idx_u] = u_r; dCi[idx_u] = u_i;
+            dCr[idx_v] = v_r; dCi[idx_v] = v_i;
         }
         __syncthreads();
     }
