@@ -15,3 +15,4 @@ from qforte.system import *
 from qforte.hva import *
 from qforte.ucc import *
 from qforte.utils import *
+from qforte.fqe_api import *

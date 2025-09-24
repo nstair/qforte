@@ -251,6 +251,10 @@ def create_psi_mol(**kwargs):
         # keep ordering consistant with openfermion eri tensors
         mo_teis = np.asarray(mo_teis.transpose(0, 2, 3, 1), order='C')
 
+        # save numpy copies
+        qforte_mol.mo_oeis_np = copy.deepcopy(mo_oeis)
+        qforte_mol.mo_teis_np = copy.deepcopy(mo_teis)
+
         # Save data to a file
         # np.savez(
         #     "mol_e0_h1e_h2e.npz", 
@@ -873,6 +877,7 @@ def create_pyscf_mol(**kwargs):
             pyscf_mo_teis = copy.deepcopy(mo_teis)
 
     if kwargs['store_mo_ints']:
+
         # Resize mo_oeis and mo_teis if there are frozen orbitals...
         if(frozen_core or frozen_virtual):
             # raise ValueError("This doesn't work..")
@@ -883,6 +888,10 @@ def create_pyscf_mol(**kwargs):
 
         # keep ordering consistant with openfermion eri tensors
         mo_teis = np.asarray(mo_teis.transpose(0, 2, 3, 1), order='C')
+
+        # save numpy copies
+        qforte_mol.mo_oeis_np = copy.deepcopy(mo_oeis)
+        qforte_mol.mo_teis_np = copy.deepcopy(mo_teis)
 
         # need restricted version
         h2e_rest = copy.deepcopy(np.einsum("ijlk", -0.5 * mo_teis))
