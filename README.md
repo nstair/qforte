@@ -59,6 +59,13 @@ conda install cmake
 conda install -c anaconda openblas-devel
 ```
 
+#### two-line install required packages (including optional fqe):
+```bash
+conda create -n new_envname -c conda-forge python=3.9 cuda-toolkit=12.4 openblas psi4 cmake
+conda activate new_envname
+pip install fqe
+```
+
 Installation (For Development)
 ------------------------------
 

@@ -162,26 +162,42 @@ class FQEComputer:
         """
         return np.array(self._wfn.get_coeff(self.sector_key()), copy=False)
 
+    def set_state(self, other):
+        """
+        Set this state to another np arrays data (works like move)
+        """
+
+        #pointer to this arrays data
+        arr = self.get_state()
+
+        # If 'other' is a NumPy array with the same shape and dtype, assign by reference:
+        if arr.base is not other and arr.shape == other.shape and arr.dtype == other.dtype:
+            arr[...] = other  # in-place assignment, minimal overhead
+        else:
+            raise ValueError("Input array must match shape and dtype of current state.")
+
+       
+
     def get_state_deep(self) -> Dict[Tuple[int, int], np.ndarray]:
         # Same as get_state() here (but returns copies).
         return np.array(self._wfn.get_coeff(self.sector_key()), copy=True)
 
     # def set_state(self, sector_arrays: Dict[Tuple[int, int], np.ndarray]) -> None:
-    def set_state(self, sector_array: np.ndarray) -> None:
-        """
-        Overwrite the wavefunction coefficients for specified sectors.
+    # def set_state(self, sector_array: np.ndarray) -> None:
+    #     """
+    #     Overwrite the wavefunction coefficients for specified sectors.
 
-        Parameters
-        ----------
-        sector_arrays : dict
-            Keys are (n_alpha, n_beta), values are complex numpy arrays with shapes
-            that match FQE’s internal sector layout for the given (norb, sector).
-        """
-        # FQE lets you set all sector arrays at once via set_wfn(raw_data=...).
-        # It replaces only provided sectors; others stay unchanged.
-        self._wfn.set_wfn(strategy="zeros", raw_data=sector_arrays)  # strategy ignored if raw_data supplied
-        # optional: renormalize
-        self._wfn.normalize()
+    #     Parameters
+    #     ----------
+    #     sector_arrays : dict
+    #         Keys are (n_alpha, n_beta), values are complex numpy arrays with shapes
+    #         that match FQE’s internal sector layout for the given (norb, sector).
+    #     """
+    #     # FQE lets you set all sector arrays at once via set_wfn(raw_data=...).
+    #     # It replaces only provided sectors; others stay unchanged.
+    #     self._wfn.set_wfn(strategy="zeros", raw_data=sector_arrays)  # strategy ignored if raw_data supplied
+    #     # optional: renormalize
+    #     self._wfn.normalize()
 
     def zero(self) -> None:
         """Zero-out the sole sector (self.nel, self.sz)."""
@@ -230,7 +246,7 @@ class FQEComputer:
 
     def add_to_element(self, idx, val) -> None:
         key = (self.nel, self.sz)
-        arr = np.array(self._wfn.get_coeff(key), copy=True)
+        arr = self._wfn.get_coeff(key)
         arr.flat[idx] += val
 
     def get_tensor_diff(self, T):
@@ -255,11 +271,31 @@ class FQEComputer:
 
     # ---------- expectation values ----------
 
-    def get_exp_val(self, fqe_op_or_hamil: Any) -> complex:
+    def get_exp_val(self, sqop) -> complex:
         """
         Expectation value ⟨ψ|O|ψ⟩ for an FQE operator or Hamiltonian.
         """
-        return complex(self._wfn.expectationValue(fqe_op_or_hamil))
+
+        key = (self.nel, self.sz)
+        bra_arr = np.array(self._wfn.get_coeff(key), copy=True)
+
+        self.apply_sqop(sqop)
+
+        ket_arr = np.array(self._wfn.get_coeff(key), copy=False)
+
+        val = np.vdot(bra_arr, ket_arr)
+
+        self.set_state(bra_arr)
+
+        return val
+
+    def get_hf_dot(self) -> complex:
+        """
+        Get the value of <HF|psi>
+        """
+        key = (self.nel, self.sz)
+        arr = np.array(self._wfn.get_coeff(key), copy=False)
+        return arr[0][0]
 
     # ---------- tensor / Hamiltonian application & time evolution ----------
 
@@ -329,6 +365,49 @@ class FQEComputer:
         of_op = self.convert_sqop_to_openfermion(sqop)
 
         self._wfn = self._wfn.apply(of_op)
+
+
+    # ---------- measurement helpers ----------
+
+    def direct_expectation_value(self, fqe_op_or_hamil: Any) -> List[float]:
+        """
+        Return [Re, Im] or other shape as list; adapter to FCIComputer’s real-valued list.
+        """
+        raise NotImplementedError("Expectation value not yet implemented for FQEComputer.")
+        val = self._wfn.expectationValue(fqe_op_or_hamil)
+        if np.ndim(val) == 0:
+            return [float(np.real(val))]
+        return np.array(val).ravel().real.tolist()
+    
+
+    #NICK: YOU ARE HERE! Need to implement the following...
+
+    # qc.get_exp_val(self._sq_ham)
+
+    # qc.get_exp_val_tensor(
+    #                 self._zero_body_energy, 
+    #                 self._mo_oeis, 
+    #                 self._mo_teis, 
+    #                 self._mo_teis_einsum, 
+    #                 self._norb)
+
+    def get_exp_val_tensor(self, 
+        h0e: complex, 
+        h1e: np.ndarray, 
+        h2e: np.ndarray) -> None:
+
+        key = (self.nel, self.sz)
+        bra_arr = np.array(self._wfn.get_coeff(key), copy=True)
+
+        self.apply_tensor_spat_012bdy(h0e, h1e, h2e)
+
+        ket_arr = np.array(self._wfn.get_coeff(key), copy=False)
+
+        val = np.vdot(bra_arr, ket_arr)
+
+        self.set_state(bra_arr)
+
+        return val
 
     # ---------- time evolution ----------
 
@@ -490,17 +569,6 @@ class FQEComputer:
         _P, _L, _U, new_wfn = self._wfn.transform(U)
         self._wfn = new_wfn
 
-    # ---------- measurement helpers ----------
-
-    def direct_expectation_value(self, fqe_op_or_hamil: Any) -> List[float]:
-        """
-        Return [Re, Im] or other shape as list; adapter to FCIComputer’s real-valued list.
-        """
-        raise NotImplementedError("Expectation value not yet implemented for FQEComputer.")
-        val = self._wfn.expectationValue(fqe_op_or_hamil)
-        if np.ndim(val) == 0:
-            return [float(np.real(val))]
-        return np.array(val).ravel().real.tolist()
 
     # ---------- timings ----------
 

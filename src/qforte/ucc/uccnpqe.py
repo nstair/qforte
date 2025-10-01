@@ -161,6 +161,8 @@ class UCCNPQE(UCCPQE):
         print('Trotter order (rho):                     ',  self._trotter_order)
         print('Trotter number (m):                      ',  self._trotter_number)
         print('Use fast version of algorithm:           ',  str(self._fast))
+        print('State-Vector Computer Type:              ',  str(self._computer_type))
+        print('Apply Hamiltonain as Tensor:             ',  str(self._apply_ham_as_tensor))
         if(self._fast):
             print('Measurement varience thresh:             ',  'NA')
         else:
@@ -205,7 +207,7 @@ class UCCNPQE(UCCPQE):
     def fill_excited_dets(self):
         if(self._computer_type == 'fock'):
             self.fill_excited_dets_fock()
-        elif(self._computer_type == 'fci'):
+        elif self._computer_type in ['fci', 'fqe']:
             self.fill_excited_dets_fci()
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
@@ -288,11 +290,38 @@ class UCCNPQE(UCCPQE):
             if(phase_factor != 0.0):
                 self._excited_dets_fci_comp.append((non_zero_tidxs[0], phase_factor))
 
+    def fill_excited_dets_fqe(self):
+        qc = qforte.FQEComputer(
+            self._nel, 
+            self._2_spin, 
+            self._norb)
+        
+        for _, sq_op in self._pool_obj:
+            qc.hartree_fock()
+            qc.apply_sqop(sq_op)
+            C = qc.get_state()
+            non_zero_tidxs = np.anywhere(C != 0)
+            # non_zero_tidxs = qc.get_state().get_nonzero_tidxs()
+
+            if(len(non_zero_tidxs) != 1):
+                raise ValueError("Pool object elements should only create a single excitation from hf reference.")
+            
+            if(len(non_zero_tidxs[0]) != 2):
+                raise ValueError("Tensor indxs must be from a a matrix.")
+            
+            # phase_factor = qc.get_state().get(non_zero_tidxs[0])
+            phase_factor = C[non_zero_tidxs[0]][non_zero_tidxs[1]]
+
+            if(phase_factor != 0.0):
+                self._excited_dets_fci_comp.append((non_zero_tidxs[0], phase_factor))
+
     def get_residual_vector(self, trial_amps):
         if(self._computer_type == 'fock'):
             return self.get_residual_vector_fock(trial_amps)
         elif(self._computer_type == 'fci'):
             return self.get_residual_vector_fci(trial_amps)
+        elif(self._computer_type == 'fqe'):
+            return self.get_residual_vector_fqe(trial_amps)
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
 
@@ -306,7 +335,7 @@ class UCCNPQE(UCCPQE):
             The list of (real) floating point numbers which will characterize
             the state preparation circuit used in calculation of the residuals.
         """
-        if(self._pool_type == 'sa_SD'):
+        if(self._pool_type in ['sa_SD', 'GSD']):
             raise ValueError('Must use single term particle-hole nbody operators for residual calculation')
 
         U = self.ansatz_circuit(trial_amps)
@@ -348,7 +377,7 @@ class UCCNPQE(UCCPQE):
             The list of (real) floating point numbers which will characterize
             the state preparation circuit used in calculation of the residuals.
         """
-        if(self._pool_type == 'sa_SD'):
+        if(self._pool_type in ['sa_SD', 'GSD']):
             raise ValueError('Must use single term particle-hole nbody operators for residual calculation')
         
         if not self._ref_from_hf:
@@ -396,6 +425,80 @@ class UCCNPQE(UCCPQE):
 
             # Get the residual element, after accounting for numerical noise.
             res_m = R.get(IaIb) * phase_factor
+            if(np.imag(res_m) != 0.0):
+                raise ValueError("residual has imaginary component, something went wrong!!")
+
+            if(self._noise_factor > 1e-12):
+                res_m = np.random.normal(np.real(res_m), self._noise_factor)
+
+            residuals.append(res_m)
+
+        self._res_vec_norm = np.linalg.norm(residuals)
+        self._res_vec_evals += 1
+        self._res_m_evals += len(self._tamps)
+
+        self._curr_energy = qc_res.get_hf_dot()
+
+        return residuals
+
+    def get_residual_vector_fqe(self, trial_amps):
+        """Returns the residual vector with elements pertaining to all operators
+        in the ansatz circuit.
+
+        Parameters
+        ----------
+        trial_amps : list of floats
+            The list of (real) floating point numbers which will characterize
+            the state preparation circuit used in calculation of the residuals.
+        """
+        if(self._pool_type in ['sa_SD', 'GSD']):
+            raise ValueError('Must use single term particle-hole nbody operators for residual calculation')
+        
+        if not self._ref_from_hf:
+            raise ValueError('get_residual_vector_fqe only compatible with hf reference at this time.')
+        
+        temp_pool = qforte.SQOpPool()
+
+        # NICK: Write a 'updatte_coeffs' type fucntion for the op-pool.
+        for tamp, top in zip(trial_amps, self._tops):
+            temp_pool.add(tamp, self._pool_obj[top][1])
+
+        qc_res = qforte.FQEComputer(
+            self._nel, 
+            self._2_spin, 
+            self._norb)
+        
+        qc_res.hartree_fock()
+
+
+        # function assumers first order trotter, with 1 trotter step, and time = 1.0
+        qc_res.evolve_pool_trotter_basic(
+            temp_pool,
+            antiherm=True,
+            adjoint=False)
+
+        if(self._apply_ham_as_tensor):
+            qc_res.apply_tensor_spat_012bdy(
+                self._zero_body_energy, 
+                self._mo_oeis_np, 
+                self._mo_teis_np, 
+                )
+        else:   
+            qc_res.apply_sqop(self._sq_ham)
+
+        qc_res.evolve_pool_trotter_basic(
+            temp_pool,
+            antiherm=True,
+            adjoint=True)
+
+        R = qc_res.get_state_deep()
+        residuals = []
+
+        for IaIb, phase_factor in self._excited_dets_fci_comp:
+
+            # Get the residual element, after accounting for numerical noise.
+            # res_m = R.get(IaIb) * phase_factor
+            res_m = R[IaIb[0], IaIb[1]] * phase_factor
             if(np.imag(res_m) != 0.0):
                 raise ValueError("residual has imaginary component, something went wrong!!")
 

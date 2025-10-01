@@ -156,6 +156,11 @@ class Algorithm(ABC):
                 self._mo_oeis = system.mo_oeis 
                 self._mo_teis = system.mo_teis 
                 self._mo_teis_einsum = system.mo_teis_einsum
+
+        if(computer_type=='fqe'):
+            if(apply_ham_as_tensor):
+                self._mo_oeis_np = system.mo_oeis_np 
+                self._mo_teis_np = system.mo_teis_np
                 
 
         if len(self._qb_ham.terms()) > 0 and self._qb_ham.num_qubits() != self._nqb:
@@ -179,6 +184,10 @@ class Algorithm(ABC):
             self._computer_type = 'fock'
         elif(computer_type=='fci'):
             self._computer_type = 'fci'
+
+        elif(computer_type=='fqe'):
+            self._computer_type = 'fqe'
+        
         else:
             raise ValueError(f"Computer type must be fci or fock.")
         
@@ -370,7 +379,7 @@ class AnsatzAlgorithm(Algorithm):
         timer2.reset()
         if(self._computer_type == 'fock'):
             self._Nm = [len(operator.jw_transform().terms()) for _, operator in self._pool_obj]
-        elif(self._computer_type == 'fci'):
+        elif self._computer_type in ['fci', 'fqe']:
             self._Nm = [0 for _, operator in self._pool_obj]
             print("\n ==> Warning: resource estimator needs to be implemented for fci computer type <==")
         else:
@@ -458,6 +467,8 @@ class AnsatzAlgorithm(Algorithm):
             return self.energy_feval_fock(params)
         elif(self._computer_type == 'fci'):
             return self.energy_feval_fci(params)
+        elif(self._computer_type == 'fqe'):
+            return self.energy_feval_fqe(params)
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
 
@@ -479,6 +490,8 @@ class AnsatzAlgorithm(Algorithm):
         self._curr_energy = Energy
         return Energy
     
+    # Works for FCIComputer and for FQEComputer
+    # TODO: (Nick): take in qc object so reinstantiation is not required...
     def energy_feval_fci(self, params):
         if not self._ref_from_hf:
             raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
@@ -489,6 +502,7 @@ class AnsatzAlgorithm(Algorithm):
         for param, top in zip(params, self._tops):
             temp_pool.add(param, self._pool_obj[top][1])
 
+        
         qc = qforte.FCIComputer(
             self._nel, 
             self._2_spin, 
@@ -511,6 +525,45 @@ class AnsatzAlgorithm(Algorithm):
                     self._mo_teis_einsum, 
                     self._norb)
             )
+        else:   
+            self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
+
+        
+        return self._curr_energy
+
+    # TODO: (Nick): take in qc object so reinstantiation is not required...
+    def energy_feval_fqe(self, params):
+        if not self._ref_from_hf:
+            raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
+        
+        temp_pool = qforte.SQOpPool()
+
+        # NICK: Write a 'updatte_coeffs' type fucntion for the op-pool.
+        for param, top in zip(params, self._tops):
+            temp_pool.add(param, self._pool_obj[top][1])
+
+        
+        qc = qforte.FQEComputer(
+            self._nel, 
+            self._2_spin, 
+            self._norb)
+        
+        qc.hartree_fock()
+
+        qc.evolve_pool_trotter_basic(
+            temp_pool,
+            antiherm=True,
+            adjoint=False)
+        
+        if(self._apply_ham_as_tensor):
+            
+            self._curr_energy = np.real(
+                qc.get_exp_val_tensor(
+                    self._zero_body_energy, 
+                    self._mo_oeis_np, 
+                    self._mo_teis_np, 
+                    )
+                )
         else:   
             self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
 
