@@ -24,6 +24,7 @@ try:
     from fqe import get_wavefunction  # type: ignore
     from fqe.wavefunction import Wavefunction  # type: ignore
     from fqe.openfermion_utils import integrals_to_fqe_restricted  # type: ignore
+    from fqe.hamiltonians.sparse_hamiltonian import SparseHamiltonian
     from openfermion.transforms import normal_ordered as nod
     from openfermion.utils import hermitian_conjugated
 except Exception:
@@ -357,14 +358,24 @@ class FQEComputer:
 
     # ---------- sqop appliction ---------
 
-    def apply_sqop(self, sqop) -> None:
+    def apply_sqop(self, sqop, antiherm=False) -> None:
         """
         Apply a single SQOperator to the wavefunction.
         TODO: Convert your SQOperator → OpenFermion FermionOperator → FQE operator/Hamiltonian.
         """
         of_op = self.convert_sqop_to_openfermion(sqop)
 
+        if antiherm:
+            of_op = 1.0j * of_op
+
+        # note need to use fqe_apply to avoid hermitian check for general sqop
+        # This function will also take any sqop thats a linear combination of more than
+        # two sqops and make it a tensor and apply it more efficiently.
+        # self._wfn = fqe_apply(of_op, self._wfn) 
         self._wfn = self._wfn.apply(of_op)
+
+        if antiherm:
+            self.scale(-1.0j)
 
 
     # ---------- measurement helpers ----------
@@ -379,17 +390,6 @@ class FQEComputer:
             return [float(np.real(val))]
         return np.array(val).ravel().real.tolist()
     
-
-    #NICK: YOU ARE HERE! Need to implement the following...
-
-    # qc.get_exp_val(self._sq_ham)
-
-    # qc.get_exp_val_tensor(
-    #                 self._zero_body_energy, 
-    #                 self._mo_oeis, 
-    #                 self._mo_teis, 
-    #                 self._mo_teis_einsum, 
-    #                 self._norb)
 
     def get_exp_val_tensor(self, 
         h0e: complex, 
@@ -448,14 +448,16 @@ class FQEComputer:
         adjoint: bool = False,
     ) -> None:
         """
-        Evolve by exp(time * (sqop - sqop^\dagger)?) depending on flags.
+        Evolve by exp(time * (sqop +- sqop^\dagger)) depending on flags.
         TODO: Convert your SQOperator → OpenFermion FermionOperator → FQE operator/Hamiltonian.
         """
-        of_op = self.convert_sqop_to_openfermion(sqop, antiherm=antiherm, adjoint=adjoint)
-        # Build an FQE Hamiltonian or FqeOperator from the OpenFermion op:
-        # If you already have a helper for OF→FQE, use it here.
-        fqe_op = self._openfermion_to_fqe_operator(of_op)
-        self._wfn = self._wfn.time_evolve(time=float(np.real(time)), hamil=fqe_op, inplace=False)
+
+        self.evolve_individual_sqop_term(
+                time, 
+                1.0, 
+                sqop, 
+                antiherm, 
+                adjoint)
 
     # Pool/Trotter driver hooks (skeletons)
     def evolve_pool_trotter_basic(self, pool: Any, antiherm: bool = False, adjoint: bool = False) -> None:
@@ -537,9 +539,11 @@ class FQEComputer:
 
             theta = coeff0 * dt
 
-            # NOTE(Nick): inplace arg doesn't work as expected in FQE 0.3.0
-            # could be difference simply between returning a pointer vs a copy...
-            self._wfn = self._wfn.time_evolve(theta, H, True)
+             # --- sparse path for 2-term operators ---
+            # Use FQE's SparseHamiltonian explicitly (avoids dense build).
+            # time_evolve accepts any fqe Hamiltonian object.
+            Hs = SparseHamiltonian(H, conserve_spin=True)
+            self._wfn = self._wfn.time_evolve(theta, Hs, True)
 
 
     # ---------- diagonal & simple transforms ----------
@@ -594,19 +598,4 @@ class FQEComputer:
         
         return op
 
-    def _openfermion_to_fqe_operator(self, of_op: FermionOperator) -> Any:
-        """
-        TODO: Convert OpenFermion FermionOperator → FQE operator/hamiltonian.
-        You can build an FQE `Hamiltonian` via fqe.get_hamiltonian_from_openfermion(of_op),
-        or construct an FqeOperator directly if preferred.
-        """
-        # If your FQE version exposes get_hamiltonian_from_openfermion:
-        #   from fqe import get_hamiltonian_from_openfermion
-        #   return get_hamiltonian_from_openfermion(of_op)
-        raise NotImplementedError("Implement OpenFermion → FQE operator conversion.")
 
-    def _iterate_sqop_pool(self, pool: Any, order: int = 1) -> Iterable[Any]:
-        """
-        TODO: Iterate your SQOpPool yielding individual SQOperator terms (or OpenFermion ops).
-        """
-        raise NotImplementedError("Implement iteration over your SQOpPool terms.")

@@ -11,10 +11,10 @@ geom = [
     ('H', (0., 0., 4.0)),
     ('H', (0., 0., 5.0)), 
     ('H', (0., 0., 6.0)),
-    # ('H', (0., 0., 7.0)), 
-    # ('H', (0., 0., 8.0)),
-    # ('H', (0., 0., 9.0)), 
-    # ('H', (0., 0.,10.0)),
+    ('H', (0., 0., 7.0)), 
+    ('H', (0., 0., 8.0)),
+    ('H', (0., 0., 9.0)), 
+    ('H', (0., 0.,10.0)),
     # ('H', (0., 0.,11.0)), 
     # ('H', (0., 0.,12.0))
     ]
@@ -32,7 +32,7 @@ mol = qf.system_factory(
     basis='sto-3g', 
     run_fci=0,
     build_qb_ham = False,
-    store_mo_ints=1,
+    store_mo_ints=True,
     store_mo_ints_np=True,
     build_df_ham=0,
     df_icut=1.0e-6
@@ -146,7 +146,7 @@ if(app_trot):
 
     timer.reset()
 
-    fci_comp1.evolve_pool_trotter(
+    fci_comp1.evolve_pool_trotter_not_inplace(
         hermitian_pairs,
         time,
         r,
@@ -154,7 +154,7 @@ if(app_trot):
         antiherm=ah,
         adjoint=adj)
 
-    timer.record(f"FCI Trotter step V1")
+    timer.record(f"FCI Trotter step")
 
     Cfci1 = fci_comp1.get_state_deep()
 
@@ -163,7 +163,7 @@ if(app_trot):
 
     timer.reset()
 
-    fci_comp1.evolve_pool_trotter_v2(
+    fci_comp1.evolve_pool_trotter(
         hermitian_pairs,
         time,
         r,
@@ -171,7 +171,7 @@ if(app_trot):
         antiherm=ah,
         adjoint=adj)
 
-    timer.record(f"FCI Trotter step V2")
+    timer.record(f"FCI Trotter step inplace")
 
     timer.reset()
 
@@ -216,12 +216,12 @@ if(app_trot):
 
     timer.reset()
 
-    fci_comp1.evolve_pool_trotter_basic_v2(
+    fci_comp1.evolve_pool_trotter_basic(
         sd_pool,
         antiherm=ah,
         adjoint=adj)
 
-    timer.record(f"FCI Trotter basic")
+    timer.record(f"FCI Trotter basic inplace")
 
     timer.reset()
 
