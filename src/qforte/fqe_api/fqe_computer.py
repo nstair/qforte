@@ -309,6 +309,7 @@ class FQEComputer:
 
         Implementation: build a restricted FQE operator from integrals and call wfn.apply().
         """
+        raise NotImplementedError("1-body tensor application not yet implemented for FQEComputer.")
         fqe_op = integrals_to_fqe_restricted(h1e=h1e, h2e=None, constant=0.0)
         self._wfn = self._wfn.apply(fqe_op)  # FQE accepts Hamiltonian or FqeOperator
 
@@ -317,6 +318,7 @@ class FQEComputer:
         Same as apply_tensor_spat_1bdy but for explicit spin-orbital 1-body matrices
         if you choose to pass them; otherwise just call the spatial method.
         """
+        raise NotImplementedError("1-body tensor application not yet implemented for FQEComputer.")
         self.apply_tensor_spat_1bdy(h1e, norb)
 
     def apply_tensor_spat_12bdy(
@@ -329,7 +331,7 @@ class FQEComputer:
         """
         Apply (h1 + h2) to |ψ⟩. `h2e_einsum` is not needed for FQE; kept for API match.
         """
-
+        raise NotImplementedError("1+2 body tensor application not yet implemented for FQEComputer.") 
         fqe_op = integrals_to_fqe_restricted(h1e=h1e, h2e=h2e, constant=0.0)
         self._wfn = self._wfn.apply(fqe_op)
 
@@ -416,8 +418,6 @@ class FQEComputer:
         h0e: complex,
         h1e: np.ndarray,
         h2e: np.ndarray,
-        h2e_einsum: Optional[np.ndarray],
-        norb: int,
         evolution_time: float,
         convergence_thresh: float,
         max_taylor_iter: int,
@@ -426,18 +426,33 @@ class FQEComputer:
         """
         Use FQE polynomial expansion to approximate exp(-i t H) |ψ⟩.
         """
-        raise NotImplementedError("Evolve Tensor Taylor not yet implemented for FQEComputer.")
+        # raise NotImplementedError("Evolve Tensor Taylor not yet implemented for FQEComputer.")
         # Build op/H and use apply_generated_unitary (choose algo="taylor" or "chebyshev").
-        fqe_op = integrals_to_fqe_restricted(h1e=h1e, h2e=h2e, constant=h0e)
+
+        if(real_evolution):
+            # Victor named this "real" evolution because the wfn remains real, confusingly it means
+            # applying the imaginary time evolution operator, where False applies the real time 
+            # evolution operator
+            raise NotImplementedError("Real evolution e^beta H not yet implemented for FQEComputer.")
+
+        # build RH from integrals
+        rh = integrals_to_fqe_restricted(h1e=h1e, h2e=h2e)  # no constant arg
+        # rewrap with scalar part e_0
+        rh = fqe.get_restricted_hamiltonian(rh.tensors(), e_0=h0e)
+
+
         algo = "taylor"
-        acc = float(convergence_thresh) if convergence_thresh is not None else 0.0
+        # algo = "chebyshev"  # alternative, need to specify spectral limits tho..
+        acc = float(convergence_thresh) if convergence_thresh is not None else 1.0e-15
+     
+
         self._wfn = self._wfn.apply_generated_unitary(
-            time=float(evolution_time),
-            algo=algo,
-            hamil=fqe_op,     # FqeOperator is accepted
-            accuracy=acc,
-            expansion=int(max_taylor_iter),
-            spec_lim=None,
+            float(evolution_time),
+            algo,
+            rh,     # FqeOperator is accepted
+            acc,
+            int(max_taylor_iter),
+            None,
         )
 
     def apply_sqop_evolution(

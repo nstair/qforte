@@ -131,6 +131,12 @@ class SRQK(QSD):
                 raise ValueError("fci computer SRQK only compatible with 1st and 2nd order trotter currently")
             
             return self.build_qk_mats_fast_fci()
+
+        elif(self._computer_type == 'fqe'):
+            if(self._trotter_order not in [1, 2]):
+                raise ValueError("fqe computer SRQK only compatible with 1st and 2nd order trotter currently")
+            
+            return self.build_qk_mats_fast_fqe()
         
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
@@ -409,12 +415,25 @@ class SRQK(QSD):
             if(m>0):
                 # Compute U_m |φ>
                 if(self._use_exact_evolution):
-                    QC.evolve_op_taylor(
-                        self._sq_ham,
-                        self._dt,
-                        1.0e-15,
-                        30,
-                        False)
+                    if(self._apply_ham_as_tensor):
+                        # raise NotImplementedError("Exact evolution not implemented for FQE computer type.")
+                        QC.evolve_tensor_taylor(
+                            self._zero_body_energy,
+                            self._mo_oeis,
+                            self._mo_teis,
+                            self._mo_teis_einsum,
+                            self._norb,
+                            self._dt,
+                            1.0e-15,
+                            30,
+                            False)
+                    else:
+                        QC.evolve_op_taylor(
+                            self._sq_ham,
+                            self._dt,
+                            1.0e-15,
+                            30,
+                            False)
 
                 else:
                     QC.evolve_pool_trotter(
@@ -443,11 +462,155 @@ class SRQK(QSD):
 
             Homega_lst.append(Sig)
 
+            # very important, was missing before!
+            QC.set_state(C)
+
             # Compute S_mn = <φ| U_m^\dagger U_n |φ> and H_mn = <φ| U_m^\dagger H U_n |φ>
             for n in range(len(self._omega_lst)):
                 h_mat[m][n] = self._omega_lst[m].vector_dot(Homega_lst[n])
                 h_mat[n][m] = np.conj(h_mat[m][n])
                 s_mat[m][n] = self._omega_lst[m].vector_dot(self._omega_lst[n])
+                s_mat[n][m] = np.conj(s_mat[m][n])
+
+            if (self._diagonalize_each_step):
+                # TODO (cleanup): have this print to a separate file
+                k = m+1
+                evals, evecs = canonical_geig_solve(s_mat[0:k, 0:k],
+                                   h_mat[0:k, 0:k],
+                                   print_mats=False,
+                                   sort_ret_vals=True)
+
+                scond = np.linalg.cond(s_mat[0:k, 0:k])
+                self._n_classical_params = k
+                # self._n_cnot = 2 * Um.get_num_cnots()
+                self._n_cnot = 0
+                self._n_pauli_trm_measures  = k * self._Nl
+                self._n_pauli_trm_measures += k * (k-1) * self._Nl
+                self._n_pauli_trm_measures += k * (k-1)
+
+                print(f' {scond:7.2e}    {np.real(evals[self._target_root]):+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}')
+                if (self._print_summary_file):
+                    f.write(f'  {scond:7.2e}    {np.real(evals[self._target_root]):+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}\n')
+
+        if (self._diagonalize_each_step and self._print_summary_file):
+            f.close()
+
+        self._n_classical_params = self._nstates
+        # self._n_cnot = 2 * Um.get_num_cnots()
+        self._n_cnot = 0
+        # diagonal terms of Hbar
+        self._n_pauli_trm_measures  = self._nstates * self._Nl
+        # off-diagonal of Hbar (<X> and <Y> of Hadamard test)
+        self._n_pauli_trm_measures += self._nstates*(self._nstates-1) * self._Nl
+        # off-diagonal of S (<X> and <Y> of Hadamard test)
+        self._n_pauli_trm_measures += self._nstates*(self._nstates-1)
+
+
+        return s_mat, h_mat
+
+    def build_qk_mats_fast_fqe(self):
+        """Returns matrices S and H needed for the QK algorithm using the Trotterized
+        form of the unitary operators U_n = exp(-i n dt H)
+
+        The mathematical operations of this function are unphysical for a quantum
+        computer, but efficient for a simulator.
+
+        Returns
+        -------
+        s_mat : ndarray
+            A numpy array containing the elements S_mn = <Phi | Um^dag Un | Phi>.
+            _nstates by _nstates
+
+        h_mat : ndarray
+            A numpy array containing the elements H_mn = <Phi | Um^dag H Un | Phi>
+            _nstates by _nstates
+        """
+
+        h_mat = np.zeros((self._nstates,self._nstates), dtype=complex)
+        s_mat = np.zeros((self._nstates,self._nstates), dtype=complex)
+
+        # Store these vectors for the aid of MRSQK
+        self._omega_lst = []
+        Homega_lst = []
+
+        hermitian_pairs = qforte.SQOpPool()
+
+        # this is updated, evolution time is now just 1.0 here
+        hermitian_pairs.add_hermitian_pairs(1.0, self._sq_ham)
+
+        QC = qforte.FQEComputer(
+                self._nel, 
+                self._2_spin, 
+                self._norb)
+            
+        QC.hartree_fock()
+
+        if(self._diagonalize_each_step):
+            print('\n\n')
+
+            print(f"{'k(S)':>7}{'E(Npar)':>19}{'N(params)':>14}{'N(CNOT)':>18}{'N(measure)':>20}")
+            print('-------------------------------------------------------------------------------')
+
+            if (self._print_summary_file):
+                f = open("summary.dat", "w+", buffering=1)
+                f.write(f"#{'k(S)':>7}{'E(Npar)':>19}{'N(params)':>14}{'N(CNOT)':>18}{'N(measure)':>20}\n")
+                f.write('#-------------------------------------------------------------------------------\n')
+
+    
+        """In reviewing this there is going to be an inherent ordering probelm. I want to apply 
+        based on hermitian paris of SQ operators but the qb hamiltonain has been 'simplified' 
+        and looses the exact correspondance to the sq hamiltonain"""
+        for m in range(self._nstates):
+
+            if(m>0):
+                # Compute U_m |φ>
+                if(self._use_exact_evolution):
+                    # raise NotImplementedError("Exact evolution not implemented for FQE computer type.")
+                    QC.evolve_tensor_taylor(
+                        self._zero_body_energy,
+                        self._mo_oeis_np,
+                        self._mo_teis_np,
+                        self._dt,
+                        1.0e-15,
+                        30,
+                        False)
+
+                else:
+                    QC.evolve_pool_trotter(
+                        hermitian_pairs,
+                        self._dt,
+                        self._trotter_number,
+                        self._trotter_order,
+                        antiherm=False,
+                        adjoint=False)
+
+            C = QC.get_state_deep()
+         
+            self._omega_lst.append(C)
+
+            if(self._apply_ham_as_tensor):
+                QC.apply_tensor_spat_012bdy(
+                    self._zero_body_energy, 
+                    self._mo_oeis_np, 
+                    self._mo_teis_np, 
+                    )
+            else:   
+                QC.apply_sqop(self._sq_ham)
+
+            Sig = QC.get_state_deep()
+
+            Homega_lst.append(Sig)
+
+            # very important, was missing before!
+            QC.set_state(C)
+
+            # Compute S_mn = <φ| U_m^\dagger U_n |φ> and H_mn = <φ| U_m^\dagger H U_n |φ>
+            for n in range(len(self._omega_lst)):
+                
+                h_mat[m][n] = np.vdot(self._omega_lst[m], Homega_lst[n])
+                h_mat[n][m] = np.conj(h_mat[m][n])
+                
+                s_mat[m][n] = np.vdot(self._omega_lst[m], self._omega_lst[n])
                 s_mat[n][m] = np.conj(s_mat[m][n])
 
             if (self._diagonalize_each_step):
