@@ -282,17 +282,17 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("antiherm") = false,
             py::arg("adjoint") = false
             )
-        .def("evolve_pool_trotter_basic", &FCIComputer::evolve_pool_trotter_basic, 
+        .def("evolve_pool_trotter_basic", &FCIComputer::evolve_pool_trotter_basic_v2, // Making Faster Version the Default! Check QK and PQE!
             py::arg("sqop"),
             py::arg("antiherm") = false,
             py::arg("adjoint") = false
             )
-        .def("evolve_pool_trotter_basic_v2", &FCIComputer::evolve_pool_trotter_basic_v2, 
+        .def("evolve_pool_trotter_not_inplace", &FCIComputer::evolve_pool_trotter_basic, 
             py::arg("sqop"),
             py::arg("antiherm") = false,
             py::arg("adjoint") = false
             )
-        .def("evolve_pool_trotter", &FCIComputer::evolve_pool_trotter, 
+        .def("evolve_pool_trotter", &FCIComputer::evolve_pool_trotter_v2, // Making Faster Version the Default! Check QK and PQE! 
             py::arg("sqop"),
             py::arg("evolution_time"),
             py::arg("trotter_steps"),
@@ -300,7 +300,7 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("antiherm") = false,
             py::arg("adjoint") = false
             )
-        .def("evolve_pool_trotter_v2", &FCIComputer::evolve_pool_trotter_v2, 
+        .def("evolve_pool_trotter_not_inplace", &FCIComputer::evolve_pool_trotter, 
             py::arg("sqop"),
             py::arg("evolution_time"),
             py::arg("trotter_steps"),

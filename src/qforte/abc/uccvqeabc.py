@@ -119,6 +119,8 @@ class UCCVQE(VQE, UCC):
             return self.measure_gradient_fock(params)
         elif(self._computer_type == 'fci'):
             return self.measure_gradient_fci(params)
+        elif(self._computer_type == 'fqe'):
+            return self.measure_gradient_fqe(params)
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
 
@@ -213,6 +215,7 @@ class UCCVQE(VQE, UCC):
 
         return grads
     
+    # TODO(Nick): think about optemization here, probably should have its own c++ function
     def measure_gradient_fci(self, params=None):
         """ Returns the disentangled (factorized) UCC gradient, using a
         recursive approach.
@@ -336,6 +339,138 @@ class UCCVQE(VQE, UCC):
             Kmu_prev = Kmu
 
         np.testing.assert_allclose(np.imag(grads), np.zeros_like(grads), atol=1e-7)
+        
+        return grads
+    
+    # TODO(Nick): think about optemization here, probably should have its own c++ function
+    def measure_gradient_fqe(self, params=None):
+        """ Returns the disentangled (factorized) UCC gradient, using a
+        recursive approach.
+
+        Parameters
+        ----------
+        params : list of floats
+            The variational parameters which characterize _Uvqc.
+        """
+
+        if not self._fast:
+            raise ValueError("self._fast must be True for gradient measurement.")
+        
+        if(self._pool_type == 'sa_SD'):
+            raise ValueError('Must use single term particle-hole nbody operators for residual calculation')
+        
+        if not self._ref_from_hf:
+            raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
+
+        M = len(self._tamps)
+        grads = np.zeros(M)
+        vqc_ops = qforte.SQOpPool()
+
+        if params is None:
+            for tamp, top in zip(self._tamps, self._tops):
+                vqc_ops.add(tamp, self._pool_obj[top][1])
+        else:
+            for tamp, top in zip(params, self._tops):
+                vqc_ops.add(tamp, self._pool_obj[top][1])
+
+        # build | sig_N > according ADAPT-VQE analytical grad section
+        qc_psi = qforte.FQEComputer(
+            self._nel, 
+            self._2_spin, 
+            self._norb) 
+        
+        qc_psi.hartree_fock()
+        
+        # qc_psi.apply_circuit(Utot)
+        qc_psi.evolve_pool_trotter_basic(
+            vqc_ops,
+            antiherm=True,
+            adjoint=False)
+
+        # build | psi_N > according ADAPT-VQE analytical grad section
+        qc_sig = qforte.FQEComputer(
+            self._nel, 
+            self._2_spin, 
+            self._norb) 
+
+        psi_i = qc_psi.get_state_deep()
+
+        # not sure if copy is faster or reapplication of state
+        qc_sig.set_state(psi_i) 
+
+        if(self._apply_ham_as_tensor):
+            qc_sig.apply_tensor_spat_012bdy(
+                self._zero_body_energy, 
+                self._mo_oeis_np, 
+                self._mo_teis_np, 
+                )
+        else:   
+            qc_sig.apply_sqop(self._sq_ham)
+
+        mu = M-1
+
+        # find <sing_N | K_N | psi_N>
+        Kmu_prev = self._pool_obj[self._tops[mu]][1]
+
+        Kmu_prev.mult_coeffs(self._pool_obj[self._tops[mu]][0])
+
+        qc_psi.apply_sqop(Kmu_prev, antiherm=True)
+
+        # grads[mu] = 2.0 * np.real(
+        #     qc_sig.get_state().vector_dot(qc_psi.get_state())
+        #     )
+
+        grads[mu] = 2.0 * np.real(np.vdot(qc_sig.get_state(), qc_psi.get_state()))
+
+        #reset Kmu_prev |psi_i> -> |psi_i>
+        qc_psi.set_state(psi_i)
+
+        for mu in reversed(range(M-1)):
+
+            # mu => N-1 => M-2
+            # mu+1 => N => M-1
+            # Kmu => KN-1
+            # Kmu_prev => KN
+
+            if params is None:
+                tamp = self._tamps[mu+1]
+            else:
+                tamp = params[mu+1]
+
+            # Kmu = self._pool_obj[self._tops[mu]][1].jw_transform(self._qubit_excitations)
+            Kmu = self._pool_obj[self._tops[mu]][1]
+
+            Kmu.mult_coeffs(self._pool_obj[self._tops[mu]][0])
+
+            # The minus sign is dictated by the recursive algorithm used to compute the analytic gradient
+            # (see original ADAPT-VQE paper)
+            qc_psi.apply_sqop_evolution(
+                -1.0*tamp,
+                Kmu_prev,
+                antiherm=True,
+                adjoint=False)
+            
+            qc_sig.apply_sqop_evolution(
+                -1.0*tamp,
+                Kmu_prev,
+                antiherm=True,
+                adjoint=False)
+
+            psi_i = qc_psi.get_state_deep()
+
+            qc_psi.apply_sqop(Kmu, antiherm=True)
+            # grads[mu] = 2.0 * np.real(
+            #     qc_sig.get_state().vector_dot(qc_psi.get_state())
+            #     )
+            
+            grads[mu] = 2.0 * np.real(np.vdot(qc_sig.get_state(), qc_psi.get_state()))
+
+            #reset Kmu |psi_i> -> |psi_i>
+            qc_psi.set_state(psi_i)
+            Kmu_prev = Kmu
+
+        np.testing.assert_allclose(np.imag(grads), np.zeros_like(grads), atol=1e-7)
+        
         return grads
 
     def measure_gradient3(self):
@@ -452,6 +587,8 @@ class UCCVQE(VQE, UCC):
             return self.gradient_ary_feval_fock(params)
         elif(self._computer_type == 'fci'):
             return self.gradient_ary_feval_fci(params)
+        elif(self._computer_type == 'fqe'):
+            return self.gradient_ary_feval_fqe(params)
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
 
@@ -468,6 +605,18 @@ class UCCVQE(VQE, UCC):
         return np.asarray(grads)
     
     def gradient_ary_feval_fci(self, params):
+        grads = self.measure_gradient(params)
+
+        if(self._noise_factor > 1e-14):
+            grads = [np.random.normal(np.real(grad_m), self._noise_factor) for grad_m in grads]
+
+        self._curr_grad_norm = np.linalg.norm(grads)
+        self._res_vec_evals += 1
+        self._res_m_evals += len(self._tamps)
+
+        return np.asarray(grads)
+
+    def gradient_ary_feval_fqe(self, params):
         grads = self.measure_gradient(params)
 
         if(self._noise_factor > 1e-14):

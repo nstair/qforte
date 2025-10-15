@@ -238,6 +238,22 @@ def create_psi_mol(**kwargs):
             p4_mo_oeis = copy.deepcopy(mo_oeis)
             p4_mo_teis = copy.deepcopy(mo_teis)
 
+    if kwargs['store_mo_ints_np']:
+        # Resize mo_oeis and mo_teis if there are frozen orbitals...
+        if(frozen_core or frozen_virtual):
+            # raise ValueError("This doesn't work..")
+            start = frozen_core
+            end = nmo - frozen_virtual
+            mo_oeis = copy.deepcopy(mo_oeis[start:end, start:end])
+            mo_teis = copy.deepcopy(mo_teis[start:end, start:end, start:end, start:end])
+
+        # keep ordering consistant with openfermion eri tensors
+        mo_teis_trans_np = copy.deepcopy(np.asarray(mo_teis.transpose(0, 2, 3, 1), order='C'))
+
+        # save numpy copies
+        qforte_mol.mo_oeis_np = copy.deepcopy(mo_oeis)
+        qforte_mol.mo_teis_np = copy.deepcopy(mo_teis_trans_np)
+
     if kwargs['store_mo_ints']:
 
         # Resize mo_oeis and mo_teis if there are frozen orbitals...
@@ -250,6 +266,10 @@ def create_psi_mol(**kwargs):
 
         # keep ordering consistant with openfermion eri tensors
         mo_teis = np.asarray(mo_teis.transpose(0, 2, 3, 1), order='C')
+
+        # save numpy copies
+        # qforte_mol.mo_oeis_np = copy.deepcopy(mo_oeis)
+        # qforte_mol.mo_teis_np = copy.deepcopy(mo_teis)
 
         # Save data to a file
         # np.savez(
@@ -872,7 +892,24 @@ def create_pyscf_mol(**kwargs):
             pyscf_mo_oeis = copy.deepcopy(mo_oeis)
             pyscf_mo_teis = copy.deepcopy(mo_teis)
 
+    if kwargs['store_mo_ints_np']:
+        # Resize mo_oeis and mo_teis if there are frozen orbitals...
+        if(frozen_core or frozen_virtual):
+            # raise ValueError("This doesn't work..")
+            start = frozen_core
+            end = nmo - frozen_virtual
+            mo_oeis = copy.deepcopy(mo_oeis[start:end, start:end])
+            mo_teis = copy.deepcopy(mo_teis[start:end, start:end, start:end, start:end])
+
+        # keep ordering consistant with openfermion eri tensors
+        mo_teis_trans_np = copy.deepcopy(np.asarray(mo_teis.transpose(0, 2, 3, 1), order='C'))
+
+        # save numpy copies
+        qforte_mol.mo_oeis_np = copy.deepcopy(mo_oeis)
+        qforte_mol.mo_teis_np = copy.deepcopy(mo_teis_trans_np)
+
     if kwargs['store_mo_ints']:
+
         # Resize mo_oeis and mo_teis if there are frozen orbitals...
         if(frozen_core or frozen_virtual):
             # raise ValueError("This doesn't work..")
