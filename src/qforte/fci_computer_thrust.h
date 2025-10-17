@@ -47,8 +47,12 @@ class FCIComputerThrust {
         decltype(std::declval<const SQOpPoolThrust&>().get_mu_tuple(std::size_t{}));
     
     // Alias for the SoA tuple type (tuple of const references) returned by get_mu_tuple_soa()
-    using PrecompTupleSoA =
-        decltype(std::declval<const SQOpPoolThrust&>().get_mu_tuple_soa(std::size_t{}));
+    // using PrecompTupleSoA =
+    //     decltype(std::declval<const SQOpPoolThrust&>().get_mu_tuple_soa(std::size_t{}));
+
+    // Alias for the Real tuple type (tuple of const references) returned by get_mu_tuple_real()
+    using PrecompTupleReal =
+        decltype(std::declval<const SQOpPoolThrust&>().get_mu_tuple_real(std::size_t{}));
 
     /// default constructor: create a 'FCI' quantum computer 
     /// the computer represends a restricted hilbert space for 'chemistry'
@@ -457,7 +461,7 @@ class FCIComputerThrust {
 
     bool on_gpu_;
 
-    bool on_complex_; // true if data is complex, false if data is soa
+    bool on_complex_; // true if data is complex, false if data is on real Tensor
     std::string data_type_ = "complex"; 
 
     size_t nel_;

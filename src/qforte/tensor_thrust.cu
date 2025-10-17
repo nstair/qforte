@@ -175,6 +175,8 @@ TensorThrust::TensorThrust(
         h_re_data_.resize(size_, 0.0);
         d_re_data_.resize(size_, 0.0);
 
+        on_complex_ = false;
+
     } else if (data_type_ == "soa"){
 
         h_re_data_.resize(size_, 0.0);
@@ -307,14 +309,14 @@ void TensorThrust::to_cpu()
         return;
     }
     
-    // Copy from device to temporary CPU vector
-    std::vector<cuDoubleComplex> temp_cpu_data(size_);
-    thrust::copy(d_data_.begin(), d_data_.end(), temp_cpu_data.begin());
+    // // Copy from device to temporary CPU vector
+    // std::vector<cuDoubleComplex> temp_cpu_data(size_);
+    // thrust::copy(d_data_.begin(), d_data_.end(), temp_cpu_data.begin());
     
-    // Manual conversion on CPU
-    for (size_t i = 0; i < size_; i++) {
-        h_data_[i] = std::complex<double>(cuCreal(temp_cpu_data[i]), cuCimag(temp_cpu_data[i]));
-    }
+    // // Manual conversion on CPU
+    // for (size_t i = 0; i < size_; i++) {
+    //     h_data_[i] = std::complex<double>(cuCreal(temp_cpu_data[i]), cuCimag(temp_cpu_data[i]));
+    // }
 
 
     if(data_type_ == "complex"){
@@ -332,25 +334,25 @@ void TensorThrust::to_cpu()
         // Copy real data to device
         thrust::copy(d_re_data_.begin(), d_re_data_.end(), h_re_data_.begin());
         
-
-    } else if (data_type_ == "soa"){
-        // Copy SoA data to device
-        thrust::copy(d_re_data_.begin(), d_re_data_.end(), h_re_data_.begin());
-        thrust::copy(d_im_data_.begin(), d_im_data_.end(), h_im_data_.begin());
+    // REMOVE
+    // } else if (data_type_ == "soa"){
+    //     // Copy SoA data to device
+    //     thrust::copy(d_re_data_.begin(), d_re_data_.end(), h_re_data_.begin());
+    //     thrust::copy(d_im_data_.begin(), d_im_data_.end(), h_im_data_.begin());
         
 
-    } else if (data_type_ == "all"){
-        thrust::copy(d_re_data_.begin(), d_re_data_.end(), h_re_data_.begin());
-        thrust::copy(d_im_data_.begin(), d_im_data_.end(), h_im_data_.begin());
+    // } else if (data_type_ == "all"){
+    //     thrust::copy(d_re_data_.begin(), d_re_data_.end(), h_re_data_.begin());
+    //     thrust::copy(d_im_data_.begin(), d_im_data_.end(), h_im_data_.begin());
 
-        // Copy from device to temporary CPU vector
-        std::vector<cuDoubleComplex> temp_cpu_data(size_);
-        thrust::copy(d_data_.begin(), d_data_.end(), temp_cpu_data.begin());
+    //     // Copy from device to temporary CPU vector
+    //     std::vector<cuDoubleComplex> temp_cpu_data(size_);
+    //     thrust::copy(d_data_.begin(), d_data_.end(), temp_cpu_data.begin());
         
-        // Manual conversion on CPU
-        for (size_t i = 0; i < size_; i++) {
-            h_data_[i] = std::complex<double>(cuCreal(temp_cpu_data[i]), cuCimag(temp_cpu_data[i]));
-        }
+    //     // Manual conversion on CPU
+    //     for (size_t i = 0; i < size_; i++) {
+    //         h_data_[i] = std::complex<double>(cuCreal(temp_cpu_data[i]), cuCimag(temp_cpu_data[i]));
+    //     }
         
     } else {
         throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex', 'real', 'soa' or 'all'.");
@@ -408,18 +410,35 @@ void TensorThrust::add(const TensorThrust& other) {
     if (shape_ != other.shape_) {
         throw std::runtime_error("Tensor shapes are not compatible for addition.");
     }
-    
+
+    if (data_type_ != other.data_type_) {
+        throw std::runtime_error("Data type mismatch in add.");
+    }
+
     if (on_gpu_) {
         gpu_error();
         other.gpu_error();
-        thrust::transform(thrust::device, d_data_.begin(), d_data_.end(), 
-                         other.d_data_.begin(), d_data_.begin(), complex_add());
+
+        if (data_type_ == "complex") {
+            thrust::transform(thrust::device, d_data_.begin(), d_data_.end(), other.d_data_.begin(), d_data_.begin(), complex_add());
+        } else if (data_type_ == "real") {
+            thrust::transform(thrust::device, d_re_data_.begin(), d_re_data_.end(), other.d_re_data_.begin(), d_re_data_.begin(), thrust::plus<double>());
+        } else {
+            throw std::runtime_error("Unsupported data type in add (GPU).");
+        }
+
     } else {
         cpu_error();
         other.cpu_error();
-        for (size_t i = 0; i < size_; i++) {
-            h_data_[i] += other.h_data_[i];
+
+        if (data_type_ == "complex") {
+            for (size_t i = 0; i < size_; i++) h_data_[i] += other.h_data_[i];
+        } else if (data_type_ == "real") {
+            for (size_t i = 0; i < size_; i++) h_re_data_[i] += other.h_re_data_[i];
+        } else {
+            throw std::runtime_error("Unsupported data type in add (CPU).");
         }
+
     }
 }
 
@@ -427,12 +446,20 @@ void TensorThrust::add_thrust(const TensorThrust& other) {
     if (shape_ != other.shape_) {
         throw std::runtime_error("Tensor shapes are not compatible for addition.");
     }
-    
     gpu_error();
     other.gpu_error();
-    
-    thrust::transform(thrust::device, d_data_.begin(), d_data_.end(), 
-                     other.d_data_.begin(), d_data_.begin(), complex_add());
+
+    if (data_type_ != other.data_type_) {
+        throw std::runtime_error("Data type mismatch in add_thrust.");
+    }
+
+    if (data_type_ == "complex") {
+        thrust::transform(thrust::device, d_data_.begin(), d_data_.end(), other.d_data_.begin(), d_data_.begin(), complex_add());
+    } else if (data_type_ == "real") {
+        thrust::transform(thrust::device, d_re_data_.begin(), d_re_data_.end(), other.d_re_data_.begin(), d_re_data_.begin(), thrust::plus<double>());
+    } else {
+        throw std::runtime_error("Unsupported data type in add_thrust.");
+    }
 }
 
 void TensorThrust::gpu_error() const {
@@ -498,16 +525,25 @@ void TensorThrust::data_type_error(const std::string& other_data_type) const
 void TensorThrust::zero()
 {
     cpu_error();
-    complex_error();
-    thrust::fill(h_data_.begin(), h_data_.end(), std::complex<double>(0.0, 0.0));
+    if (data_type_ == "complex") {
+        thrust::fill(h_data_.begin(), h_data_.end(), std::complex<double>(0.0, 0.0));
+    } else if (data_type_ == "real") {
+        thrust::fill(h_re_data_.begin(), h_re_data_.end(), 0.0);
+    } else {
+        throw std::runtime_error("Unsupported data type in zero().");
+    }
 }
 
 void TensorThrust::zero_gpu()
 {
     gpu_error();
-    complex_error();
-    thrust::fill(thrust::device, d_data_.begin(), d_data_.end(), 
-                 make_cuDoubleComplex(0.0, 0.0));
+    if (data_type_ == "complex") {
+        thrust::fill(thrust::device, d_data_.begin(), d_data_.end(), make_cuDoubleComplex(0.0, 0.0));
+    } else if (data_type_ == "real") {
+        thrust::fill(thrust::device, d_re_data_.begin(), d_re_data_.end(), 0.0);
+    } else {
+        throw std::runtime_error("Unsupported data type in zero_gpu().");
+    }
 }
 
 // ==========================================
@@ -590,14 +626,16 @@ void TensorThrust::set(
         )
 {
     cpu_error();
-    complex_error();
     ndim_error(idxs.size());
-    
-    if (idxs.size() == 1) {
-        h_data_[idxs[0]] = val;
-    } else {
-        size_t vidx = tidx_to_vidx(idxs);
+
+    size_t vidx = (idxs.size()==1)? idxs[0] : tidx_to_vidx(idxs);
+    if (data_type_ == "complex") {
         h_data_[vidx] = val;
+    } else if (data_type_ == "real") {
+        if (std::abs(val.imag()) > 1e-14) throw std::runtime_error("Attempt to assign complex value to real tensor.");
+        h_re_data_[vidx] = val.real();
+    } else {
+        throw std::runtime_error("Unsupported data type in set().");
     }
 }
 
@@ -611,66 +649,73 @@ void TensorThrust::ndim_error(size_t ndims) const
 void TensorThrust::fill_from_nparray(std::vector<std::complex<double>> arr, std::vector<size_t> shape)
 {
     cpu_error();
-    complex_error();
-    
-    if (shape_ != shape) {
-        throw std::runtime_error("Shape mismatch in fill_from_nparray.");
+    if (shape_ != shape) throw std::runtime_error("Shape mismatch in fill_from_nparray.");
+    if (arr.size() != size_) throw std::runtime_error("Array size mismatch in fill_from_nparray.");
+
+    if (data_type_ == "complex") {
+        thrust::copy(arr.begin(), arr.end(), h_data_.begin());
+    } else if (data_type_ == "real") {
+        for (size_t i=0;i<size_;++i) {
+            if (std::abs(arr[i].imag()) > 1e-14) throw std::runtime_error("Imag component present loading into real tensor.");
+            h_re_data_[i] = arr[i].real();
+        }
+    } else {
+        throw std::runtime_error("Unsupported data type in fill_from_nparray().");
     }
-    
-    if (arr.size() != size_) {
-        throw std::runtime_error("Array size mismatch in fill_from_nparray.");
-    }
-    
-    thrust::copy(arr.begin(), arr.end(), h_data_.begin());
 }
 
 double TensorThrust::norm() {
-
-    complex_error();
-
     if (on_gpu_) {
-        double result = thrust::transform_reduce(thrust::device, d_data_.begin(), d_data_.end(),
-                                                complex_norm_squared(), 0.0, thrust::plus<double>());
-        return std::sqrt(result);
-    } else {
-        double result = 0.0;
-        for (size_t i = 0; i < size_; i++) {
-            result += std::norm(h_data_[i]);
+        if (data_type_ == "complex") {
+            double result = thrust::transform_reduce(thrust::device, d_data_.begin(), d_data_.end(), complex_norm_squared(), 0.0, thrust::plus<double>());
+            return std::sqrt(result);
+        } else if (data_type_ == "real") {
+            double result = thrust::transform_reduce(thrust::device, d_re_data_.begin(), d_re_data_.end(), thrust::square<double>(), 0.0, thrust::plus<double>());
+            return std::sqrt(result);
+        } else {
+            throw std::runtime_error("Unsupported data type in norm() on GPU.");
         }
-        return std::sqrt(result);
+    } else {
+        if (data_type_ == "complex") {
+            double result = 0.0; for (size_t i=0;i<size_;++i) result += std::norm(h_data_[i]); return std::sqrt(result);
+        } else if (data_type_ == "real") {
+            double result=0.0; for (size_t i=0;i<size_;++i) { double v=h_re_data_[i]; result += v*v;} return std::sqrt(result);
+        } else {
+            throw std::runtime_error("Unsupported data type in norm() on CPU.");
+        }
     }
 }
 
 void TensorThrust::add_to_element(
     const std::vector<size_t>& idxs,
     const std::complex<double> val
-        )
-{
+        ) {
     cpu_error();
-    complex_error();
     ndim_error(idxs.size());
-    
-    if (idxs.size() == 1) {
-        h_data_[idxs[0]] += val;
-    } else {
-        size_t vidx = tidx_to_vidx(idxs);
+
+    size_t vidx = (idxs.size()==1)? idxs[0] : tidx_to_vidx(idxs);
+    if (data_type_ == "complex") {
         h_data_[vidx] += val;
+    } else if (data_type_ == "real") {
+        if (std::abs(val.imag())>1e-14) throw std::runtime_error("Imag component in add_to_element for real tensor.");
+        h_re_data_[vidx] += val.real();
+    } else {
+        throw std::runtime_error("Unsupported data type in add_to_element().");
     }
 }
 
 void TensorThrust::fill_from_np(std::vector<std::complex<double>> arr, std::vector<size_t> shape) {
     cpu_error();
-    complex_error();
+    if (shape_ != shape) throw std::runtime_error("Shape mismatch in fill_from_np.");
+    if (arr.size() != size_) throw std::runtime_error("Array size mismatch in fill_from_np.");
     
-    if (shape_ != shape) {
-        throw std::runtime_error("Shape mismatch in fill_from_np.");
+    if (data_type_ == "complex") {
+        thrust::copy(arr.begin(), arr.end(), h_data_.begin());
+    } else if (data_type_ == "real") {
+        for (size_t i=0;i<size_;++i){ if (std::abs(arr[i].imag())>1e-14) throw std::runtime_error("Imag component present loading into real tensor."); h_re_data_[i]=arr[i].real(); }
+    } else {
+        throw std::runtime_error("Unsupported data type in fill_from_np().");
     }
-    
-    if (arr.size() != size_) {
-        throw std::runtime_error("Array size mismatch in fill_from_np.");
-    }
-    
-    thrust::copy(arr.begin(), arr.end(), h_data_.begin());
 }
 
 void TensorThrust::zero_with_shape(
@@ -696,6 +741,8 @@ void TensorThrust::zero_with_shape(
 
         h_re_data_.resize(size_, 0.0);
         d_re_data_.resize(size_, 0.0);
+
+        on_complex_ = false;
 
     } else if (data_type_ == "soa"){
 
@@ -778,14 +825,15 @@ std::complex<double> TensorThrust::get(
     ) const
 {
     cpu_error();
-    complex_error();
     ndim_error(idxs.size());
-    
-    if (idxs.size() == 1) {
-        return h_data_[idxs[0]];
-    } else {
-        size_t vidx = tidx_to_vidx(idxs);
+
+    size_t vidx = (idxs.size()==1)? idxs[0] : tidx_to_vidx(idxs);
+    if (data_type_ == "complex") {
         return h_data_[vidx];
+    } else if (data_type_ == "real") {
+        return std::complex<double>(h_re_data_[vidx], 0.0);
+    } else {
+        throw std::runtime_error("Unsupported data type in get().");
     }
 }
 
@@ -815,54 +863,70 @@ std::shared_ptr<TensorThrust> TensorThrust::clone()
 void TensorThrust::identity()
 {
     cpu_error();
-    complex_error();
     square_error();
+
     zero();
-    for (size_t i = 0; i < shape_[0]; i++) {
-        h_data_[i * shape_[1] + i] = std::complex<double>(1.0, 0.0);
+    if (data_type_ == "complex") {
+        for (size_t i=0;i<shape_[0];++i) h_data_[i*shape_[1]+i] = {1.0,0.0};
+    } else if (data_type_ == "real") {
+        for (size_t i=0;i<shape_[0];++i) h_re_data_[i*shape_[1]+i] = 1.0;
+    } else {
+        throw std::runtime_error("Unsupported data type in identity().");
     }
 }
 
 void TensorThrust::symmetrize()
 {
     cpu_error();
-    complex_error();
     square_error();
-    for (size_t i = 0; i < shape_[0]; i++) {
-        for (size_t j = 0; j < shape_[1]; j++) {
-            std::complex<double> val = 0.5 * (h_data_[i * shape_[1] + j] + h_data_[j * shape_[1] + i]);
-            h_data_[i * shape_[1] + j] = val;
-            h_data_[j * shape_[1] + i] = val;
-        }
+
+    if (data_type_ == "complex") {
+        for (size_t i=0;i<shape_[0];++i) for (size_t j=0;j<shape_[1];++j){ auto val = 0.5*(h_data_[i*shape_[1]+j] + h_data_[j*shape_[1]+i]); h_data_[i*shape_[1]+j]=val; h_data_[j*shape_[1]+i]=val; }
+    } else if (data_type_ == "real") {
+        for (size_t i=0;i<shape_[0];++i) for (size_t j=0;j<shape_[1];++j){ double val = 0.5*(h_re_data_[i*shape_[1]+j] + h_re_data_[j*shape_[1]+i]); h_re_data_[i*shape_[1]+j]=val; h_re_data_[j*shape_[1]+i]=val; }
+    } else {
+        throw std::runtime_error("Unsupported data type in symmetrize().");
     }
 }
 
 void TensorThrust::antisymmetrize()
 {
     cpu_error();
-    complex_error();
     square_error();
-    for (size_t i = 0; i < shape_[0]; i++) {
-        for (size_t j = 0; j < shape_[1]; j++) {
-            std::complex<double> val = 0.5 * (h_data_[i * shape_[1] + j] - h_data_[j * shape_[1] + i]);
-            h_data_[i * shape_[1] + j] = val;
-            h_data_[j * shape_[1] + i] = -val;
-        }
+
+    if (data_type_ == "complex") {
+        for (size_t i=0;i<shape_[0];++i) for (size_t j=0;j<shape_[1];++j){ auto val = 0.5*(h_data_[i*shape_[1]+j] - h_data_[j*shape_[1]+i]); h_data_[i*shape_[1]+j]=val; h_data_[j*shape_[1]+i]=-val; }
+    } else if (data_type_ == "real") {
+        for (size_t i=0;i<shape_[0];++i) for (size_t j=0;j<shape_[1];++j){ double val = 0.5*(h_re_data_[i*shape_[1]+j] - h_re_data_[j*shape_[1]+i]); h_re_data_[i*shape_[1]+j]=val; h_re_data_[j*shape_[1]+i]=-val; }
+    } else {
+        throw std::runtime_error("Unsupported data type in antisymmetrize().");
     }
 }
 
 void TensorThrust::scale(std::complex<double> a)
 {
-    complex_error();
+    if (data_type_ == "real" && std::abs(a.imag())>1e-14) throw std::runtime_error("Complex scale on real tensor.");
+    
     if (on_gpu_) {
         gpu_error();
-        cuDoubleComplex alpha = make_cuDoubleComplex(a.real(), a.imag());
-        thrust::transform(thrust::device, d_data_.begin(), d_data_.end(), 
-                         d_data_.begin(), complex_scale(alpha));
-    } else {
+        if (data_type_ == "complex") {
+            cuDoubleComplex alpha = make_cuDoubleComplex(a.real(), a.imag());
+            thrust::transform(thrust::device, d_data_.begin(), d_data_.end(), d_data_.begin(), complex_scale(alpha));
+        } else if (data_type_ == "real") {
+            double ar = a.real();
+            thrust::transform(thrust::device, d_re_data_.begin(), d_re_data_.end(), d_re_data_.begin(), [=] __device__ (double x){ return ar * x; });
+        } else {
+            throw std::runtime_error("Unsupported data type in scale (GPU).");
+        }
+    } else{
         cpu_error();
-        for (size_t i = 0; i < size_; i++) {
-            h_data_[i] *= a;
+        if (data_type_ == "complex") {
+            for (size_t i=0;i<size_;++i) h_data_[i] *= a;
+        } else if (data_type_ == "real") {
+            double ar = a.real();
+            for (size_t i=0;i<size_;++i) h_re_data_[i] *= ar;
+        } else {
+            throw std::runtime_error("Unsupported data type in scale (CPU).");
         }
     }
 }
@@ -873,54 +937,35 @@ void TensorThrust::gather_in_2D_gpu(
     const thrust::device_vector<int>& j_inds
 )
 {
-    complex_error();
-    other.complex_error();
-
-    gpu_error();
-    other.gpu_error();
-    ndim_error(2);
+    if (data_type_ != other.data_type_) throw std::runtime_error("Data type mismatch in gather_in_2D_gpu.");
+    gpu_error(); 
+    other.gpu_error(); 
+    ndim_error(2); 
     shape_error(other.shape());
 
-
-    const int nrows = static_cast<int>(i_inds.size());
-    const int ncols = static_cast<int>(j_inds.size());
-    if (nrows == 0 || ncols == 0) {
-        return; 
-    }
-
-    const int H = static_cast<int>(shape_[0]);
-    const int W = static_cast<int>(shape_[1]);
-
-    // Raw device pointers to data and index arrays
-    cuDoubleComplex* __restrict__ dst = thrust::raw_pointer_cast(d_data_.data());
+    const int nrows = (int)i_inds.size(); 
+    const int ncols = (int)j_inds.size(); 
+    if (nrows==0 || ncols==0) return; 
+    const int H=(int)shape_[0]; 
+    const int W=(int)shape_[1];
     
-    const cuDoubleComplex* __restrict__ src = thrust::raw_pointer_cast(other.d_data_.data());
-
-    const int* __restrict__ d_rows = thrust::raw_pointer_cast(i_inds.data());
-    const int* __restrict__ d_cols = thrust::raw_pointer_cast(j_inds.data());
-
-    const size_t N = static_cast<size_t>(nrows) * static_cast<size_t>(ncols);
-
-    // Execute: each k maps to (rsel, m) -> (i,j) -> single copy
-    // attach a stream with .on(stream_) if you track one
-    auto exec = thrust::cuda::par; 
-
-    thrust::for_each(
-        exec,
-        thrust::make_counting_iterator<size_t>(0),
-        thrust::make_counting_iterator<size_t>(N),
-        [=] __device__ (size_t k)
-        {
-            const int rsel = static_cast<int>(k / ncols);
-            const int m    = static_cast<int>(k % ncols);
-
-            const int i = d_rows[rsel];
-            const int j = d_cols[m];
-
-            // Prevalidated: 0 <= i < H, 0 <= j < W
-            const size_t off = static_cast<size_t>(i) * static_cast<size_t>(W) + static_cast<size_t>(j);
-            dst[off] = src[off];
-        });
+    if (data_type_ == "complex") {
+        cuDoubleComplex* __restrict__ dst = thrust::raw_pointer_cast(d_data_.data());
+        const cuDoubleComplex* __restrict__ src = thrust::raw_pointer_cast(other.d_data_.data());
+        const int* __restrict__ d_rows = thrust::raw_pointer_cast(i_inds.data());
+        const int* __restrict__ d_cols = thrust::raw_pointer_cast(j_inds.data());
+        size_t N = (size_t)nrows * (size_t)ncols; auto exec = thrust::cuda::par;
+        thrust::for_each(exec, thrust::make_counting_iterator<size_t>(0), thrust::make_counting_iterator<size_t>(N), [=] __device__ (size_t k){ int rsel = (int)(k / ncols); int m = (int)(k % ncols); int i = d_rows[rsel]; int j = d_cols[m]; size_t off = (size_t)i * (size_t)W + (size_t)j; dst[off] = src[off]; });
+    } else if (data_type_ == "real") {
+        double* __restrict__ dst = thrust::raw_pointer_cast(d_re_data_.data());
+        const double* __restrict__ src = thrust::raw_pointer_cast(other.d_re_data_.data());
+        const int* __restrict__ d_rows = thrust::raw_pointer_cast(i_inds.data());
+        const int* __restrict__ d_cols = thrust::raw_pointer_cast(j_inds.data());
+        size_t N = (size_t)nrows * (size_t)ncols; auto exec = thrust::cuda::par;
+        thrust::for_each(exec, thrust::make_counting_iterator<size_t>(0), thrust::make_counting_iterator<size_t>(N), [=] __device__ (size_t k){ int rsel = (int)(k / ncols); int m = (int)(k % ncols); int i = d_rows[rsel]; int j = d_cols[m]; size_t off = (size_t)i * (size_t)W + (size_t)j; dst[off] = src[off]; });
+    } else {
+        throw std::runtime_error("Unsupported data type in gather_in_2D_gpu.");
+    }
 }
 
 void TensorThrust::copy_in(const TensorThrust& other)
@@ -991,27 +1036,41 @@ void TensorThrust::copy_in_from_tensor(const Tensor& other)
 void TensorThrust::copy_to_tensor(Tensor& dest) const
 {
     cpu_error();
-    complex_error();
     dest.shape_error(shape_);
-    
-    // Copy data from TensorThrust's host vector to the Tensor
-    std::copy(h_data_.begin(), h_data_.end(), dest.data().begin());
+
+    // real & complex version:
+    if (data_type_ == "complex") {
+        thrust::copy(h_data_.begin(), h_data_.end(), dest.data().begin());
+    } else if (data_type_ == "real") {
+        thrust::transform(
+            h_re_data_.begin(), h_re_data_.end(),
+            dest.data().begin(),
+            [] __host__ (double x) { return std::complex<double>(x, 0.0); }
+        );
+    }
 }
 
 void TensorThrust::subtract(const TensorThrust& other) {
     shape_error(other.shape());
-    complex_error();
-    
+    if (data_type_ != other.data_type_) throw std::runtime_error("Data type mismatch in subtract.");
+
     if (on_gpu_) {
-        gpu_error();
-        other.gpu_error();
-        thrust::transform(thrust::device, d_data_.begin(), d_data_.end(), 
-                         other.d_data_.begin(), d_data_.begin(), complex_subtract());
+        gpu_error(); other.gpu_error();
+        if (data_type_ == "complex") {
+            thrust::transform(thrust::device, d_data_.begin(), d_data_.end(), other.d_data_.begin(), d_data_.begin(), complex_subtract());
+        } else if (data_type_ == "real") {
+            thrust::transform(thrust::device, d_re_data_.begin(), d_re_data_.end(), other.d_re_data_.begin(), d_re_data_.begin(), thrust::minus<double>());
+        } else {
+            throw std::runtime_error("Unsupported data type in subtract() GPU path.");
+        }
     } else {
-        cpu_error();
-        other.cpu_error();
-        for (size_t i = 0; i < size_; i++) {
-            h_data_[i] -= other.h_data_[i];
+        cpu_error(); other.cpu_error();
+        if (data_type_ == "complex") { 
+            for (size_t i=0;i<size_;++i) h_data_[i] -= other.h_data_[i]; 
+        } else if (data_type_ == "real") { 
+            for (size_t i=0;i<size_;++i) h_re_data_[i] -= other.h_re_data_[i]; 
+        } else { 
+            throw std::runtime_error("Unsupported data type in subtract() CPU path."); 
         }
     }
 }
@@ -1021,24 +1080,41 @@ void TensorThrust::zaxpby(
     std::complex<double> a,
     std::complex<double> b,
     const int incx,
-    const int incy
-    )
+    const int incy)
 {
     shape_error(x.shape());
-    complex_error();
-    
+    if (data_type_ != x.data_type_) throw std::runtime_error("Data type mismatch in zaxpby.");
+    if (data_type_ == "real" && (std::abs(a.imag())>1e-14 || std::abs(b.imag())>1e-14)) throw std::runtime_error("Complex coefficients on real tensor in zaxpby.");
     if (on_gpu_) {
-        gpu_error();
-        x.gpu_error();
-        cuDoubleComplex alpha = make_cuDoubleComplex(a.real(), a.imag());
-        cuDoubleComplex beta = make_cuDoubleComplex(b.real(), b.imag());
-        thrust::transform(thrust::device, x.d_data_.begin(), x.d_data_.end(), 
-                         d_data_.begin(), d_data_.begin(), complex_axpby(alpha, beta));
+        gpu_error(); x.gpu_error();
+        if (data_type_ == "complex") {
+            cuDoubleComplex alpha = make_cuDoubleComplex(a.real(), a.imag());
+            cuDoubleComplex beta = make_cuDoubleComplex(b.real(), b.imag());
+            thrust::transform(thrust::device, x.d_data_.begin(), x.d_data_.end(), d_data_.begin(), d_data_.begin(), complex_axpby(alpha, beta));
+        } else if (data_type_ == "real") {
+            double ar=a.real(), br=b.real();
+            double* __restrict__ y_ptr = thrust::raw_pointer_cast(d_re_data_.data());
+            const double* __restrict__ x_ptr = thrust::raw_pointer_cast(x.d_re_data_.data());
+            thrust::for_each(
+                thrust::device,
+                thrust::make_counting_iterator<size_t>(0),
+                thrust::make_counting_iterator<size_t>(size_),
+                [=] __device__ (size_t i){ y_ptr[i] = ar * x_ptr[i] + br * y_ptr[i]; });
+        } else {
+            throw std::runtime_error("Unsupported data type in zaxpby (GPU).");
+        }
     } else {
-        cpu_error();
-        x.cpu_error();
-        math_zscale(size_, b, h_data_.data(), 1);
-        math_zaxpy(size_, a, x.read_h_data().data(), incx, h_data_.data(), incy);
+        cpu_error(); x.cpu_error();
+        if (data_type_ == "complex") {
+            math_zscale(size_, b, h_data_.data(), 1);
+            math_zaxpy(size_, a, x.read_h_data().data(), incx, h_data_.data(), incy);
+        } else if (data_type_ == "real") {
+            // y = a*x + b*y  -> scale y by b then axpy with a
+            math_dscal(size_, b.real(), h_re_data_.data(), 1);
+            math_daxpy(size_, a.real(), x.h_re_data_.data(), incx, h_re_data_.data(), incy);
+        } else {
+            throw std::runtime_error("Unsupported data type in zaxpby (CPU).");
+        }
     }
 }
 
@@ -1049,18 +1125,34 @@ void TensorThrust::zaxpy(
     const int incy)
 {
     shape_error(x.shape());
-    complex_error();
-    
+    if (data_type_ != x.data_type_) throw std::runtime_error("Data type mismatch in zaxpy.");
+    if (data_type_ == "real" && std::abs(alpha.imag())>1e-14) throw std::runtime_error("Complex alpha on real tensor in zaxpy.");
     if (on_gpu_) {
-        gpu_error();
-        x.gpu_error();
-        cuDoubleComplex alpha_cu = make_cuDoubleComplex(alpha.real(), alpha.imag());
-        thrust::transform(thrust::device, x.d_data_.begin(), x.d_data_.end(), 
-                         d_data_.begin(), d_data_.begin(), complex_axpy(alpha_cu));
+        gpu_error(); x.gpu_error();
+        if (data_type_ == "complex") {
+            cuDoubleComplex alpha_cu = make_cuDoubleComplex(alpha.real(), alpha.imag());
+            thrust::transform(thrust::device, x.d_data_.begin(), x.d_data_.end(), d_data_.begin(), d_data_.begin(), complex_axpy(alpha_cu));
+        } else if (data_type_ == "real") {
+            double ar = alpha.real();
+            double* __restrict__ y_ptr = thrust::raw_pointer_cast(d_re_data_.data());
+            const double* __restrict__ x_ptr = thrust::raw_pointer_cast(x.d_re_data_.data());
+            thrust::for_each(
+                thrust::device,
+                thrust::make_counting_iterator<size_t>(0),
+                thrust::make_counting_iterator<size_t>(size_),
+                [=] __device__ (size_t i){ y_ptr[i] += ar * x_ptr[i]; });
+        } else {
+            throw std::runtime_error("Unsupported data type in zaxpy (GPU).");
+        }
     } else {
-        cpu_error();
-        x.cpu_error();
-        math_zaxpy(size_, alpha, x.read_h_data().data(), incx, h_data_.data(), incy);
+        cpu_error(); x.cpu_error();
+        if (data_type_ == "complex") {
+            math_zaxpy(size_, alpha, x.read_h_data().data(), incx, h_data_.data(), incy);
+        } else if (data_type_ == "real") {
+            math_daxpy(size_, alpha.real(), x.h_re_data_.data(), incx, h_re_data_.data(), incy);
+        } else {
+            throw std::runtime_error("Unsupported data type in zaxpy (CPU).");
+        }
     }
 }
 
@@ -1072,70 +1164,65 @@ void TensorThrust::gemm(
     const std::complex<double> beta,
     const bool mult_B_on_right)
 {
-    cpu_error();
-    B.cpu_error();
-    complex_error();
-    
-    if ((shape_.size() != 2) || (shape_ != B.shape())) {
-        throw std::runtime_error("Invalid tensor shapes for gemm.");
-    }
-    
-    const int M = (transa == 'N') ? shape_[0] : shape_[1];
-    const int N = (transb == 'N') ? B.shape()[1] : B.shape()[0];
-    const int K = (transa == 'N') ? shape_[1] : shape_[0];
-    
-    std::complex<double>* A_data = h_data_.data();
-    const std::complex<double>* B_data = B.read_h_data().data();
-    
-    std::complex<double>* C_data = h_data_.data();
-    
-    if (mult_B_on_right) {
-        math_zgemm(transa, transb, M, N, K, alpha, A_data, shape_[0], B_data, B.shape()[0], beta, C_data, shape_[0]);
+    cpu_error(); B.cpu_error();
+    if (data_type_ != B.data_type_) throw std::runtime_error("Data type mismatch in gemm.");
+    if ((shape_.size() != 2) || (shape_ != B.shape())) throw std::runtime_error("Invalid tensor shapes for gemm.");
+    const int M = (transa=='N') ? (int)shape_[0] : (int)shape_[1];
+    const int K = (transa=='N') ? (int)shape_[1] : (int)shape_[0];
+    const int N = (transb=='N') ? (int)B.shape_[1] : (int)B.shape_[0];
+    const int lda = (transa=='N') ? (int)shape_[1] : (int)shape_[0];
+    const int ldb = (transb=='N') ? (int)B.shape_[1] : (int)B.shape_[0];
+    const int ldc = N; // Row-major storage (consistent with existing zgemm wrapper)
+    if (data_type_ == "complex") {
+        math_zgemm(transa, transb, M, N, K, alpha, h_data_.data(), lda, B.read_h_data().data(), ldb, beta, h_data_.data(), ldc);
+    } else if (data_type_ == "real") {
+        if (std::abs(alpha.imag())>1e-14 || std::abs(beta.imag())>1e-14) throw std::runtime_error("Complex alpha/beta on real gemm.");
+        math_dgemm(transa, transb, M, N, K, alpha.real(), h_re_data_.data(), lda, B.h_re_data_.data(), ldb, beta.real(), h_re_data_.data(), ldc);
     } else {
-        math_zgemm(transb, transa, N, M, K, alpha, B_data, B.shape()[0], A_data, shape_[0], beta, C_data, shape_[0]);
+        throw std::runtime_error("Unsupported data type in gemm().");
     }
 }
 
 std::complex<double> TensorThrust::vector_dot(const TensorThrust& other) const
 {
     shape_error(other.shape());
-    complex_error();
-    
+    if (data_type_ != other.data_type_) throw std::runtime_error("Data type mismatch in vector_dot.");
+
     if (on_gpu_) {
-        gpu_error();
-        other.gpu_error();
-        cuDoubleComplex result = thrust::inner_product(thrust::device, 
-                                                      d_data_.begin(), d_data_.end(),
-                                                      other.d_data_.begin(),
-                                                      make_cuDoubleComplex(0.0, 0.0),
-                                                      complex_add(),
-                                                      complex_dot_product());
-        return std::complex<double>(cuCreal(result), cuCimag(result));
-    } else {
-        cpu_error();
-        other.cpu_error();
-        std::complex<double> result = 0.0;
-        for (size_t i = 0; i < size_; i++) {
-            result += std::conj(h_data_[i]) * other.h_data_[i];
+        gpu_error(); other.gpu_error();
+        if (data_type_ == "complex") {
+            cuDoubleComplex result = thrust::inner_product(thrust::device, d_data_.begin(), d_data_.end(), other.d_data_.begin(), make_cuDoubleComplex(0.0,0.0), complex_add(), complex_dot_product());
+            return {cuCreal(result), cuCimag(result)};
+        } else if (data_type_ == "real") {
+            double result = thrust::inner_product(thrust::device, d_re_data_.begin(), d_re_data_.end(), other.d_re_data_.begin(), 0.0, thrust::plus<double>(), thrust::multiplies<double>());
+            return {result, 0.0};
+        } else {
+            throw std::runtime_error("Unsupported data type in vector_dot (GPU).");
         }
-        return result;
+    } else {
+        cpu_error(); other.cpu_error();
+        if (data_type_ == "complex") {
+            std::complex<double> result = 0.0; for (size_t i=0;i<size_;++i) result += std::conj(h_data_[i]) * other.h_data_[i]; return result;
+        } else if (data_type_ == "real") {
+            double result = 0.0; for (size_t i=0;i<size_;++i) result += h_re_data_[i] * other.h_re_data_[i]; return {result,0.0};
+        } else {
+            throw std::runtime_error("Unsupported data type in vector_dot (CPU).");
+        }
     }
 }
 
 TensorThrust TensorThrust::transpose() const
 {
-    cpu_error();
+    cpu_error(); 
     ndim_error(2);
-    complex_error();
-    
-    TensorThrust T({shape_[1], shape_[0]});
-    std::complex<double>* Tp = T.data().data();
-    const std::complex<double>* Ap = h_data_.data();
-    
-    for (size_t ind1 = 0; ind1 < shape_[0]; ind1++) {
-        for (size_t ind2 = 0; ind2 < shape_[1]; ind2++) {
-            Tp[ind2 * shape_[0] + ind1] = Ap[ind1 * shape_[1] + ind2];
-        }
+
+    TensorThrust T({shape_[1], shape_[0]}, name_ + "_T", false, data_type_);
+    if (data_type_ == "complex") {
+        for (size_t i=0;i<shape_[0];++i) for (size_t j=0;j<shape_[1];++j) T.h_data_[j*shape_[0]+i] = h_data_[i*shape_[1]+j];
+    } else if (data_type_ == "real") {
+        for (size_t i=0;i<shape_[0];++i) for (size_t j=0;j<shape_[1];++j) T.h_re_data_[j*shape_[0]+i] = h_re_data_[i*shape_[1]+j];
+    } else {
+        throw std::runtime_error("Unsupported data type in transpose.");
     }
     return T;
 }
@@ -1143,31 +1230,30 @@ TensorThrust TensorThrust::transpose() const
 TensorThrust TensorThrust::general_transpose(const std::vector<size_t>& axes) const
 {
     cpu_error();
-    complex_error();
-    
-    if (axes.size() != ndim()) {
-        throw std::runtime_error("Axes size must match tensor dimensions.");
-    }
-    
-    std::vector<size_t> transposed_shape(ndim());
+    if (axes.size() != ndim()) throw std::runtime_error("Axes size must match tensor dimensions.");
+    std::vector<size_t> transposed_shape(ndim()); 
+
     for (size_t i = 0; i < ndim(); ++i) {
         transposed_shape[i] = shape_[axes[i]];
     }
-    
-    TensorThrust transposed_tensor(transposed_shape);
-    
-    std::complex<double>* transposed_data = transposed_tensor.data().data();
-    
-    for (size_t i = 0; i < size_; i++) {
-        std::vector<size_t> old_tidx = vidx_to_tidx(i);
-        std::vector<size_t> new_tidx(ndim());
+
+    TensorThrust transposed_tensor(transposed_shape, name_+"_gt", false, data_type_);
+    for (size_t i=0 ; i < size_ ; ++i) { 
+        std::vector<size_t> old_tidx = vidx_to_tidx(i); 
+        std::vector<size_t> new_tidx(ndim()); 
         
-        for (size_t j = 0; j < ndim(); j++) {
-            new_tidx[j] = old_tidx[axes[j]];
+        for (size_t j=0;j<ndim();++j) {
+            new_tidx[j]=old_tidx[axes[j]];
         }
-        
-        size_t new_vidx = transposed_tensor.tidx_to_vidx(new_tidx);
-        transposed_data[new_vidx] = h_data_[i];
+
+        size_t new_vidx = transposed_tensor.tidx_to_vidx(new_tidx); 
+        if (data_type_=="complex") {
+            transposed_tensor.h_data_[new_vidx]=h_data_[i]; 
+        } else if (data_type_=="real") {
+            transposed_tensor.h_re_data_[new_vidx]=h_re_data_[i]; 
+        } else {
+            throw std::runtime_error("Unsupported data type in general_transpose.");
+        }
     }
     
     return transposed_tensor;
@@ -1176,33 +1262,22 @@ TensorThrust TensorThrust::general_transpose(const std::vector<size_t>& axes) co
 TensorThrust TensorThrust::slice(std::vector<std::pair<size_t, size_t>> idxs) const
 {
     cpu_error();
-    complex_error();
-    
+    if (idxs.size() != ndim()) throw std::runtime_error("Number of slice indices must match tensor dimensions.");
+
     std::vector<size_t> new_shape(idxs.size());
     std::vector<size_t> new_shape2;
-    
-    if (idxs.size() != ndim()) {
-        throw std::runtime_error("Number of slice indices must match tensor dimensions.");
-    }
-    
-    for (size_t i = 0; i < idxs.size(); i++) {
+    for (size_t i = 0; i < idxs.size(); ++i) {
         new_shape[i] = idxs[i].second - idxs[i].first;
-        if (new_shape[i] > 0) {
-            new_shape2.push_back(new_shape[i]);
-        }
+        if (new_shape[i] > 0) new_shape2.push_back(new_shape[i]);
     }
     
-    TensorThrust new_tensor(new_shape2, name_ + "_sliced");
-    
-    std::vector<size_t> old_tidx(ndim());
-    std::fill(old_tidx.begin(), old_tidx.end(), 0);
-    
+    TensorThrust new_tensor(new_shape2, name_+"_sliced", false, data_type_);
     size_t new_vidx = 0;
-    for (size_t vidx = 0; vidx < size_; vidx++) {
-        std::vector<size_t> tidx = vidx_to_tidx(vidx);
-        
+    for (size_t vidx = 0; vidx < size_; ++vidx) {
+        auto tidx = vidx_to_tidx(vidx);
         bool in_slice = true;
-        for (size_t i = 0; i < ndim(); i++) {
+        
+        for (size_t i = 0; i < ndim(); ++i) {
             if (tidx[i] < idxs[i].first || tidx[i] >= idxs[i].second) {
                 in_slice = false;
                 break;
@@ -1210,24 +1285,38 @@ TensorThrust TensorThrust::slice(std::vector<std::pair<size_t, size_t>> idxs) co
         }
         
         if (in_slice) {
-            new_tensor.h_data_[new_vidx] = h_data_[vidx];
+            if (data_type_ == "complex") {
+                new_tensor.h_data_[new_vidx] = h_data_[vidx];
+            } else if (data_type_ == "real") {
+                new_tensor.h_re_data_[new_vidx] = h_re_data_[vidx];
+            } else {
+                throw std::runtime_error("Unsupported data type in slice.");
+            }
             new_vidx++;
         }
     }
-    
     return new_tensor;
 }
 
 std::vector<std::vector<size_t>> TensorThrust::get_nonzero_tidxs() const
 {
     cpu_error();
-    complex_error();
-    
+
     std::vector<std::vector<size_t>> nonzero_tidxs;
-    for (size_t i = 0; i < size_; i++) {
-        if (std::abs(h_data_[i]) > 1e-12) {
-            nonzero_tidxs.push_back(vidx_to_tidx(i));
+    if (data_type_ == "complex") {
+        for (size_t i = 0; i < size_; ++i) {
+            if (std::abs(h_data_[i]) > 1e-12) {
+                nonzero_tidxs.push_back(vidx_to_tidx(i));
+            }
         }
+    } else if (data_type_ == "real") {
+        for (size_t i = 0; i < size_; ++i) {
+            if (std::abs(h_re_data_[i]) > 1e-12) {
+                nonzero_tidxs.push_back(vidx_to_tidx(i));
+            }
+        }
+    } else {
+        throw std::runtime_error("Unsupported data type in get_nonzero_tidxs.");
     }
     return nonzero_tidxs;
 }
@@ -1240,143 +1329,94 @@ std::string TensorThrust::str(
     const std::string& header_format
     )
 {
-    bool reset = false;
+    bool reset=false; 
     if (on_gpu_) {
-        reset = true;
+        reset=true;
         to_cpu();
     }
-
+    
     cpu_error();
-    complex_error();
-
-    std::string str = "";
-    str += std::printf( "TensorThrust: %s\n", name_.c_str());
-    str += std::printf( "  Ndim  = %zu\n", ndim());
-    str += std::printf( "  Size  = %zu\n", size());
-    str += std::printf( "  Shape = (");
-    for (size_t dim = 0; dim < ndim(); dim++) {
-        str += std::printf( "%zu", shape_[dim]);
-        if (dim < ndim() - 1) {
-            str += std::printf( ",");
-        }
-    }
-    str += std::printf(")\n");
-
-    if (print_data) {
-
-        std::string data_format2 = data_format;
-
-        if(print_complex){ data_format2 = "%f%+fi";}
-
-        str += std::printf("\n");
-            
-        std::string order0str1 = "  " + data_format2 + "\n";
-        std::string order1str1 = "  %5zu " + data_format2 + "\n";
-        std::string order2str1 = " " + header_format;
-        std::string order2str2 = " " + data_format2;
-
-        int order = ndim();
-        size_t nelem = size();
-
-        size_t page_size = 1L;
-        size_t rows = 1;
-        size_t cols = 1;
-        if (order >= 1) {
-            page_size *= shape_[order - 1];
-            rows = shape_[order - 1];
-        }
-        if (order >= 2) {
-            page_size *= shape_[order - 2];
-            rows = shape_[order - 2];
-            cols = shape_[order - 1];
-        }
-
-        str += std::printf( "  Data:\n\n");
-
-        if (nelem > 0){
-            size_t pages = nelem / page_size;
-            for (size_t page = 0L; page < pages; page++) {
-
-                if (order > 2) {
-                    str += std::printf( "  Page (");
-                    size_t num = page;
-                    size_t den = pages;
-                    size_t val;
-                    for (int k = 0; k < order - 2; k++) {
-                        den /= shape_[k];
-                        val = num / den;
-                        num -= val * den;
-                        str += std::printf("%zu,",val);
+    std::ostringstream oss; 
+    oss << "TensorThrust: " << name_ << "\n"; 
+    oss << "  Ndim  = " << ndim() << "\n"; 
+    oss << "  Size  = " << size() << "\n"; 
+    oss << "  Shape = ("; 
+    
+    for(size_t dim = 0; dim < ndim(); ++dim) { 
+        oss << shape_[dim]; if (dim<ndim()-1) oss << ","; 
+    } 
+    oss << ")\n"; 
+    if (print_data) { 
+        oss << "\n  Data:\n\n"; 
+        if (size_ > 0) { 
+            if (ndim() == 1) { 
+                for(size_t i = 0; i < size_; ++i) { 
+                    if (data_type_ == "complex") {
+                        oss << "  [" << i << "]=" << h_data_[i] << "\n"; 
+                    } else if (data_type_ == "real") {
+                        oss << "  [" << i << "]=" << h_re_data_[i] << "\n"; 
+                    } else {
+                        throw std::runtime_error("Unsupported data_type_ in print.");
                     }
-                    str += std::printf( "*,*):\n\n");
-                }
-
-                const std::complex<double>* vp = h_data_.data() + page * page_size;
-                if (order == 0) {
-                    str += std::printf( order0str1.c_str(), *(vp));
-                } else if(order == 1) {
-                    for (size_t i=0; i<page_size; ++i) {
-                        str += std::printf( order1str1.c_str(), i, *(vp + i));
+                } 
+            } else { // simplified print for >1 dims
+                for(size_t i = 0; i < size_; ++i) { 
+                    if (data_type_ == "complex") {
+                        oss << h_data_[i] << " "; 
+                    } else if (data_type_ == "real") {
+                        oss << h_re_data_[i] << " "; 
+                    } else {
+                        throw std::runtime_error("Unsupported data_type_ in print.");
                     }
-                } else {
-                    for (size_t j = 0; j < cols; j += maxcols) {
-                        size_t ncols = (j + maxcols >= cols ? cols - j : maxcols);
-                
-                        // Column Header
-                        str += std::printf("  %5s", "");
-                        for (size_t jj = j; jj < j+ncols; jj++) {
-                            str += std::printf(order2str1.c_str(), jj);
-                        }
-                        str += std::printf("\n");
 
-                        // Data
-                        for (size_t i = 0; i < rows; i++) {
-                            str += std::printf("  %5zu", i);
-                            for (size_t jj = j; jj < j+ncols; jj++) {
-                                str += std::printf(order2str2.c_str(), *(vp + i * cols + jj));
-                            }
-                            str += std::printf("\n");
-                        }
-
-                        // Block separator
-                        if (page < pages - 1 || j + maxcols < cols - 1) str += std::printf("\n");
+                    if ((i + 1) % shape_.back() == 0) {
+                        oss << "\n"; 
                     }
                 }
-            }
-        }
+            } 
+        } 
     }
-
-    if (reset) {
-        to_gpu();
-    }
-    return str;
+    if (reset) to_gpu(); 
+    return oss.str();
 }
 
 std::string TensorThrust::print_nonzero() const
 {
     cpu_error();
-    complex_error();
+    std::ostringstream oss; 
+    oss << "\n Nonzero indices and elements of TensorThrust: \n"; 
+    oss << " ========================================== \n"; 
     
-    std::string str = "\n Nonzero indices and elements of TensorThrust: \n";
-    str += " ========================================== \n";
-    
-    for (size_t i = 0; i < size_; i++) {
-        if (std::abs(h_data_[i]) > 1e-12) {
-            std::vector<size_t> tidx = vidx_to_tidx(i);
-            str += " (";
-            for (size_t j = 0; j < tidx.size(); j++) {
-                str += std::to_string(tidx[j]);
-                if (j < tidx.size() - 1) str += ", ";
-            }
-            str += ") = " + std::to_string(h_data_[i].real()) + " + " + std::to_string(h_data_[i].imag()) + "i\n";
-        }
-    }
-    return str;
-}
+    if (data_type_=="complex") { 
+        for (size_t i = 0; i < size_; ++i) { 
+            if (std::abs(h_data_[i]) > 1e-12) { 
+                auto tidx = vidx_to_tidx(i); 
+                oss << " ("; 
 
-// Static methods implementation would go here
-// These require more complex implementation that depends on the specific use case
-// For now, providing basic structure
+                for (size_t j = 0; j < tidx.size(); ++j) { 
+                    oss << tidx[j]; 
+                    if (j < tidx.size() - 1) oss << ", "; 
+                } 
+                oss << ") = " << h_data_[i] << "\n"; 
+            } 
+        } 
+    } else if (data_type_=="real") { 
+        for (size_t i = 0; i < size_; ++i) { 
+            if (std::abs(h_re_data_[i]) > 1e-12) { 
+                auto tidx = vidx_to_tidx(i); 
+                oss << " ("; 
+                for (size_t j = 0; j < tidx.size(); ++j) { 
+                    oss << tidx[j]; 
+                    if (j < tidx.size() - 1) oss << ", "; 
+                } 
+                oss << ") = " << h_re_data_[i] << "\n"; 
+            } 
+        } 
+    } else { 
+        throw std::runtime_error("Unsupported data_type_ in print_nonzero()."); 
+    }
+    return oss.str();
+}
 
 TensorThrust TensorThrust::chain(
     const std::vector<TensorThrust>& As,

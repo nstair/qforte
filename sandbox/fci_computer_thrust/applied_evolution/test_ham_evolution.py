@@ -81,7 +81,7 @@ sqham = mol.sq_hamiltonian
 hermitian_pairs = qf.SQOpPool()
 hermitian_pairs.add_hermitian_pairs(1.0, sqham)
 
-hp_gpu = qf.SQOpPoolThrust()
+hp_gpu = qf.SQOpPoolThrust(data_type="complex")
 hp_gpu.add_hermitian_pairs(1.0, sqham)
 
 fci_comp_thrust.populate_index_arrays_for_pool_evo(hp_gpu)

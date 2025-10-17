@@ -173,3 +173,28 @@ void math_zger(
         reinterpret_cast<openblas_complex_double*>(A), 
         lda);
 }
+
+void math_dscal(const int n, const double alpha, double* x, const int incx){ 
+    cblas_dscal(n, alpha, x, incx); 
+}
+
+void math_dgemm(const char transa, const char transb, const int M, const int N, const int K, const double alpha, const double* A, const int lda, const double* B, const int ldb, const double beta, double* C, const int ldc){ 
+    CBLAS_TRANSPOSE transA=CblasNoTrans, transB=CblasNoTrans; 
+    if(transa=='T') transA=CblasTrans; 
+    if(transb=='T') transB=CblasTrans; 
+    cblas_dgemm(CblasRowMajor, transA, transB, M, N, K, alpha, A, lda, B, ldb, beta, C, ldc); 
+}
+
+void math_dgemv(const char trans, const int M, const int N, const double alpha, const double* A, const int lda, const double* x, const int incx, const double beta, double* y, const int incy){ 
+    CBLAS_TRANSPOSE transA=CblasNoTrans; 
+    if(trans=='T') transA=CblasTrans; 
+    cblas_dgemv(CblasRowMajor, transA, M, N, alpha, A, lda, x, incx, beta, y, incy); 
+}
+
+double math_ddot(const int n, const double* x, const int incx, const double* y, const int incy){ 
+    return cblas_ddot(n, x, incx, y, incy); 
+}
+
+void math_dger(const int m, const int n, const double alpha, const double* x, const int incx, const double* y, const int incy, double* A, const int lda){ 
+    cblas_dger(CblasRowMajor, m, n, alpha, x, incx, y, incy, A, lda); 
+}

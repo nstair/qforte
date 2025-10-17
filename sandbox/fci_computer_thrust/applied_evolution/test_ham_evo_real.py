@@ -17,8 +17,8 @@ geom = [
     ('H', (0., 0.,10.0)),
     ('H', (0., 0.,11.0)),
     ('H', (0., 0.,12.0)),
-    # ('H', (0., 0.,13.0)),
-    # ('H', (0., 0.,14.0)),
+    ('H', (0., 0.,13.0)),
+    ('H', (0., 0.,14.0)),
     ]
 
 # geom = [
@@ -29,7 +29,7 @@ geom = [
 #     ]
 
 # Get the molecule object that now contains both the fermionic and qubit Hamiltonians.
-mol = qf.system_factory(build_type='psi4', mol_geometry=geom, basis='sto-3g', run_fci=1)
+mol = qf.system_factory(build_type='psi4', mol_geometry=geom, basis='sto-3g', run_fci=0)
 
 timer = qf.local_timer()
  
@@ -52,7 +52,7 @@ fci_comp_thrust = qf.FCIComputerThrust(
     sz=sz, 
     norb=norb,
     on_gpu=False,
-    data_type="complex")
+    data_type="real")
 
 # reference = 'random'
 reference = 'hf'
@@ -78,16 +78,20 @@ if(reference == 'hf'):
 sqham = mol.sq_hamiltonian
 # sqham.simplify()
 
-hermitian_pairs = qf.SQOpPool()
-hermitian_pairs.add_hermitian_pairs(1.0, sqham)
 
-hp_gpu = qf.SQOpPoolThrust(data_type="complex")
-hp_gpu.add_hermitian_pairs(1.0, sqham)
+sd_pool = qf.SQOpPool()
+sd_pool.set_orb_spaces(ref)
+sd_pool.fill_pool("SD")
+# print(sd_pool)
 
-fci_comp_thrust.populate_index_arrays_for_pool_evo(hp_gpu)
+sd_gpu = qf.SQOpPoolThrust(data_type="real")
+sd_gpu.set_orb_spaces(ref)
+sd_gpu.fill_pool("SD")
+
+fci_comp_thrust.populate_index_arrays_for_pool_evo(sd_gpu)
 
 
-len = hp_gpu.check_mu_tuple_container_sizes()
+len = sd_gpu.check_mu_tuple_container_sizes()
 
 print(f"len {len}")
 
@@ -120,11 +124,11 @@ for _ in range(N):
 # Call Trotter for fci_comp1
     timer.reset()
     fci_comp1.evolve_pool_trotter(
-        hermitian_pairs,
+        sd_pool,
         time,
         r,
         order,
-        antiherm=False,
+        antiherm=True,
         adjoint=False)
     timer.record('trotter fci_comp1')
 
@@ -150,11 +154,11 @@ for _ in range(N):
     #     adjoint=False)
 
     fci_comp_thrust.evolve_pool_trotter_gpu_v5(
-        hp_gpu,
+        sd_gpu,
         time,
         r,
         order,
-        antiherm=False,
+        antiherm=True,
         adjoint=False)
     
     timer.record('trotter fci_comp_thrust')
@@ -167,8 +171,13 @@ for _ in range(N):
     C1 = fci_comp1.get_state_deep()
     C1_dup = fci_comp1.get_state_deep()
     # C2 = fci_comp2.get_state_deep()
+
+    print(" coppying to C3 ")
+
     C3 = qf.Tensor(C1.shape(), "C3")
     fci_comp_thrust.copy_to_tensor_cpu(C3)
+
+    print(" done coppying to C3 ")
 
     # print(f"C1: {C1}")
     # print(f"C2: {C2}")

@@ -100,15 +100,15 @@ class SQOpPoolThrust {
     std::vector<thrust::device_vector<cuDoubleComplex>>& terms_parityb_dag_gpu() { return terms_parityb_dag_gpu_; }
     std::vector<thrust::device_vector<cuDoubleComplex>>& terms_parityb_undag_gpu() { return terms_parityb_undag_gpu_; }
 
-    // Parity/phase maps (SoA, real and imag stored separately)
+    // Parity/phase maps (real)
     std::vector<thrust::device_vector<double>>& terms_paritya_dag_re_gpu() { return terms_paritya_dag_re_gpu_; }
-    std::vector<thrust::device_vector<double>>& terms_paritya_dag_im_gpu() { return terms_paritya_dag_im_gpu_; }
     std::vector<thrust::device_vector<double>>& terms_paritya_undag_re_gpu() { return terms_paritya_undag_re_gpu_; }
-    std::vector<thrust::device_vector<double>>& terms_paritya_undag_im_gpu() { return terms_paritya_undag_im_gpu_; }
     std::vector<thrust::device_vector<double>>& terms_parityb_dag_re_gpu() { return terms_parityb_dag_re_gpu_; }
-    std::vector<thrust::device_vector<double>>& terms_parityb_dag_im_gpu() { return terms_parityb_dag_im_gpu_; }
     std::vector<thrust::device_vector<double>>& terms_parityb_undag_re_gpu() { return terms_parityb_undag_re_gpu_; }
-    std::vector<thrust::device_vector<double>>& terms_parityb_undag_im_gpu() { return terms_parityb_undag_im_gpu_; }
+    // std::vector<thrust::device_vector<double>>& terms_parityb_dag_im_gpu() { return terms_parityb_dag_im_gpu_; }
+    // std::vector<thrust::device_vector<double>>& terms_parityb_undag_im_gpu() { return terms_parityb_undag_im_gpu_; }
+    // std::vector<thrust::device_vector<double>>& terms_paritya_undag_im_gpu() { return terms_paritya_undag_im_gpu_; }
+    // std::vector<thrust::device_vector<double>>& terms_paritya_dag_im_gpu() { return terms_paritya_dag_im_gpu_; }
 
     // Read-only tuple view of the mu-th entries:
     // (inner_coeffs_[mu], outer_coeffs_[mu],
@@ -166,6 +166,69 @@ class SQOpPoolThrust {
     }
 
     // Optional: Read-only tuple for SoA parity storage (real/imag)
+    // std::tuple<
+    //     const std::complex<double>&, const std::complex<double>&,
+    //     const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    //     const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    //     const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    //     const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    //     const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    //     const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    //     const thrust::device_vector<double>&, const thrust::device_vector<double>&,
+    //     const thrust::device_vector<double>&, const thrust::device_vector<double>&,
+    //     const thrust::device_vector<double>&, const thrust::device_vector<double>&,
+    //     const thrust::device_vector<double>&, const thrust::device_vector<double>&
+    // >
+    // get_mu_tuple_soa(size_t mu) const
+    // {
+    //     return std::tuple<
+    //         const std::complex<double>&, const std::complex<double>&,
+    //         const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    //         const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    //         const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    //         const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    //         const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    //         const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    //         const thrust::device_vector<double>&, const thrust::device_vector<double>&,
+    //         const thrust::device_vector<double>&, const thrust::device_vector<double>&,
+    //         const thrust::device_vector<double>&, const thrust::device_vector<double>&,
+    //         const thrust::device_vector<double>&, const thrust::device_vector<double>&
+    //     >(
+    //         inner_coeffs_[mu],                // 0
+    //         outer_coeffs_[mu],                // 1
+    //         terms_scale_indsa_dag_gpu_[mu],   // 2
+    //         terms_scale_indsa_undag_gpu_[mu], // 3
+    //         terms_scale_indsb_dag_gpu_[mu],   // 4
+    //         terms_scale_indsb_undag_gpu_[mu], // 5
+    //         terms_sourcea_dag_gpu_[mu],       // 6
+    //         terms_sourcea_undag_gpu_[mu],     // 7
+    //         terms_sourceb_dag_gpu_[mu],       // 8
+    //         terms_sourceb_undag_gpu_[mu],     // 9
+    //         terms_targeta_dag_gpu_[mu],       // 10
+    //         terms_targeta_undag_gpu_[mu],     // 11
+    //         terms_targetb_dag_gpu_[mu],       // 12
+    //         terms_targetb_undag_gpu_[mu],     // 13
+    //         terms_paritya_dag_re_gpu_[mu],    // 14
+    //         terms_paritya_dag_im_gpu_[mu],    // 15
+    //         terms_paritya_undag_re_gpu_[mu],  // 16
+    //         terms_paritya_undag_im_gpu_[mu],  // 17
+    //         terms_parityb_dag_re_gpu_[mu],    // 18
+    //         terms_parityb_dag_im_gpu_[mu],    // 19
+    //         terms_parityb_undag_re_gpu_[mu],  // 20
+    //         terms_parityb_undag_im_gpu_[mu]   // 21
+    //     );
+    // }
+
+    // NEW: Optional read-only tuple for real-only parity storage (no imaginary parts)
+    // Layout mirrors get_mu_tuple_soa but drops the 4 imaginary parity arrays.
+    // Tuple indices:
+    //  0: inner_coeffs_[mu]
+    //  1: outer_coeffs_[mu]
+    //  2-13: the 12 integer index arrays (scale/source/target)
+    // 14: terms_paritya_dag_re_gpu_[mu]
+    // 15: terms_paritya_undag_re_gpu_[mu]
+    // 16: terms_parityb_dag_re_gpu_[mu]
+    // 17: terms_parityb_undag_re_gpu_[mu]
     std::tuple<
         const std::complex<double>&, const std::complex<double>&,
         const thrust::device_vector<int>&, const thrust::device_vector<int>&,
@@ -175,12 +238,9 @@ class SQOpPoolThrust {
         const thrust::device_vector<int>&, const thrust::device_vector<int>&,
         const thrust::device_vector<int>&, const thrust::device_vector<int>&,
         const thrust::device_vector<double>&, const thrust::device_vector<double>&,
-        const thrust::device_vector<double>&, const thrust::device_vector<double>&,
-        const thrust::device_vector<double>&, const thrust::device_vector<double>&,
         const thrust::device_vector<double>&, const thrust::device_vector<double>&
     >
-    get_mu_tuple_soa(size_t mu) const
-    {
+    get_mu_tuple_real(size_t mu) const {
         return std::tuple<
             const std::complex<double>&, const std::complex<double>&,
             const thrust::device_vector<int>&, const thrust::device_vector<int>&,
@@ -189,8 +249,6 @@ class SQOpPoolThrust {
             const thrust::device_vector<int>&, const thrust::device_vector<int>&,
             const thrust::device_vector<int>&, const thrust::device_vector<int>&,
             const thrust::device_vector<int>&, const thrust::device_vector<int>&,
-            const thrust::device_vector<double>&, const thrust::device_vector<double>&,
-            const thrust::device_vector<double>&, const thrust::device_vector<double>&,
             const thrust::device_vector<double>&, const thrust::device_vector<double>&,
             const thrust::device_vector<double>&, const thrust::device_vector<double>&
         >(
@@ -208,14 +266,10 @@ class SQOpPoolThrust {
             terms_targeta_undag_gpu_[mu],     // 11
             terms_targetb_dag_gpu_[mu],       // 12
             terms_targetb_undag_gpu_[mu],     // 13
-            terms_paritya_dag_re_gpu_[mu],    // 14
-            terms_paritya_dag_im_gpu_[mu],    // 15
-            terms_paritya_undag_re_gpu_[mu],  // 16
-            terms_paritya_undag_im_gpu_[mu],  // 17
-            terms_parityb_dag_re_gpu_[mu],    // 18
-            terms_parityb_dag_im_gpu_[mu],    // 19
-            terms_parityb_undag_re_gpu_[mu],  // 20
-            terms_parityb_undag_im_gpu_[mu]   // 21
+            terms_paritya_dag_re_gpu_[mu],    // 14 (real parity a dag)
+            terms_paritya_undag_re_gpu_[mu],  // 15 (real parity a undag)
+            terms_parityb_dag_re_gpu_[mu],    // 16 (real parity b dag)
+            terms_parityb_undag_re_gpu_[mu]   // 17 (real parity b undag)
         );
     }
 
@@ -305,23 +359,19 @@ class SQOpPoolThrust {
     std::vector<thrust::device_vector<cuDoubleComplex>> terms_parityb_dag_gpu_;
     std::vector<thrust::device_vector<cuDoubleComplex>> terms_parityb_undag_gpu_;
 
-    /// the list of alfa/beta parities in SoA (real/imag) form
+    /// the list of alfa/beta parities in real form
     std::vector<thrust::device_vector<double>> terms_paritya_dag_re_gpu_;
-    std::vector<thrust::device_vector<double>> terms_paritya_dag_im_gpu_;
     std::vector<thrust::device_vector<double>> terms_paritya_undag_re_gpu_;
-    std::vector<thrust::device_vector<double>> terms_paritya_undag_im_gpu_;
     std::vector<thrust::device_vector<double>> terms_parityb_dag_re_gpu_;
-    std::vector<thrust::device_vector<double>> terms_parityb_dag_im_gpu_;
     std::vector<thrust::device_vector<double>> terms_parityb_undag_re_gpu_;
-    std::vector<thrust::device_vector<double>> terms_parityb_undag_im_gpu_;
 
     /// How to store parity data for kernels using this pool: "complex", "all", "soa", or "real"
     std::string data_type_ = "complex";
 
     /// ensure data_type_ is valid
     void validate_data_type_() const {
-        if (data_type_ != "complex" && data_type_ != "all" && data_type_ != "soa" && data_type_ != "real") {
-            throw std::invalid_argument("SQOpPoolThrust: unsupported data_type. Must be one of {complex, all, soa, real}.");
+        if (data_type_ != "complex" && data_type_ != "real") {
+            throw std::invalid_argument("SQOpPoolThrust: unsupported data_type. Must be one of {complex, real}.");
         }
     }
 };
