@@ -98,7 +98,7 @@ public:
         std::vector<thrust::device_vector<int>>& terms_target_gpu,
         std::vector<thrust::device_vector<cuDoubleComplex>>& terms_parity_gpu);
 
-    // New: v4 that writes parity directly into SoA (real & imag) device vectors
+    // New: v4 that writes parity directly into real device vectors
     void make_mapping_each_gpu_v4(
         bool alpha,
         const std::vector<int>& dag,
@@ -106,8 +106,7 @@ public:
         int* count,
         std::vector<thrust::device_vector<int>>& terms_source_gpu,
         std::vector<thrust::device_vector<int>>& terms_target_gpu,
-        std::vector<thrust::device_vector<double>>& terms_parity_re_gpu,
-        std::vector<thrust::device_vector<double>>& terms_parity_im_gpu);
+        std::vector<thrust::device_vector<double>>& terms_parity_re_gpu);
 
     /// ==> Utility Functions for Bit Math (may need to move) <== ///
 

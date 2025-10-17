@@ -98,6 +98,26 @@ extern "C" void scale_elements_wrapper_complex(
     int nbeta_strs_,
     cuDoubleComplex factor);
 
+// === Real-only version ===
+
+__global__ void scale_elements_kernel_real(
+    double* __restrict__ d_Cout,
+    const int* __restrict__ d_first,
+    int first_size,
+    const int* __restrict__ d_second,
+    int second_size,
+    int nbeta_strs_,
+    double factor);
+
+extern "C" void scale_elements_wrapper_real(
+    double* d_Cout,
+    const int* d_first,
+    int first_size,
+    const int* d_second,
+    int second_size,
+    int nbeta_strs_,
+    double factor);
+
 // === New in-place 2x2 Givens-like update kernel (hard n-body, v4) ===
 __global__ void inplace_givens_update_kernel(
     cuDoubleComplex* d_Cout,
@@ -208,6 +228,87 @@ extern "C" void inplace_givens_update_complex_tiled_wrapper(
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
+
+// === Real-only versions ===
+
+__global__ void inplace_givens_update_rows_kernel_real(
+    double* __restrict__ d_Cout,
+    const int* __restrict__ sourcea1,      // [na]
+    const int* __restrict__ targeta1,      // [na]
+    const double* __restrict__ paritya1,   // [na]  (g† leg, row)
+    const double* __restrict__ paritya2,   // [na]  (g  leg, row)
+    int na,
+    int nbeta_strs_,                        // number of columns
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
+extern "C" void inplace_givens_update_real_rows_wrapper(
+    double* d_Cout,
+    const int* sourcea1,
+    const int* targeta1,
+    const double* paritya1,
+    const double* paritya2,
+    int na,
+    int nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
+__global__ void inplace_givens_update_real_tiled(
+    double* __restrict__ d_Cout,
+    const int* __restrict__ sourcea1,
+    const int* __restrict__ targeta1,
+    const double* __restrict__ paritya1,
+    const double* __restrict__ paritya2,
+    const int* __restrict__ sourceb1,
+    const int* __restrict__ targetb1,
+    const double* __restrict__ parityb1,
+    const double* __restrict__ parityb2,
+    int nalpha,          // rows
+    int nb,              // number of column-pairs
+    int nbeta_strs_,     // leading dimension (num columns)
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
+static void launch_inplace_givens_update_real_tiled(
+    double* d_Cout,
+    const int* sourcea1,
+    const int* targeta1,
+    const double* paritya1,
+    const double* paritya2,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nalpha,
+    int nb,
+    int nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
+extern "C" void inplace_givens_update_real_tiled_wrapper(
+    int BX_runtime,                      // pick 32 or 64 (must divide warp multiples)
+    double* d_Cout,
+    const int* sourcea1,
+    const int* targeta1,
+    const double* paritya1,
+    const double* paritya2,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nalpha,          // rows
+    int nb,              // number of column-pairs
+    int nbeta_strs_,     // leading dimension (num columns)
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
+
+// OUTDATED - SoA versions below
 
 template<int BX>
 __global__ void givens_update_soa_tiled_factor_real(

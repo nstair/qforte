@@ -472,8 +472,7 @@ void FCIGraphThrust::make_mapping_each_gpu_v4(
     int* count,
     std::vector<thrust::device_vector<int>>& terms_source_gpu,
     std::vector<thrust::device_vector<int>>& terms_target_gpu,
-    std::vector<thrust::device_vector<double>>& terms_parity_re_gpu,
-    std::vector<thrust::device_vector<double>>& terms_parity_im_gpu)
+    std::vector<thrust::device_vector<double>>& terms_parity_re_gpu)
 {
     std::vector<uint64_t> strings;
     int length;
@@ -489,7 +488,6 @@ void FCIGraphThrust::make_mapping_each_gpu_v4(
     thrust::host_vector<int> source(length);
     thrust::host_vector<int> target(length);
     thrust::host_vector<double> parity_re(length);
-    thrust::host_vector<double> parity_im(length);
 
     uint64_t dag_mask = 0;
     uint64_t undag_mask = 0;
@@ -521,7 +519,6 @@ void FCIGraphThrust::make_mapping_each_gpu_v4(
             source[*count] = static_cast<int>(index);
             target[*count] = get_aind_for_str(static_cast<int>(current));
             parity_re[*count] = 1.0 - 2.0 * static_cast<int>(parity_value % 2);
-            parity_im[*count] = 0.0;
             (*count)++;
         }
     }
@@ -529,17 +526,14 @@ void FCIGraphThrust::make_mapping_each_gpu_v4(
     thrust::device_vector<int> source_gpu(*count);
     thrust::device_vector<int> target_gpu(*count);
     thrust::device_vector<double> parity_re_gpu(*count);
-    thrust::device_vector<double> parity_im_gpu(*count);
 
     thrust::copy(source.begin(), source.begin() + *count, source_gpu.begin());
     thrust::copy(target.begin(), target.begin() + *count, target_gpu.begin());
     thrust::copy(parity_re.begin(), parity_re.begin() + *count, parity_re_gpu.begin());
-    thrust::copy(parity_im.begin(), parity_im.begin() + *count, parity_im_gpu.begin());
 
     terms_source_gpu.emplace_back(source_gpu);
     terms_target_gpu.emplace_back(target_gpu);
     terms_parity_re_gpu.emplace_back(parity_re_gpu);
-    terms_parity_im_gpu.emplace_back(parity_im_gpu);
 
     timer_.acc_record("make_mapping_each_v4");
 }

@@ -87,6 +87,59 @@ void math_zger(
   std::complex<double>* A,
   const int lda);
 
+// Real BLAS helpers (added)
+void math_dscal(
+  const int n,
+  const double alpha,
+  double* x,
+  const int incx);
+
+void math_dgemm(
+  const char transa,
+  const char transb,
+  const int M,
+  const int N,
+  const int K,
+  const double alpha,
+  const double* A,
+  const int lda,
+  const double* B,
+  const int ldb,
+  const double beta,
+  double* C,
+  const int ldc);
+
+void math_dgemv(
+  const char trans,
+  const int M,
+  const int N,
+  const double alpha,
+  const double* A,
+  const int lda,
+  const double* x,
+  const int incx,
+  const double beta,
+  double* y,
+  const int incy);
+
+double math_ddot(
+  const int n,
+  const double* x,
+  const int incx,
+  const double* y,
+  const int incy);
+
+void math_dger(
+  const int m,
+  const int n,
+  const double alpha,
+  const double* x,
+  const int incx,
+  const double* y,
+  const int incy,
+  double* A,
+  const int lda);
+
 
 // } end extern "C" (Don't think this is needed)
 

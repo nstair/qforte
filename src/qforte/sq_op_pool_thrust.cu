@@ -574,10 +574,21 @@ std::size_t SQOpPoolThrust::check_mu_tuple_container_sizes() const {
     check("terms_targetb_dag_gpu_",        terms_targetb_dag_gpu_.size());
     check("terms_targetb_undag_gpu_",      terms_targetb_undag_gpu_.size());
 
-    check("terms_paritya_dag_gpu_",        terms_paritya_dag_gpu_.size());
-    check("terms_paritya_undag_gpu_",      terms_paritya_undag_gpu_.size());
-    check("terms_parityb_dag_gpu_",        terms_parityb_dag_gpu_.size());
-    check("terms_parityb_undag_gpu_",      terms_parityb_undag_gpu_.size());
+    // arrays depend on type
+    if (data_type_ == "real") {
+        check("terms_paritya_dag_re_gpu_",        terms_paritya_dag_re_gpu_.size());
+        check("terms_paritya_undag_re_gpu_",      terms_paritya_undag_re_gpu_.size());
+        check("terms_parityb_dag_re_gpu_",        terms_parityb_dag_re_gpu_.size());
+        check("terms_parityb_undag_re_gpu_",      terms_parityb_undag_re_gpu_.size());
+    } else if (data_type_ == "complex") {
+        check("terms_paritya_dag_gpu_",        terms_paritya_dag_gpu_.size());
+        check("terms_paritya_undag_gpu_",      terms_paritya_undag_gpu_.size());
+        check("terms_parityb_dag_gpu_",        terms_parityb_dag_gpu_.size());
+        check("terms_parityb_undag_gpu_",      terms_parityb_undag_gpu_.size());
+    } else {
+        std::cerr << "[SQOpPoolThrust] Unknown data_type_: " << data_type_ << "\n";
+        ok = false;
+    }
 
     if (!ok) {
         std::cerr << "[SQOpPoolThrust] Not all μ-containers have the same length. "
