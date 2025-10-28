@@ -89,6 +89,15 @@ public:
         thrust::device_vector<int>& target_gpu,
         thrust::device_vector<cuDoubleComplex>& parity_gpu);
 
+    void make_mapping_each_gpu_v2_real(
+        bool alpha, 
+        const std::vector<int>& dag, 
+        const std::vector<int>& undag,
+        int* count,
+        thrust::device_vector<int>& source_gpu,
+        thrust::device_vector<int>& target_gpu,
+        thrust::device_vector<double>& parity_gpu);
+
     void make_mapping_each_gpu_v3(
         bool alpha, 
         const std::vector<int>& dag, 
