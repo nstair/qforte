@@ -478,9 +478,15 @@ class FCIComputerThrust {
     thrust::device_vector<int> sourcea_gpu_;
     thrust::device_vector<int> targeta_gpu_;
     thrust::device_vector<cuDoubleComplex> paritya_gpu_;
+    thrust::device_vector<int> sourcea_undag_gpu_;
+    thrust::device_vector<int> targeta_undag_gpu_;
+    thrust::device_vector<cuDoubleComplex> paritya_undag_gpu_;
     thrust::device_vector<int> sourceb_gpu_;
     thrust::device_vector<int> targetb_gpu_;
     thrust::device_vector<cuDoubleComplex> parityb_gpu_;
+    thrust::device_vector<int> sourceb_undag_gpu_;
+    thrust::device_vector<int> targetb_undag_gpu_;
+    thrust::device_vector<cuDoubleComplex> parityb_undag_gpu_;
     FCIGraphThrust graph_;
 
     local_timer timer_;
