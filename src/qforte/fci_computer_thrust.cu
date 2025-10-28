@@ -72,13 +72,20 @@ FCIComputerThrust::FCIComputerThrust(int nel, int sz, int norb, bool on_gpu, con
 
     C_.set_name("FCI Computer");
 
-    // Initialize the FCI graph tensors
-    sourcea_gpu_ = thrust::device_vector<int>(nalfa_strs_);
-    targeta_gpu_ = thrust::device_vector<int>(nalfa_strs_);
-    paritya_gpu_ = thrust::device_vector<cuDoubleComplex>(nalfa_strs_);
-    sourceb_gpu_ = thrust::device_vector<int>(nbeta_strs_);
-    targetb_gpu_ = thrust::device_vector<int>(nbeta_strs_);
-    parityb_gpu_ = thrust::device_vector<cuDoubleComplex>(nbeta_strs_);
+    // Initialize the FCI graph tensors (can get rid of these if only use precomp tuple)
+    sourcea_gpu_.reserve(nalfa_strs_);
+    targeta_gpu_.reserve(nalfa_strs_);
+    paritya_gpu_.reserve(nalfa_strs_);
+    sourcea_undag_gpu_.reserve(nalfa_strs_);
+    targeta_undag_gpu_.reserve(nalfa_strs_);
+    paritya_undag_gpu_.reserve(nalfa_strs_);
+
+    sourceb_gpu_.reserve(nbeta_strs_);
+    targetb_gpu_.reserve(nbeta_strs_);
+    parityb_gpu_.reserve(nbeta_strs_);
+    sourceb_undag_gpu_.reserve(nbeta_strs_);
+    targetb_undag_gpu_.reserve(nbeta_strs_);
+    parityb_undag_gpu_.reserve(nbeta_strs_);
 
     graph_ = FCIGraphThrust(nalfa_el_, nbeta_el_, norb_);
 
@@ -633,15 +640,6 @@ void FCIComputerThrust::apply_cos_inplace_cpu(
     const std::vector<int>& annb,
     TensorThrust& Cout)
 {
-    /// TODO: Implement separate CPU and GPU versions of this function
-    // cpu_error();
-
-    // bool reset = false;
-    // if (Cout.on_gpu()) {
-    //     reset = true;
-    //     Cout.to_cpu();
-    // }
-
     timer_.acc_begin("===>hard: apply cos setup");
 
     const std::complex<double> cabs = std::abs(coeff);
@@ -664,10 +662,6 @@ void FCIComputerThrust::apply_cos_inplace_cpu(
         nbeta_strs_,
         factor_gpu);
     timer_.acc_end("===>hard: apply cos kernal");
-
-    // if (reset) {
-    //     Cout.to_gpu();
-    // }
 }
 
 int FCIComputerThrust::isolate_number_operators_cpu(
@@ -980,20 +974,20 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
         if(std::get<6>(*precomp).size() != 0 and std::get<8>(*precomp).size() != 0) {
 
             // Call the GPU kernel using thrust raw pointers directly
-            apply_individual_nbody1_accumulate_wrapper(
-                cu_coeff_dag, 
-                thrust::raw_pointer_cast(Cin.read_d_data().data()), 
-                thrust::raw_pointer_cast(Cout.d_data().data()), 
-                thrust::raw_pointer_cast(std::get<6>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<10>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<14>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<8>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<12>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<16>(*precomp).data()),
-                nbeta_strs_,
-                std::get<6>(*precomp).size(),
-                std::get<8>(*precomp).size(),
-                Cin.size() * sizeof(cuDoubleComplex));
+            // apply_individual_nbody1_accumulate_wrapper(
+            //     cu_coeff_dag, 
+            //     thrust::raw_pointer_cast(Cin.read_d_data().data()), 
+            //     thrust::raw_pointer_cast(Cout.d_data().data()), 
+            //     thrust::raw_pointer_cast(std::get<6>(*precomp).data()),
+            //     thrust::raw_pointer_cast(std::get<10>(*precomp).data()),
+            //     thrust::raw_pointer_cast(std::get<14>(*precomp).data()),
+            //     thrust::raw_pointer_cast(std::get<8>(*precomp).data()),
+            //     thrust::raw_pointer_cast(std::get<12>(*precomp).data()),
+            //     thrust::raw_pointer_cast(std::get<16>(*precomp).data()),
+            //     nbeta_strs_,
+            //     std::get<6>(*precomp).size(),
+            //     std::get<8>(*precomp).size(),
+            //     Cin.size() * sizeof(cuDoubleComplex));
         }
 
         cudaError_t error1 = cudaGetLastError();
@@ -1017,20 +1011,20 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
         if(std::get<7>(*precomp).size() != 0 and std::get<7>(*precomp).size() != 0) {
 
             // Call the GPU kernel using thrust raw pointers directly
-            apply_individual_nbody1_accumulate_wrapper(
-                cu_coeff_undag, 
-                thrust::raw_pointer_cast(Cin.read_d_data().data()), 
-                thrust::raw_pointer_cast(Cout.d_data().data()), 
-                thrust::raw_pointer_cast(std::get<7>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<11>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<15>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<9>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<13>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<17>(*precomp).data()),
-                nbeta_strs_,
-                std::get<7>(*precomp).size(),
-                std::get<9>(*precomp).size(),
-                Cin.size() * sizeof(cuDoubleComplex));
+            // apply_individual_nbody1_accumulate_wrapper(
+            //     cu_coeff_undag, 
+            //     thrust::raw_pointer_cast(Cin.read_d_data().data()), 
+            //     thrust::raw_pointer_cast(Cout.d_data().data()), 
+            //     thrust::raw_pointer_cast(std::get<7>(*precomp).data()),
+            //     thrust::raw_pointer_cast(std::get<11>(*precomp).data()),
+            //     thrust::raw_pointer_cast(std::get<15>(*precomp).data()),
+            //     thrust::raw_pointer_cast(std::get<9>(*precomp).data()),
+            //     thrust::raw_pointer_cast(std::get<13>(*precomp).data()),
+            //     thrust::raw_pointer_cast(std::get<17>(*precomp).data()),
+            //     nbeta_strs_,
+            //     std::get<7>(*precomp).size(),
+            //     std::get<9>(*precomp).size(),
+            //     Cin.size() * sizeof(cuDoubleComplex));
         }
 
         
@@ -1208,22 +1202,22 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v4(
 
                 timer_.acc_begin("===>hard nbody given kernel");
 
-                inplace_givens_update_wrapper(
-                    thrust::raw_pointer_cast(Cout.d_data().data()),   // Cout
-                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
-                    thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
-                    thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
-                    thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
-                    thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // const int* sourceb1 (dag)
-                    thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // const int* targetb1
-                    thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // const cuDoubleComplex* parityb1
-                    thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // const cuDoubleComplex* parityb2
-                    std::get<6>(*precomp).size(), // int na
-                    std::get<8>(*precomp).size(), // int nb
-                    nbeta_strs_,                  // int nbeta_strs_
-                    make_cuDoubleComplex(factor.real(), factor.imag()), // cuDoubleComplex cos_factor
-                    make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
-                    make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
+                // inplace_givens_update_wrapper(
+                //     thrust::raw_pointer_cast(Cout.d_data().data()),   // Cout
+                //     thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
+                //     thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
+                //     thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
+                //     thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
+                //     thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // const int* sourceb1 (dag)
+                //     thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // const int* targetb1
+                //     thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // const cuDoubleComplex* parityb1
+                //     thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // const cuDoubleComplex* parityb2
+                //     std::get<6>(*precomp).size(), // int na
+                //     std::get<8>(*precomp).size(), // int nb
+                //     nbeta_strs_,                  // int nbeta_strs_
+                //     make_cuDoubleComplex(factor.real(), factor.imag()), // cuDoubleComplex cos_factor
+                //     make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
+                //     make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
 
                 cudaError_t error2 = cudaGetLastError();
                 if (error2 != cudaSuccess) {
@@ -1308,6 +1302,34 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
         if (!runtime_matches_compiletime()) {
             throw std::runtime_error("evolve_individual_nbody_hard_cpu_v5: data_type_/Precomp mismatch.");
         }
+
+        // DEBUG: Source Target Parity vectors 
+        std::cout << "sourcea1: ";
+            thrust::copy(std::get<6>(*precomp).begin(), std::get<6>(*precomp).end(), std::ostream_iterator<int>(std::cout, " "));
+        std::cout << "\n";
+
+        std::cout << "targeta1: ";
+            thrust::copy(std::get<10>(*precomp).begin(), std::get<10>(*precomp).end(), std::ostream_iterator<int>(std::cout, " "));
+        std::cout << "\n";
+
+        std::cout << "paritya1: ";
+            // Note: paritya type depends on Precomp template parameter
+            if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
+                // Complex case: cuDoubleComplex
+                thrust::host_vector<cuDoubleComplex> paritya_host(std::get<14>(*precomp));
+                for (const auto& val : paritya_host) {
+                    std::cout << "(" << val.x << "," << val.y << ") ";
+                }
+            } else if constexpr (std::is_same_v<Precomp, PrecompTupleReal>) {
+                // Real case: double
+                thrust::host_vector<double> paritya_host(std::get<14>(*precomp));
+                for (const auto& val : paritya_host) {
+                    std::cout << val << " ";
+                }
+            }
+        std::cout << "\n";
+
+        std::cout << "State Vec Before: \n" << Cout.str(true, true) << std::endl;
 
         if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
 
@@ -1473,12 +1495,108 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
             timer_.acc_end("===>hard nbody given kernel");
 
         } else {
-            throw std::runtime_error("evolve_individual_nbody_easy_cpu_v5: Unsupported Precomp type.");
+            throw std::runtime_error("evolve_individual_nbody_hard_cpu_v5: Unsupported Precomp type.");
         }
+
+        // std::cout << "State Vec After: \n" << Cout.str(true, true) << std::endl;
                 
     } else {
-        // just throw an error for now
-        throw std::invalid_argument("Precomputed data must be provided for v4 hard n-body evolution.");
+        if (data_type_ == "complex") {
+            // Complex Case
+
+            // No precomp provided: need to compute on the fly
+            int counta1 = 0;
+            int counta2 = 0;
+            int countb1 = 0;
+            int countb2 = 0;
+
+            // DAG mapping: annihilators as dag, creators as undag
+            graph_.make_mapping_each_gpu_v2(
+                true, // const bool is_alpha, 
+                anna, 
+                crea,
+                &counta1,
+                sourcea_gpu_,
+                targeta_gpu_,
+                paritya_gpu_);
+
+            // std::cout << "sourcea1 " << sourcea_gpu_.str() << std::endl;  // device_vector has no .str() method
+
+            // UNDAG mapping: creators as dag, annihilators as undag
+            graph_.make_mapping_each_gpu_v2(
+                true, // const bool is_alpha, 
+                crea, 
+                anna,
+                &counta2,
+                sourcea_undag_gpu_,
+                targeta_undag_gpu_,
+                paritya_undag_gpu_);
+
+            // DAG mapping: annihilators as dag, creators as undag
+            graph_.make_mapping_each_gpu_v2(
+                false, // const bool is_alpha, 
+                annb, 
+                creb,
+                &countb1,
+                sourceb_gpu_,
+                targetb_gpu_,
+                parityb_gpu_);
+
+            // UNDAG mapping: creators as dag, annihilators as undag
+            graph_.make_mapping_each_gpu_v2(
+                false, // const bool is_alpha, 
+                creb, 
+                annb,
+                &countb2,
+                sourceb_undag_gpu_,
+                targetb_undag_gpu_,
+                parityb_undag_gpu_);
+
+            // DEBUG: Source Target Parity vectors 
+            std::cout << "sourcea1: ";
+                thrust::copy(sourcea_gpu_.begin(), sourcea_gpu_.end(), std::ostream_iterator<int>(std::cout, " "));
+            std::cout << "\n";
+
+            std::cout << "targeta1: ";
+                thrust::copy(targeta_gpu_.begin(), targeta_gpu_.end(), std::ostream_iterator<int>(std::cout, " "));
+            std::cout << "\n";
+
+            std::cout << "paritya1: ";
+                // Note: paritya contains cuDoubleComplex, copy to host first
+                thrust::host_vector<cuDoubleComplex> paritya_host(paritya_gpu_);
+                for (const auto& val : paritya_host) {
+                    std::cout << "(" << val.x << "," << val.y << ") ";
+                }
+            std::cout << "\n";
+
+            std::cout << "State Vec Before: \n" << Cout.str(true, true) << std::endl;
+
+            inplace_givens_update_complex_tiled_wrapper(
+                32,
+                thrust::raw_pointer_cast(Cout.d_data().data()),
+                thrust::raw_pointer_cast(sourcea_gpu_.data()), // sourcea1 (dag)
+                thrust::raw_pointer_cast(targeta_gpu_.data()), // targeta1
+                thrust::raw_pointer_cast(paritya_gpu_.data()), // paritya1
+                thrust::raw_pointer_cast(paritya_undag_gpu_.data()), // paritya2
+                thrust::raw_pointer_cast(sourceb_gpu_.data()),  // sourceb1 (dag)
+                thrust::raw_pointer_cast(targetb_gpu_.data()), // targetb1
+                thrust::raw_pointer_cast(parityb_gpu_.data()), // parityb1
+                thrust::raw_pointer_cast(parityb_undag_gpu_.data()), // parityb2
+                counta1, // nalpha
+                countb1, // nbeta
+                nbeta_strs_,
+                make_cuDoubleComplex(factor.real(), factor.imag()),
+                make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
+                make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
+
+            // std::cout << "State Vec After: \n" << Cout.str(true, true) << std::endl;
+            // std::cout << "post kernel" << std::endl;
+        } else if (data_type_ == "real") {
+            // Real Case
+            throw std::runtime_error("evolve_individual_nbody_hard_cpu_v5: Unsupported data_type_ real.");
+        } else {
+            throw std::runtime_error("evolve_individual_nbody_hard_cpu_v5: Unsupported data_type_.");
+        }
     }
 }
 
@@ -1711,42 +1829,8 @@ void FCIComputerThrust::evolve_individual_nbody_cpu_v5(
     const bool adjoint,
     const Precomp* precomp)
 {
-    // // DEBUG STUFF:
-    // auto dump_tensor = [&](const char* tag, TensorThrust& T) {
-    //     std::cout << "\n==== " << tag << " ====\n";
-    //     // If TensorThrust::norm() exists, uncomment the line below:
-    //     // std::cout << "||C|| = " << T.norm() << "\n";
-    //     // Use the tensor class stringifier as requested
-    //     std::cout << T.str(/*print_complex=*/true) << std::endl;
-    // };
 
-    // auto dump_step_header = [&](const char* which,
-    //                             const std::complex<double>& eff_coeff,
-    //                             const std::vector<int>& crea,
-    //                             const std::vector<int>& anna,
-    //                             const std::vector<int>& creb,
-    //                             const std::vector<int>& annb,
-    //                             int nswaps,
-    //                             const std::complex<double>& parity)
-    // {
-    //     std::cout << "\n----------------------------------------\n";
-    //     std::cout << which << "\n";
-    //     std::cout << "  effective coeff (after adj/antiherm & parity) = "
-    //               << eff_coeff << "\n";
-    //     std::cout << "  parity swaps = " << nswaps << "  => parity = " << parity << "\n";
-    //     auto print_vec = [](const char* n, const std::vector<int>& v){
-    //         std::cout << "  " << n << " = [";
-    //         for (size_t i = 0; i < v.size(); ++i) {
-    //             std::cout << v[i] << (i+1<v.size()? ", ":"");
-    //         }
-    //         std::cout << "]\n";
-    //     };
-    //     print_vec("crea(α)", crea);
-    //     print_vec("anna(α)", anna);
-    //     print_vec("creb(β)", creb);
-    //     print_vec("annb(β)", annb);
-    // };
-
+    // std::cout << "Entering evolve_individual_nbody_cpu_v5" << std::endl;
 
     /// TODO: Implement seperate CPU and GPU versions of this function
     // cpu_error();
@@ -2227,9 +2311,11 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
 {
     gpu_error();
 
-    if (pool.device_vecs_populated()==false){
-        throw std::runtime_error("SQOpPoolThrust STP device arrays must be populated before evolution.");
-    }
+    // Need to support no precomp tuple case later
+
+    // if (pool.device_vecs_populated()==false){
+    //     throw std::runtime_error("SQOpPoolThrust STP device arrays must be populated before evolution.");
+    // }
 
     // now checking data type and getting appropriate precomp tuple
     if (pool.data_type() != data_type_) {
@@ -2250,26 +2336,49 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
             for( int r = 0; r < trotter_steps; r++) {
                 for (int i = pool.terms().size() - 1; i >= 0; --i) {
 
-                    if (data_type_ == "complex") {
-                        const auto& device_spt_arys = pool.get_mu_tuple(i);
-                        evolve_individual_nbody_cpu_v5(
-                            prefactor * pool.terms()[i].first,
-                            pool.terms()[i].second,
-                            C_,
-                            antiherm,
-                            adjoint,
-                            &device_spt_arys); 
-                    } else if (data_type_ == "real") {
-                        const auto& device_spt_arys = pool.get_mu_tuple_real(i);
-                        evolve_individual_nbody_cpu_v5(
-                            prefactor * pool.terms()[i].first,
-                            pool.terms()[i].second,
-                            C_,
-                            antiherm,
-                            adjoint,
-                            &device_spt_arys); 
+                    if (pool.device_vecs_populated()==false) {
+                        // no precomp provided
+                        if (data_type_ == "complex") {
+                            evolve_individual_nbody_cpu_v5<PrecompTuple>(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                nullptr);
+                        } else if (data_type_ == "real") {
+                            evolve_individual_nbody_cpu_v5<PrecompTupleReal>(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                nullptr);
+                        } else {
+                            throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        }
                     } else {
-                        throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        if (data_type_ == "complex") {
+                            const auto& device_spt_arys = pool.get_mu_tuple(i);
+                            evolve_individual_nbody_cpu_v5(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                &device_spt_arys); 
+                        } else if (data_type_ == "real") {
+                            const auto& device_spt_arys = pool.get_mu_tuple_real(i);
+                            evolve_individual_nbody_cpu_v5(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                &device_spt_arys); 
+                        } else {
+                            throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        }
                     }
 
                 }
@@ -2278,26 +2387,49 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
             for( int r = 0; r < trotter_steps; r++) {
                 for (int i = 0; i < pool.terms().size(); ++i) {
 
-                    if (data_type_ == "complex") {
-                        const auto& device_spt_arys = pool.get_mu_tuple(i);
-                        evolve_individual_nbody_cpu_v5(
-                            prefactor * pool.terms()[i].first,
-                            pool.terms()[i].second,
-                            C_,
-                            antiherm,
-                            adjoint,
-                            &device_spt_arys); 
-                    } else if (data_type_ == "real") {
-                        const auto& device_spt_arys = pool.get_mu_tuple_real(i);
-                        evolve_individual_nbody_cpu_v5(
-                            prefactor * pool.terms()[i].first,
-                            pool.terms()[i].second,
-                            C_,
-                            antiherm,
-                            adjoint,
-                            &device_spt_arys); 
+                    if (pool.device_vecs_populated()==false) {
+                        // no precomp provided
+                        if (data_type_ == "complex") {
+                            evolve_individual_nbody_cpu_v5<PrecompTuple>(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                nullptr);
+                        } else if (data_type_ == "real") {
+                            evolve_individual_nbody_cpu_v5<PrecompTupleReal>(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                nullptr);
+                        } else {
+                            throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        }
                     } else {
-                        throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        if (data_type_ == "complex") {
+                            const auto& device_spt_arys = pool.get_mu_tuple(i);
+                            evolve_individual_nbody_cpu_v5(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                &device_spt_arys); 
+                        } else if (data_type_ == "real") {
+                            const auto& device_spt_arys = pool.get_mu_tuple_real(i);
+                            evolve_individual_nbody_cpu_v5(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                &device_spt_arys); 
+                        } else {
+                            throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        }
                     }
 
                 }
@@ -2433,29 +2565,6 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
     if (countb == 0) {
         return;
     }
-
-    // thrust::host_vector<int> sourcea_cpu(counta);
-    // thrust::host_vector<int> targeta_cpu(counta);
-    // thrust::host_vector<cuDoubleComplex> paritya_cpu(counta);
-
-    // thrust::host_vector<int> sourceb_cpu(countb);
-    // thrust::host_vector<int> targetb_cpu(countb);
-    // thrust::host_vector<cuDoubleComplex> parityb_cpu(countb);
-
-    // thrust::copy(sourcea_gpu_.begin(), sourcea_gpu_.begin() + counta, sourcea_cpu.begin());
-    // thrust::copy(targeta_gpu_.begin(), targeta_gpu_.begin() + counta, targeta_cpu.begin());
-    // thrust::copy(paritya_gpu_.begin(), paritya_gpu_.begin() + counta, paritya_cpu.begin());
-
-    // thrust::copy(sourceb_gpu_.begin(), sourceb_gpu_.begin() + countb, sourceb_cpu.begin());
-    // thrust::copy(targetb_gpu_.begin(), targetb_gpu_.begin() + countb, targetb_cpu.begin());
-    // thrust::copy(parityb_gpu_.begin(), parityb_gpu_.begin() + countb, parityb_cpu.begin());
-
-    // print_vector_thrust(sourcea_cpu, "sourcea");
-    // print_vector_thrust(targeta_cpu, "targeta");
-    // print_vector_thrust_cuDoubleComplex(paritya_cpu, "paritya");
-    // print_vector_thrust(sourceb_cpu, "sourceb");
-    // print_vector_thrust(targetb_cpu, "targetb");
-    // print_vector_thrust_cuDoubleComplex(parityb_cpu, "parityb");
 
     timer_.acc_end("===>hard nbody acc setup");
 
@@ -2765,27 +2874,6 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
     const bool need_complex = (pool_dt == "complex");
     const bool real_only    = (pool_dt == "real");
 
-    
-
-    // // Helper to move cuDoubleComplex parity device vector into SoA double device vectors
-    // auto push_parity_soa = [&](const thrust::device_vector<cuDoubleComplex>& d_par,
-    //                            std::vector<thrust::device_vector<double>>& re_list,
-    //                            std::vector<thrust::device_vector<double>>& im_list) {
-    //     thrust::host_vector<cuDoubleComplex> h_par = d_par; // device -> host copy
-    //     thrust::host_vector<double> h_re(h_par.size());
-    //     thrust::host_vector<double> h_im(h_par.size());
-    //     for (size_t i = 0; i < h_par.size(); ++i) {
-    //         h_re[i] = h_par[i].x;
-    //         h_im[i] = h_par[i].y;
-    //     }
-    //     thrust::device_vector<double> d_re(h_re.begin(), h_re.end());
-    //     thrust::device_vector<double> d_im(h_im.begin(), h_im.end());
-    //     re_list.emplace_back(std::move(d_re));
-    //     if (!real_only) { // skip imag allocation for real-only
-    //         im_list.emplace_back(std::move(d_im));
-    //     }
-    // };
-
     for (int i=0; i<static_cast<int>(pool.terms().size()); ++i){
 
         auto sqop = pool.terms()[i].second;
@@ -2942,6 +3030,8 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
                     pool.terms_sourcea_dag_gpu(),
                     pool.terms_targeta_dag_gpu(),
                     pool.terms_paritya_dag_gpu());
+
+                // std::cout << "sourcea1 " << pool.terms_sourcea_dag_gpu().str() << std::endl;  // device_vector has no .str() method
             } else if (real_only) {
                 graph_.make_mapping_each_gpu_v4(
                     true,
@@ -2951,20 +3041,6 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
                     pool.terms_sourcea_dag_gpu(),
                     pool.terms_targeta_dag_gpu(),
                     pool.terms_paritya_dag_re_gpu());
-            // } else if (need_soa) {
-            //     graph_.make_mapping_each_gpu_v4(
-            //         true,
-            //         anna,
-            //         crea,
-            //         &counta,
-            //         pool.terms_sourcea_dag_gpu(),
-            //         pool.terms_targeta_dag_gpu(),
-            //         pool.terms_paritya_dag_re_gpu(),
-            //         pool.terms_paritya_dag_im_gpu());
-            //     if (real_only) {
-            //         // discard just-added imag vector
-            //         pool.terms_paritya_dag_im_gpu().pop_back();
-            //     }
             }
 
             if (need_complex) {
@@ -2985,19 +3061,6 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
                     pool.terms_sourceb_dag_gpu(),
                     pool.terms_targetb_dag_gpu(),
                     pool.terms_parityb_dag_re_gpu());
-            // } else if (need_soa) {
-            //     graph_.make_mapping_each_gpu_v4(
-            //         false,
-            //         annb,
-            //         creb,
-            //         &countb,
-            //         pool.terms_sourceb_dag_gpu(),
-            //         pool.terms_targetb_dag_gpu(),
-            //         pool.terms_parityb_dag_re_gpu(),
-            //         pool.terms_parityb_dag_im_gpu());
-            //     if (real_only) {
-            //         pool.terms_parityb_dag_im_gpu().pop_back();
-            //     }
             }
 
             if((anna.size() != crea.size()) or (annb.size() != creb.size())){
@@ -3026,19 +3089,6 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
                     pool.terms_sourcea_undag_gpu(),
                     pool.terms_targeta_undag_gpu(),
                     pool.terms_paritya_undag_re_gpu());
-            // } else if (need_soa) {
-            //     graph_.make_mapping_each_gpu_v4(
-            //         true,
-            //         crea,
-            //         anna,
-            //         &counta,
-            //         pool.terms_sourcea_undag_gpu(),
-            //         pool.terms_targeta_undag_gpu(),
-            //         pool.terms_paritya_undag_re_gpu(),
-            //         pool.terms_paritya_undag_im_gpu());
-            //     if (real_only) {
-            //         pool.terms_paritya_undag_im_gpu().pop_back();
-            //     }
             }
 
             if (need_complex) {
@@ -3059,36 +3109,7 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
                     pool.terms_sourceb_undag_gpu(),
                     pool.terms_targetb_undag_gpu(),
                     pool.terms_parityb_undag_re_gpu());
-            // } else if (need_soa) {
-            //     graph_.make_mapping_each_gpu_v4(
-            //         false,
-            //         creb,
-            //         annb,
-            //         &countb,
-            //         pool.terms_sourceb_undag_gpu(),
-            //         pool.terms_targetb_undag_gpu(),
-            //         pool.terms_parityb_undag_re_gpu(),
-            //         pool.terms_parityb_undag_im_gpu());
-            //     if (real_only) {
-            //         pool.terms_parityb_undag_im_gpu().pop_back();
-            //     }
             }
-
-            // Convert complex parity to SoA if "all" (NOT for real-only)
-            // if (need_complex && need_soa && !real_only) {
-            //     push_parity_soa(pool.terms_paritya_dag_gpu().back(),
-            //                     pool.terms_paritya_dag_re_gpu(),
-            //                     pool.terms_paritya_dag_im_gpu());
-            //     push_parity_soa(pool.terms_parityb_dag_gpu().back(),
-            //                     pool.terms_parityb_dag_re_gpu(),
-            //                     pool.terms_parityb_dag_im_gpu());
-            //     push_parity_soa(pool.terms_paritya_undag_gpu().back(),
-            //                     pool.terms_paritya_undag_re_gpu(),
-            //                     pool.terms_paritya_undag_im_gpu());
-            //     push_parity_soa(pool.terms_parityb_undag_gpu().back(),
-            //                     pool.terms_parityb_undag_re_gpu(),
-            //                     pool.terms_parityb_undag_im_gpu());
-            // }
 
         } else {
             throw std::invalid_argument("Evolved state must remain in spin and particle-number symmetry sector");

@@ -380,15 +380,21 @@ void FCIGraphThrust::make_mapping_each_gpu_v2(
             }
             
             source[*count] = static_cast<int>(index);
-            target[*count] = get_aind_for_str(static_cast<int>(current));
+            target[*count] = alpha ? get_aind_for_str(static_cast<int>(current)) : get_bind_for_str(static_cast<int>(current));
             parity[*count] = make_cuDoubleComplex(1.0 - 2.0 * static_cast<int>(parity_value % 2), 0.0);
             (*count)++;
         }
     }
 
-    thrust::copy(source.begin(), source.begin() + *count, source_gpu.begin());
-    thrust::copy(target.begin(), target.begin() + *count, target_gpu.begin());
-    thrust::copy(parity.begin(), parity.begin() + *count, parity_gpu.begin());
+    source_gpu.resize(*count);
+    target_gpu.resize(*count);
+    parity_gpu.resize(*count);
+
+    if (*count > 0) {
+        thrust::copy_n(source.begin(), *count, source_gpu.begin());
+        thrust::copy_n(target.begin(), *count, target_gpu.begin());
+        thrust::copy_n(parity.begin(), *count, parity_gpu.begin());
+    }
 
     timer_.acc_record("make_mapping_each");
 }
@@ -446,7 +452,7 @@ void FCIGraphThrust::make_mapping_each_gpu_v3(
             }
             
             source[*count] = static_cast<int>(index);
-            target[*count] = get_aind_for_str(static_cast<int>(current));
+            target[*count] = alpha ? get_aind_for_str(static_cast<int>(current)) : get_bind_for_str(static_cast<int>(current));
             parity[*count] = make_cuDoubleComplex(1.0 - 2.0 * static_cast<int>(parity_value % 2), 0.0);
             (*count)++;
         }
@@ -517,7 +523,7 @@ void FCIGraphThrust::make_mapping_each_gpu_v4(
             }
 
             source[*count] = static_cast<int>(index);
-            target[*count] = get_aind_for_str(static_cast<int>(current));
+            target[*count] = alpha ? get_aind_for_str(static_cast<int>(current)) : get_bind_for_str(static_cast<int>(current));
             parity_re[*count] = 1.0 - 2.0 * static_cast<int>(parity_value % 2);
             (*count)++;
         }

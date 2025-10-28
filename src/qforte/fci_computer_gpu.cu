@@ -1300,20 +1300,20 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate(
 
     cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
 
-    apply_individual_nbody1_accumulate_wrapper(
-        cu_coeff, 
-        Cin.read_d_data(), 
-        Cout.d_data(), 
-        d_sourcea,
-        d_targeta,
-        d_paritya,
-        d_sourceb,
-        d_targetb,
-        d_parityb,
-        nbeta_strs_,
-        targeta.size(),
-        targetb.size(),
-        tensor_mem);
+    // apply_individual_nbody1_accumulate_wrapper(
+    //     cu_coeff, 
+    //     Cin.read_d_data(), 
+    //     Cout.d_data(), 
+    //     d_sourcea,
+    //     d_targeta,
+    //     d_paritya,
+    //     d_sourceb,
+    //     d_targetb,
+    //     d_parityb,
+    //     nbeta_strs_,
+    //     targeta.size(),
+    //     targetb.size(),
+    //     tensor_mem);
 
 
     timer_.acc_record("calling gpu function");
