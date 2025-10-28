@@ -399,6 +399,82 @@ void FCIGraphThrust::make_mapping_each_gpu_v2(
     timer_.acc_record("make_mapping_each");
 }
 
+void FCIGraphThrust::make_mapping_each_gpu_v2_real(
+    bool alpha, 
+    const std::vector<int>& dag, 
+    const std::vector<int>& undag,
+    int* count,
+    thrust::device_vector<int>& source_gpu,
+    thrust::device_vector<int>& target_gpu,
+    thrust::device_vector<double>& parity_gpu) 
+{
+    timer_.reset();
+
+    std::vector<uint64_t> strings;
+    int length;
+    
+    if (alpha) {
+        strings = get_astr();
+        length = lena_;
+    } else {
+        strings = get_bstr();
+        length = lenb_;
+    }
+
+    thrust::host_vector<int>    source(length);
+    thrust::host_vector<int>    target(length);
+    thrust::host_vector<double> parity(length);
+
+    uint64_t dag_mask   = 0;
+    uint64_t undag_mask = 0;
+
+    for (uint64_t i : dag) {
+        if (std::find(undag.begin(), undag.end(), static_cast<int>(i)) == undag.end()) {
+            dag_mask = set_bit(dag_mask, i);
+        }
+    }
+    for (uint64_t i : undag) { undag_mask = set_bit(undag_mask, i); }
+
+    for (uint64_t index = 0; index < static_cast<uint64_t>(length); index++) {
+        uint64_t current = strings[index];
+
+        bool check = ((current & dag_mask) == 0) && (((current & undag_mask) ^ undag_mask) == 0);
+        if (check) {
+            uint64_t parity_value = 0;
+
+            for (size_t i = undag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, static_cast<uint64_t>(undag[i - 1]));
+                current = unset_bit(current, static_cast<uint64_t>(undag[i - 1]));
+            }
+            for (size_t i = dag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, static_cast<uint64_t>(dag[i - 1]));
+                current = set_bit(current, static_cast<uint64_t>(dag[i - 1]));
+            }
+
+            source[*count] = static_cast<int>(index);
+            target[*count] = alpha
+                ? get_aind_for_str(static_cast<int>(current))
+                : get_bind_for_str(static_cast<int>(current));
+
+            parity[*count] = (parity_value % 2 == 0) ? 1.0 : -1.0;
+
+            (*count)++;
+        }
+    }
+
+    source_gpu.resize(*count);
+    target_gpu.resize(*count);
+    parity_gpu.resize(*count);
+
+    if (*count > 0) {
+        thrust::copy_n(source.begin(), *count, source_gpu.begin());
+        thrust::copy_n(target.begin(), *count, target_gpu.begin());
+        thrust::copy_n(parity.begin(), *count, parity_gpu.begin());
+    }
+
+    timer_.acc_record("make_mapping_each_real");
+}
+
 void FCIGraphThrust::make_mapping_each_gpu_v3(
     bool alpha, 
     const std::vector<int>& dag, 

@@ -76,16 +76,22 @@ FCIComputerThrust::FCIComputerThrust(int nel, int sz, int norb, bool on_gpu, con
     sourcea_gpu_.reserve(nalfa_strs_);
     targeta_gpu_.reserve(nalfa_strs_);
     paritya_gpu_.reserve(nalfa_strs_);
+    paritya_gpu_real_.reserve(nalfa_strs_);
+
     sourcea_undag_gpu_.reserve(nalfa_strs_);
     targeta_undag_gpu_.reserve(nalfa_strs_);
     paritya_undag_gpu_.reserve(nalfa_strs_);
+    paritya_undag_gpu_real_.reserve(nalfa_strs_);
 
     sourceb_gpu_.reserve(nbeta_strs_);
     targetb_gpu_.reserve(nbeta_strs_);
     parityb_gpu_.reserve(nbeta_strs_);
+    parityb_gpu_real_.reserve(nbeta_strs_);
+
     sourceb_undag_gpu_.reserve(nbeta_strs_);
     targetb_undag_gpu_.reserve(nbeta_strs_);
     parityb_undag_gpu_.reserve(nbeta_strs_);
+    parityb_undag_gpu_real_.reserve(nbeta_strs_);
 
     graph_ = FCIGraphThrust(nalfa_el_, nbeta_el_, norb_);
 
@@ -1304,32 +1310,32 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
         }
 
         // DEBUG: Source Target Parity vectors 
-        std::cout << "sourcea1: ";
-            thrust::copy(std::get<6>(*precomp).begin(), std::get<6>(*precomp).end(), std::ostream_iterator<int>(std::cout, " "));
-        std::cout << "\n";
+        // std::cout << "sourcea1: ";
+        //     thrust::copy(std::get<6>(*precomp).begin(), std::get<6>(*precomp).end(), std::ostream_iterator<int>(std::cout, " "));
+        // std::cout << "\n";
 
-        std::cout << "targeta1: ";
-            thrust::copy(std::get<10>(*precomp).begin(), std::get<10>(*precomp).end(), std::ostream_iterator<int>(std::cout, " "));
-        std::cout << "\n";
+        // std::cout << "targeta1: ";
+        //     thrust::copy(std::get<10>(*precomp).begin(), std::get<10>(*precomp).end(), std::ostream_iterator<int>(std::cout, " "));
+        // std::cout << "\n";
 
-        std::cout << "paritya1: ";
-            // Note: paritya type depends on Precomp template parameter
-            if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
-                // Complex case: cuDoubleComplex
-                thrust::host_vector<cuDoubleComplex> paritya_host(std::get<14>(*precomp));
-                for (const auto& val : paritya_host) {
-                    std::cout << "(" << val.x << "," << val.y << ") ";
-                }
-            } else if constexpr (std::is_same_v<Precomp, PrecompTupleReal>) {
-                // Real case: double
-                thrust::host_vector<double> paritya_host(std::get<14>(*precomp));
-                for (const auto& val : paritya_host) {
-                    std::cout << val << " ";
-                }
-            }
-        std::cout << "\n";
+        // std::cout << "paritya1: ";
+        //     // Note: paritya type depends on Precomp template parameter
+        //     if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
+        //         // Complex case: cuDoubleComplex
+        //         thrust::host_vector<cuDoubleComplex> paritya_host(std::get<14>(*precomp));
+        //         for (const auto& val : paritya_host) {
+        //             std::cout << "(" << val.x << "," << val.y << ") ";
+        //         }
+        //     } else if constexpr (std::is_same_v<Precomp, PrecompTupleReal>) {
+        //         // Real case: double
+        //         thrust::host_vector<double> paritya_host(std::get<14>(*precomp));
+        //         for (const auto& val : paritya_host) {
+        //             std::cout << val << " ";
+        //         }
+        //     }
+        // std::cout << "\n";
 
-        std::cout << "State Vec Before: \n" << Cout.str(true, true) << std::endl;
+        // std::cout << "State Vec Before: \n" << Cout.str(true, true) << std::endl;
 
         if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
 
@@ -1553,23 +1559,72 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
                 parityb_undag_gpu_);
 
             // DEBUG: Source Target Parity vectors 
-            std::cout << "sourcea1: ";
-                thrust::copy(sourcea_gpu_.begin(), sourcea_gpu_.end(), std::ostream_iterator<int>(std::cout, " "));
-            std::cout << "\n";
+            // std::cout << "sourcea1: ";
+            //     thrust::copy(sourcea_gpu_.begin(), sourcea_gpu_.end(), std::ostream_iterator<int>(std::cout, " "));
+            // std::cout << "\n";
 
-            std::cout << "targeta1: ";
-                thrust::copy(targeta_gpu_.begin(), targeta_gpu_.end(), std::ostream_iterator<int>(std::cout, " "));
-            std::cout << "\n";
+            // std::cout << "targeta1: ";
+            //     thrust::copy(targeta_gpu_.begin(), targeta_gpu_.end(), std::ostream_iterator<int>(std::cout, " "));
+            // std::cout << "\n";
 
-            std::cout << "paritya1: ";
-                // Note: paritya contains cuDoubleComplex, copy to host first
-                thrust::host_vector<cuDoubleComplex> paritya_host(paritya_gpu_);
-                for (const auto& val : paritya_host) {
-                    std::cout << "(" << val.x << "," << val.y << ") ";
-                }
-            std::cout << "\n";
+            // std::cout << "paritya1: ";
+            //     // Note: paritya contains cuDoubleComplex, copy to host first
+            //     thrust::host_vector<cuDoubleComplex> paritya_host(paritya_gpu_);
+            //     for (const auto& val : paritya_host) {
+            //         std::cout << "(" << val.x << "," << val.y << ") ";
+            //     }
+            // std::cout << "\n";
 
-            std::cout << "State Vec Before: \n" << Cout.str(true, true) << std::endl;
+            // std::cout << "State Vec Before: \n" << Cout.str(true, true) << std::endl;
+
+            timer_.acc_begin("===>hard nbody given kernel");
+                
+            // condition here for all row or all col cases
+            if (crea.size() == 0 && creb.size() > 0) {
+                timer_.acc_begin("===>hard nbody given kernel - col case");
+
+                inplace_givens_update_complex_tiled_wrapper(
+                    32,
+                    thrust::raw_pointer_cast(Cout.d_data().data()),
+                    thrust::raw_pointer_cast(sourcea_gpu_.data()), // sourcea1 (dag)
+                    thrust::raw_pointer_cast(targeta_gpu_.data()), // targeta1
+                    thrust::raw_pointer_cast(paritya_gpu_.data()), // paritya1
+                    thrust::raw_pointer_cast(paritya_undag_gpu_.data()), // paritya2
+                    thrust::raw_pointer_cast(sourceb_gpu_.data()),  // sourceb1 (dag)
+                    thrust::raw_pointer_cast(targetb_gpu_.data()), // targetb1
+                    thrust::raw_pointer_cast(parityb_gpu_.data()), // parityb1
+                    thrust::raw_pointer_cast(parityb_undag_gpu_.data()), // parityb2
+                    counta1, // nalpha
+                    countb1, // nbeta
+                    nbeta_strs_,
+                    make_cuDoubleComplex(factor.real(), factor.imag()),
+                    make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
+                    make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
+
+                timer_.acc_end("===>hard nbody given kernel - col case");
+                timer_.acc_end("===>hard nbody given kernel");
+                return;
+            } else if (creb.size() == 0 && crea.size() > 0) {
+                timer_.acc_begin("===>hard nbody given kernel - row case");
+
+                inplace_givens_update_complex_rows_wrapper(
+                    thrust::raw_pointer_cast(Cout.d_data().data()),  // Cout
+                    thrust::raw_pointer_cast(sourcea_gpu_.data()),  // const int* sourcea1 (dag)
+                    thrust::raw_pointer_cast(targeta_gpu_.data()), // const int* targeta1
+                    thrust::raw_pointer_cast(paritya_gpu_.data()), // const cuDoubleComplex* paritya1
+                    thrust::raw_pointer_cast(paritya_undag_gpu_.data()), // const cuDoubleComplex* paritya2
+                    counta1,      // int na
+                    nbeta_strs_,  // int nbeta_strs_
+                    make_cuDoubleComplex(factor.real(), factor.imag()),
+                    make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
+                    make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
+
+                timer_.acc_end("===>hard nbody given kernel - row case");
+                timer_.acc_end("===>hard nbody given kernel");
+                return;
+            }
+
+            timer_.acc_begin("===>hard nbody given kernel - general case");
 
             inplace_givens_update_complex_tiled_wrapper(
                 32,
@@ -1589,11 +1644,159 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
                 make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
                 make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
 
+            timer_.acc_end("===>hard nbody given kernel - general case");
+
+            cudaError_t error2 = cudaGetLastError();
+                
+            if (error2 != cudaSuccess) {
+                std::cerr << "CUDA error: " << cudaGetErrorString(error2) << std::endl;
+                    throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
+                }
+
+            timer_.acc_end("===>hard nbody given kernel");
+
             // std::cout << "State Vec After: \n" << Cout.str(true, true) << std::endl;
             // std::cout << "post kernel" << std::endl;
         } else if (data_type_ == "real") {
             // Real Case
-            throw std::runtime_error("evolve_individual_nbody_hard_cpu_v5: Unsupported data_type_ real.");
+            
+            // No precomp provided: need to compute on the fly
+            int counta1 = 0;
+            int counta2 = 0;
+            int countb1 = 0;
+            int countb2 = 0;
+
+            // DAG mapping: annihilators as dag, creators as undag
+            graph_.make_mapping_each_gpu_v2_real(
+                true, // const bool is_alpha, 
+                anna, 
+                crea,
+                &counta1,
+                sourcea_gpu_,
+                targeta_gpu_,
+                paritya_gpu_real_);
+
+            // std::cout << "sourcea1 " << sourcea_gpu_.str() << std::endl;  // device_vector has no .str() method
+
+            // UNDAG mapping: creators as dag, annihilators as undag
+            graph_.make_mapping_each_gpu_v2_real(
+                true, // const bool is_alpha, 
+                crea, 
+                anna,
+                &counta2,
+                sourcea_undag_gpu_,
+                targeta_undag_gpu_,
+                paritya_undag_gpu_real_);
+
+            // DAG mapping: annihilators as dag, creators as undag
+            graph_.make_mapping_each_gpu_v2_real(
+                false, // const bool is_alpha, 
+                annb, 
+                creb,
+                &countb1,
+                sourceb_gpu_,
+                targetb_gpu_,
+                parityb_gpu_real_);
+
+            // UNDAG mapping: creators as dag, annihilators as undag
+            graph_.make_mapping_each_gpu_v2_real(
+                false, // const bool is_alpha, 
+                creb, 
+                annb,
+                &countb2,
+                sourceb_undag_gpu_,
+                targetb_undag_gpu_,
+                parityb_undag_gpu_real_);
+
+            // DEBUG: Source Target Parity vectors 
+            // std::cout << "sourcea1: ";
+            //     thrust::copy(sourcea_gpu_.begin(), sourcea_gpu_.end(), std::ostream_iterator<int>(std::cout, " "));
+            // std::cout << "\n";
+
+            // std::cout << "targeta1: ";
+            //     thrust::copy(targeta_gpu_.begin(), targeta_gpu_.end(), std::ostream_iterator<int>(std::cout, " "));
+            // std::cout << "\n";
+
+            // std::cout << "State Vec Before: \n" << Cout.str(true, true) << std::endl;
+
+            timer_.acc_begin("===>hard nbody given kernel");
+                
+            // condition here for all row or all col cases
+            if (crea.size() == 0 && creb.size() > 0) {
+                timer_.acc_begin("===>hard nbody given kernel - col case");
+
+                inplace_givens_update_real_tiled_wrapper(
+                    32,
+                    thrust::raw_pointer_cast(Cout.d_re_data().data()),
+                    thrust::raw_pointer_cast(sourcea_gpu_.data()), // sourcea1 (dag)
+                    thrust::raw_pointer_cast(targeta_gpu_.data()), // targeta1
+                    thrust::raw_pointer_cast(paritya_gpu_real_.data()), // paritya1
+                    thrust::raw_pointer_cast(paritya_undag_gpu_real_.data()), // paritya2
+                    thrust::raw_pointer_cast(sourceb_gpu_.data()),  // sourceb1 (dag)
+                    thrust::raw_pointer_cast(targetb_gpu_.data()), // targetb1
+                    thrust::raw_pointer_cast(parityb_gpu_real_.data()), // parityb1
+                    thrust::raw_pointer_cast(parityb_undag_gpu_real_.data()), // parityb2
+                    counta1, // nalpha
+                    countb1, // nbeta
+                    nbeta_strs_,
+                    factor.real(),
+                    acc_coeff1.real(),
+                    acc_coeff2.real());
+
+                timer_.acc_end("===>hard nbody given kernel - col case");
+                timer_.acc_end("===>hard nbody given kernel");
+                return;
+            } else if (creb.size() == 0 && crea.size() > 0) {
+                timer_.acc_begin("===>hard nbody given kernel - row case");
+
+                inplace_givens_update_real_rows_wrapper(
+                    thrust::raw_pointer_cast(Cout.d_re_data().data()),  // Cout
+                    thrust::raw_pointer_cast(sourcea_gpu_.data()),  // const int* sourcea1 (dag)
+                    thrust::raw_pointer_cast(targeta_gpu_.data()), // const int* targeta1
+                    thrust::raw_pointer_cast(paritya_gpu_real_.data()), // const cuDoubleComplex* paritya1
+                    thrust::raw_pointer_cast(paritya_undag_gpu_real_.data()), // const cuDoubleComplex* paritya2
+                    counta1,      // int nalpha
+                    nbeta_strs_,  // int nbeta_strs_
+                    factor.real(),
+                    acc_coeff1.real(),
+                    acc_coeff2.real());
+
+                timer_.acc_end("===>hard nbody given kernel - row case");
+                timer_.acc_end("===>hard nbody given kernel");
+                return;
+            }
+
+            timer_.acc_begin("===>hard nbody given kernel - general case");
+
+            inplace_givens_update_real_tiled_wrapper(
+                32,
+                thrust::raw_pointer_cast(Cout.d_re_data().data()),
+                thrust::raw_pointer_cast(sourcea_gpu_.data()), // sourcea1 (dag)
+                thrust::raw_pointer_cast(targeta_gpu_.data()), // targeta1
+                thrust::raw_pointer_cast(paritya_gpu_real_.data()), // paritya1
+                thrust::raw_pointer_cast(paritya_undag_gpu_real_.data()), // paritya2
+                thrust::raw_pointer_cast(sourceb_gpu_.data()),  // sourceb1 (dag)
+                thrust::raw_pointer_cast(targetb_gpu_.data()), // targetb1
+                thrust::raw_pointer_cast(parityb_gpu_real_.data()), // parityb1
+                thrust::raw_pointer_cast(parityb_undag_gpu_real_.data()), // parityb2
+                counta1, // nalpha
+                countb1, // nbeta
+                nbeta_strs_,
+                factor.real(),
+                acc_coeff1.real(),
+                acc_coeff2.real());
+
+            timer_.acc_end("===>hard nbody given kernel - general case");
+
+            cudaError_t error2 = cudaGetLastError();
+                
+            if (error2 != cudaSuccess) {
+                std::cerr << "CUDA error: " << cudaGetErrorString(error2) << std::endl;
+                    throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
+                }
+
+            timer_.acc_end("===>hard nbody given kernel");
+
         } else {
             throw std::runtime_error("evolve_individual_nbody_hard_cpu_v5: Unsupported data_type_.");
         }

@@ -863,7 +863,7 @@ void FCIComputer::evolve_individual_nbody_hard(
     std::vector<int> numberb_dagworkb(numberb.begin(), numberb.end());
     numberb_dagworkb.insert(numberb_dagworkb.end(), dagworkb.begin(), dagworkb.end());
 
-    std::cout << "\n Cout Before Cos Application \n" << Cout.str(true, true) << std::endl;
+    // std::cout << "\n Cout Before Cos Application \n" << Cout.str(true, true) << std::endl;
 
     apply_cos_inplace(
         time,
@@ -918,7 +918,7 @@ void FCIComputer::evolve_individual_nbody_hard(
         creb,
         annb);
 
-    std::cout << "\n Cout After Second Accumulate Application \n" << Cout.str(true, true) << std::endl;
+    // std::cout << "\n Cout After Second Accumulate Application \n" << Cout.str(true, true) << std::endl;
 }
 
 void FCIComputer::evolve_individual_nbody(
