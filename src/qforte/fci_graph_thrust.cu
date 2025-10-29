@@ -257,76 +257,7 @@ void FCIGraphThrust::make_mapping_each(
     timer_.acc_record("make_mapping_each");
 }
 
-void FCIGraphThrust::make_mapping_each_gpu(
-    bool alpha, 
-    const std::vector<int>& dag, 
-    const std::vector<int>& undag,
-    int* count,
-    thrust::device_vector<int>& source,
-    thrust::device_vector<int>& target,
-    thrust::device_vector<cuDoubleComplex>& parity) 
-{
-    timer_.reset();
-
-    // Get the appropriate strings and mappings based on alpha/beta
-    std::vector<uint64_t> strings;
-    int length;
-    
-    if (alpha) {
-        strings = get_astr();
-        length = lena_;
-    } else {
-        strings = get_bstr();
-        length = lenb_;
-    }
-
-    // For now convert all to device vectors (eventually may want to change to init as device vectors)
-    thrust::device_vector<uint64_t> d_strings(strings.begin(), strings.end());
-    thrust::device_vector<int> d_dag(dag.begin(), dag.end());
-    thrust::device_vector<int> d_undag(undag.begin(), undag.end());
-
-    int dag_size = d_dag.size();
-    int undag_size = d_undag.size();
-
-    // Create masks for dag and undag operators
-    uint64_t dag_mask = 0;
-    uint64_t undag_mask = 0;
-
-    for (uint64_t i : dag) {
-        if (std::find(undag.begin(), undag.end(), i) == undag.end()) {
-            dag_mask = set_bit(dag_mask, i);
-        }
-    }
-
-    for (uint64_t i : undag) { 
-        undag_mask = set_bit(undag_mask, i); 
-    }
-
-    // Device counter for valid results
-    thrust::device_vector<int> d_count(1, 0);  // Initialize to 0
-
-    make_mapping_each_kernel_wrapper(
-        thrust::raw_pointer_cast(d_strings.data()),
-        thrust::raw_pointer_cast(d_dag.data()),
-        thrust::raw_pointer_cast(d_undag.data()),
-        dag_size,
-        undag_size,
-        dag_mask,
-        undag_mask,
-        length,
-        thrust::raw_pointer_cast(source.data()),
-        thrust::raw_pointer_cast(target.data()),
-        thrust::raw_pointer_cast(parity.data()),
-        thrust::raw_pointer_cast(d_count.data())
-    );
-
-    // Retrieve the count from the device
-    *count = d_count[0];
-
-    timer_.acc_record("make_mapping_each");
-}
-
-void FCIGraphThrust::make_mapping_each_gpu_v2(
+void FCIGraphThrust::make_mapping_each_otf_gpu_complex(
     bool alpha, 
     const std::vector<int>& dag, 
     const std::vector<int>& undag,
@@ -399,7 +330,7 @@ void FCIGraphThrust::make_mapping_each_gpu_v2(
     timer_.acc_record("make_mapping_each");
 }
 
-void FCIGraphThrust::make_mapping_each_gpu_v2_real(
+void FCIGraphThrust::make_mapping_each_otf_gpu_real(
     bool alpha, 
     const std::vector<int>& dag, 
     const std::vector<int>& undag,
@@ -475,7 +406,7 @@ void FCIGraphThrust::make_mapping_each_gpu_v2_real(
     timer_.acc_record("make_mapping_each_real");
 }
 
-void FCIGraphThrust::make_mapping_each_gpu_v3(
+void FCIGraphThrust::make_mapping_each_pre_gpu_complex(
     bool alpha, 
     const std::vector<int>& dag, 
     const std::vector<int>& undag,
@@ -547,7 +478,7 @@ void FCIGraphThrust::make_mapping_each_gpu_v3(
     terms_parity_gpu.emplace_back(parity_gpu);
 }
 
-void FCIGraphThrust::make_mapping_each_gpu_v4(
+void FCIGraphThrust::make_mapping_each_pre_gpu_real(
     bool alpha,
     const std::vector<int>& dag,
     const std::vector<int>& undag,
