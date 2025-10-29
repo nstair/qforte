@@ -49,15 +49,6 @@ void to_gpu();
 
 void to_cpu();
 
-// The next four funcitons are just for testing purposes
-void complex_to_soa_gpu();
-
-void soa_to_complex_gpu();
-
-void complex_to_soa_cpu();
-
-void soa_to_complex_cpu();
-
 bool on_gpu() const { return on_gpu_; }
 
 void add(const TensorThrust&);
@@ -101,17 +92,10 @@ void complex_error() const;
 // Throw if on_complex_ is false
 void on_complex_error() const;
 
-// Throw if on_complex_ is true
-void on_soa_error() const;
+void on_real_error() const;
 
 // Throw if not "real" data type
 void real_error() const;
-
-// Throw if not "soa" data type
-void soa_error() const;
-
-// Throw if not "all" data type
-void all_error() const;
 
 // Throw if this data type is not the same as other's
 void data_type_error(const std::string&) const;
@@ -392,9 +376,8 @@ private:
 
 std::string name_;
 
-// Whether the data is real, complex or stored in structure of arrays (SoA) format
-// can be "complex" or "real" or "soa" or "all"
-// "all" should only be used for testing purposes
+// Whether the data is real or complex
+// can be "complex" or "real"
 std::string data_type_;
 
 std::vector<size_t> shape_;
@@ -417,16 +400,9 @@ thrust::host_vector<double> h_re_data_;
 // The real device side data using thrust
 thrust::device_vector<double> d_re_data_;
 
-// The imaginary host side data using thrust
-thrust::host_vector<double> h_im_data_;
-
-// The imaginary device side data using thrust
-thrust::device_vector<double> d_im_data_;
-
 // Whether the data is currently on the GPU
 bool on_gpu_;
 
-// If using all, is data complex or soa?
 bool on_complex_;
 
 // => Ed's special total memory thing <= //

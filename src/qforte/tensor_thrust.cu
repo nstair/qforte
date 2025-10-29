@@ -176,13 +176,6 @@ TensorThrust::TensorThrust(
         d_re_data_.resize(size_, 0.0);
 
         on_complex_ = false;
-
-    } else if (data_type_ == "soa"){
-
-        h_re_data_.resize(size_, 0.0);
-        d_re_data_.resize(size_, 0.0);
-        h_im_data_.resize(size_, 0.0);
-        d_im_data_.resize(size_, 0.0);
         
     } else if (data_type_ == "complex"){
         
@@ -193,22 +186,8 @@ TensorThrust::TensorThrust(
         // If complex, on_complex_ is true ALWYAYS
         on_complex_ = true;
 
-    }  else if (data_type_ == "all"){
-
-        h_re_data_.resize(size_, 0.0);
-        d_re_data_.resize(size_, 0.0);
-        h_im_data_.resize(size_, 0.0);
-        d_im_data_.resize(size_, 0.0);
-  
-        h_data_.resize(size_, std::complex<double>(0.0, 0.0));
-        d_data_.resize(size_, make_cuDoubleComplex(0.0, 0.0));
-
-        // If all, on_complex_ can be true or false, start with true
-        // used when moving to/from complex to soa
-        on_complex_ = true;
-
     } else {
-        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex', 'real', 'soa' or 'all'.");
+        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex' or 'real'.");
     }
     
     initialized_ = true;
@@ -229,11 +208,9 @@ TensorThrust::TensorThrust()
     // Initialize device vector
     d_data_.resize(size_, make_cuDoubleComplex(0.0, 0.0));
 
-    // Initialize SoA vectors, trivial overhaed for now...
+    // Initialize real vectors, trivial overhaed for now...
     h_re_data_.resize(size_, 0.0);
     d_re_data_.resize(size_, 0.0);
-    h_im_data_.resize(size_, 0.0);
-    d_im_data_.resize(size_, 0.0);
     
     total_memory__ += h_data_.size() * sizeof(std::complex<double>);
     on_gpu_ = false;
@@ -275,26 +252,8 @@ void TensorThrust::to_gpu()
         // Copy real data to device
         thrust::copy(h_re_data_.begin(), h_re_data_.end(), d_re_data_.begin());
 
-    } else if (data_type_ == "soa"){
-        // Copy SoA data to device
-        thrust::copy(h_re_data_.begin(), h_re_data_.end(), d_re_data_.begin());
-        thrust::copy(h_im_data_.begin(), h_im_data_.end(), d_im_data_.begin());
-
-    } else if (data_type_ == "all"){
-        
-        // Manual conversion on CPU then copy to GPU
-        std::vector<cuDoubleComplex> temp_gpu_data(size_);
-        for (size_t i = 0; i < size_; i++) {
-            temp_gpu_data[i] = make_cuDoubleComplex(h_data_[i].real(), h_data_[i].imag());
-        }
-        
-        // Copy converted data to device
-        thrust::copy(temp_gpu_data.begin(), temp_gpu_data.end(), d_data_.begin());
-
-        thrust::copy(h_re_data_.begin(), h_re_data_.end(), d_re_data_.begin());
-        thrust::copy(h_im_data_.begin(), h_im_data_.end(), d_im_data_.begin());
     } else {
-        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex', 'real', 'soa' or 'all'.");
+        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex' or 'real'.");
     }
 
     on_gpu_ = true;
@@ -308,16 +267,6 @@ void TensorThrust::to_cpu()
         std::cerr << "Tensor not initialized" << std::endl;
         return;
     }
-    
-    // // Copy from device to temporary CPU vector
-    // std::vector<cuDoubleComplex> temp_cpu_data(size_);
-    // thrust::copy(d_data_.begin(), d_data_.end(), temp_cpu_data.begin());
-    
-    // // Manual conversion on CPU
-    // for (size_t i = 0; i < size_; i++) {
-    //     h_data_[i] = std::complex<double>(cuCreal(temp_cpu_data[i]), cuCimag(temp_cpu_data[i]));
-    // }
-
 
     if(data_type_ == "complex"){
         // Copy from device to temporary CPU vector
@@ -334,76 +283,11 @@ void TensorThrust::to_cpu()
         // Copy real data to device
         thrust::copy(d_re_data_.begin(), d_re_data_.end(), h_re_data_.begin());
         
-    // REMOVE
-    // } else if (data_type_ == "soa"){
-    //     // Copy SoA data to device
-    //     thrust::copy(d_re_data_.begin(), d_re_data_.end(), h_re_data_.begin());
-    //     thrust::copy(d_im_data_.begin(), d_im_data_.end(), h_im_data_.begin());
-        
-
-    // } else if (data_type_ == "all"){
-    //     thrust::copy(d_re_data_.begin(), d_re_data_.end(), h_re_data_.begin());
-    //     thrust::copy(d_im_data_.begin(), d_im_data_.end(), h_im_data_.begin());
-
-    //     // Copy from device to temporary CPU vector
-    //     std::vector<cuDoubleComplex> temp_cpu_data(size_);
-    //     thrust::copy(d_data_.begin(), d_data_.end(), temp_cpu_data.begin());
-        
-    //     // Manual conversion on CPU
-    //     for (size_t i = 0; i < size_; i++) {
-    //         h_data_[i] = std::complex<double>(cuCreal(temp_cpu_data[i]), cuCimag(temp_cpu_data[i]));
-    //     }
-        
     } else {
-        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex', 'real', 'soa' or 'all'.");
+        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex' or 'real'.");
     }
 
     on_gpu_ = false;
-}
-
-void TensorThrust::complex_to_soa_gpu()
-{
-    gpu_error();
-    all_error();
-    on_complex_error();
-
-    thrust::transform(thrust::device, d_data_.begin(), d_data_.end(), d_re_data_.begin(), real_part{});
-    thrust::transform(thrust::device, d_data_.begin(), d_data_.end(), d_im_data_.begin(), imag_part{});
-
-    on_complex_ = false;
-}
-
-void TensorThrust::soa_to_complex_gpu()
-{
-    gpu_error();
-    all_error();
-    on_soa_error();
-
-    // Combine SoA (double,double) -> interleaved cuDoubleComplex on device
-    thrust::transform(thrust::device, d_re_data_.begin(), d_re_data_.end(), d_im_data_.begin(), d_data_.begin(), make_complex{});
-
-    on_complex_ = true;
-}
-
-void TensorThrust::complex_to_soa_cpu()
-{
-    all_error();
-    on_complex_error();  // ensures we're currently in complex mode
-
-    thrust::transform(thrust::host, h_data_.begin(), h_data_.end(), h_re_data_.begin(), real_part_cpu{});
-    thrust::transform(thrust::host, h_data_.begin(), h_data_.end(), h_im_data_.begin(), imag_part_cpu{});
-
-    on_complex_ = false; // now SoA-active ("complex") on host
-}
-
-void TensorThrust::soa_to_complex_cpu()
-{
-    all_error();
-    on_soa_error();  // ensures we're currently in soa mode
-
-    thrust::transform(thrust::host, h_re_data_.begin(), h_re_data_.end(), h_im_data_.begin(), h_data_.begin(), make_complex_cpu{});
-
-    on_complex_ = true; // now AoS complex-active on host
 }
 
 void TensorThrust::add(const TensorThrust& other) {
@@ -475,7 +359,7 @@ void TensorThrust::cpu_error() const {
 }
 
 void TensorThrust::complex_error() const {
-    if (data_type_ == "real" or data_type_ == "soa") {
+    if (data_type_ == "real") {
         throw std::runtime_error("Tensor data type is not 'complex' but only complex operation is supported currently.");
     }
 
@@ -491,27 +375,15 @@ void TensorThrust::on_complex_error() const {
     }
 }
 
-void TensorThrust::on_soa_error() const {
-    if (on_complex_ == true) {
-        throw std::runtime_error("Tensor data is not 'on soa' but needs to be for this operation.");
+void TensorThrust::on_real_error() const {
+    if (on_complex_ != false) {
+        throw std::runtime_error("Tensor data is not 'on real' but needs to be for this operation.");
     }
 }
 
 void TensorThrust::real_error() const {
     if (data_type_ != "real") {
         throw std::runtime_error("Tensor data type is not 'real' but only real operation is supported currently.");
-    }
-}
-
-void TensorThrust::soa_error() const {
-    if (data_type_ != "soa") {
-        throw std::runtime_error("Tensor data type is not 'soa' but only soa operation is supported currently.");
-    }
-}
-
-void TensorThrust::all_error() const {
-    if (data_type_ != "all") {
-        throw std::runtime_error("Tensor data type is not 'all' but only all operation is supported currently.");
     }
 }
 
@@ -560,15 +432,8 @@ thrust::host_vector<std::complex<double>>& TensorThrust::h_data()
 const thrust::host_vector<double>& TensorThrust::read_h_re_data() const 
 {
     cpu_error();
-    on_soa_error();
+    on_real_error();
     return h_re_data_;
-}
-
-const thrust::host_vector<double>& TensorThrust::read_h_im_data() const 
-{
-    cpu_error();
-    on_soa_error();
-    return h_im_data_;
 }
 
 const thrust::host_vector<std::complex<double>>& TensorThrust::read_h_data() const 
@@ -588,15 +453,8 @@ thrust::device_vector<cuDoubleComplex>& TensorThrust::d_data()
 thrust::device_vector<double>& TensorThrust::d_re_data() 
 {
     gpu_error();
-    on_soa_error();
+    on_real_error();
     return d_re_data_;
-}
-
-thrust::device_vector<double>& TensorThrust::d_im_data() 
-{
-    gpu_error();
-    on_soa_error();
-    return d_im_data_;
 }
 
 const thrust::device_vector<cuDoubleComplex>& TensorThrust::read_d_data() const 
@@ -609,15 +467,8 @@ const thrust::device_vector<cuDoubleComplex>& TensorThrust::read_d_data() const
 const thrust::device_vector<double>& TensorThrust::read_d_re_data() const 
 {
     gpu_error();
-    on_soa_error();
+    on_real_error();
     return d_re_data_;
-}
-
-const thrust::device_vector<double>& TensorThrust::read_d_im_data() const 
-{
-    gpu_error();
-    on_soa_error();
-    return d_im_data_;
 }
 
 void TensorThrust::set(
@@ -743,13 +594,6 @@ void TensorThrust::zero_with_shape(
         d_re_data_.resize(size_, 0.0);
 
         on_complex_ = false;
-
-    } else if (data_type_ == "soa"){
-
-        h_re_data_.resize(size_, 0.0);
-        d_re_data_.resize(size_, 0.0);
-        h_im_data_.resize(size_, 0.0);
-        d_im_data_.resize(size_, 0.0);
         
     } else if (data_type_ == "complex"){
         
@@ -759,20 +603,8 @@ void TensorThrust::zero_with_shape(
 
         on_complex_ = true;
 
-    }  else if (data_type_ == "all"){
-
-        h_re_data_.resize(size_, 0.0);
-        d_re_data_.resize(size_, 0.0);
-        h_im_data_.resize(size_, 0.0);
-        d_im_data_.resize(size_, 0.0);
-  
-        h_data_.resize(size_, std::complex<double>(0.0, 0.0));
-        d_data_.resize(size_, make_cuDoubleComplex(0.0, 0.0));
-
-        on_complex_ = true;
-
     } else {
-        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex', 'real', 'soa' or 'all'.");
+        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex' or 'real'.");
     }
     
     // Resize and zero the vectors
@@ -980,18 +812,9 @@ void TensorThrust::copy_in(const TensorThrust& other)
 
     } else if (data_type_ == "real"){
         thrust::copy(other.h_re_data_.begin(), other.h_re_data_.end(), h_re_data_.begin());
-
-    } else if (data_type_ == "soa"){
-        thrust::copy(other.h_re_data_.begin(), other.h_re_data_.end(), h_re_data_.begin());
-        thrust::copy(other.h_im_data_.begin(), other.h_im_data_.end(), h_im_data_.begin());    
-
-    } else if (data_type_ == "all"){
-        thrust::copy(other.h_data_.begin(), other.h_data_.end(), h_data_.begin()); 
-        thrust::copy(other.h_re_data_.begin(), other.h_re_data_.end(), h_re_data_.begin());
-        thrust::copy(other.h_im_data_.begin(), other.h_im_data_.end(), h_im_data_.begin());
         
     } else {
-        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex', 'real', 'soa' or 'all'.");
+        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex' or 'real'.");
     }
 
 }
@@ -1008,18 +831,9 @@ void TensorThrust::copy_in_gpu(const TensorThrust& other)
 
     } else if (data_type_ == "real"){
         thrust::copy(thrust::device, other.d_re_data_.begin(), other.d_re_data_.end(), d_re_data_.begin());
-
-    } else if (data_type_ == "soa"){
-        thrust::copy(thrust::device, other.d_re_data_.begin(), other.d_re_data_.end(), d_re_data_.begin());
-        thrust::copy(thrust::device, other.d_im_data_.begin(), other.d_im_data_.end(), d_im_data_.begin());    
-
-    } else if (data_type_ == "all"){
-        thrust::copy(thrust::device, other.d_data_.begin(), other.d_data_.end(), d_data_.begin()); 
-        thrust::copy(thrust::device, other.d_re_data_.begin(), other.d_re_data_.end(), d_re_data_.begin());
-        thrust::copy(thrust::device, other.d_im_data_.begin(), other.d_im_data_.end(), d_im_data_.begin());
         
     } else {
-        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex', 'real', 'soa' or 'all'.");
+        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex' or 'real'.");
     }
 
     // thrust::copy(thrust::device, other.d_data_.begin(), other.d_data_.end(), d_data_.begin());
