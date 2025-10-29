@@ -15,8 +15,8 @@ geom = [
     ('H', (0., 0., 8.0)),
     ('H', (0., 0., 9.0)), 
     ('H', (0., 0.,10.0)),
-    ('H', (0., 0.,11.0)),
-    ('H', (0., 0.,12.0)),
+    # ('H', (0., 0.,11.0)),
+    # ('H', (0., 0.,12.0)),
     # ('H', (0., 0.,13.0)),
     # ('H', (0., 0.,14.0)),
     ]
@@ -141,22 +141,14 @@ for _ in range(N):
 
     timer.reset()
 
-    # fci_comp_thrust.evolve_pool_trotter_gpu_v2(
-    #     hermitian_pairs,
-    #     time,
-    #     r,
-    #     order,
-    #     antiherm=False,
-    #     adjoint=False)
-
-    fci_comp_thrust.evolve_pool_trotter_gpu_v5(
+    fci_comp_thrust.evolve_pool_trotter_gpu(
         hp_gpu,
         time,
         r,
         order,
         antiherm=False,
         adjoint=False)
-    
+
     timer.record('trotter fci_comp_thrust')
 
     # print(fci_comp2)
