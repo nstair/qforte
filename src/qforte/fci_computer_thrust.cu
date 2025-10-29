@@ -758,7 +758,7 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu(
 /// NOTE: Cin should be const, changing for now
 /// NOTE: Cin is actually unused, should not be an arg.
 template<class Precomp>
-void FCIComputerThrust::evolve_individual_nbody_easy_cpu_v4(
+void FCIComputerThrust::evolve_individual_nbody_easy_gpu(
     const std::complex<double> time,
     const std::complex<double> coeff,
     TensorThrust& Cout,
@@ -786,7 +786,7 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu_v4(
             }
         };
         if (!runtime_matches_compiletime()) {
-            throw std::runtime_error("evolve_individual_nbody_easy_cpu_v4: data_type_/Precomp mismatch.");
+            throw std::runtime_error("evolve_individual_nbody_easy_gpu: data_type_/Precomp mismatch.");
         }
 
         timer_.acc_begin("==>easy: scale elements kernel (precomp)");
@@ -820,7 +820,7 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu_v4(
                 factor_gpu.x); // Only real component for real data
                 
         } else {
-            throw std::runtime_error("evolve_individual_nbody_easy_cpu_v4: Unsupported Precomp type.");
+            throw std::runtime_error("evolve_individual_nbody_easy_gpu: Unsupported Precomp type.");
         }
 
         timer_.acc_end("==>easy: scale elements kernel (precomp)");
@@ -979,21 +979,20 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
 
         if(std::get<6>(*precomp).size() != 0 and std::get<8>(*precomp).size() != 0) {
 
-            // Call the GPU kernel using thrust raw pointers directly
-            // apply_individual_nbody1_accumulate_wrapper(
-            //     cu_coeff_dag, 
-            //     thrust::raw_pointer_cast(Cin.read_d_data().data()), 
-            //     thrust::raw_pointer_cast(Cout.d_data().data()), 
-            //     thrust::raw_pointer_cast(std::get<6>(*precomp).data()),
-            //     thrust::raw_pointer_cast(std::get<10>(*precomp).data()),
-            //     thrust::raw_pointer_cast(std::get<14>(*precomp).data()),
-            //     thrust::raw_pointer_cast(std::get<8>(*precomp).data()),
-            //     thrust::raw_pointer_cast(std::get<12>(*precomp).data()),
-            //     thrust::raw_pointer_cast(std::get<16>(*precomp).data()),
-            //     nbeta_strs_,
-            //     std::get<6>(*precomp).size(),
-            //     std::get<8>(*precomp).size(),
-            //     Cin.size() * sizeof(cuDoubleComplex));
+            apply_individual_nbody1_accumulate_wrapper(
+                cu_coeff_dag, 
+                thrust::raw_pointer_cast(Cin.read_d_data().data()), 
+                thrust::raw_pointer_cast(Cout.d_data().data()), 
+                thrust::raw_pointer_cast(std::get<6>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<10>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<14>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<8>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<12>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<16>(*precomp).data()),
+                nbeta_strs_,
+                std::get<6>(*precomp).size(),
+                std::get<8>(*precomp).size(),
+                Cin.size() * sizeof(cuDoubleComplex));
         }
 
         cudaError_t error1 = cudaGetLastError();
@@ -1016,21 +1015,20 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
 
         if(std::get<7>(*precomp).size() != 0 and std::get<7>(*precomp).size() != 0) {
 
-            // Call the GPU kernel using thrust raw pointers directly
-            // apply_individual_nbody1_accumulate_wrapper(
-            //     cu_coeff_undag, 
-            //     thrust::raw_pointer_cast(Cin.read_d_data().data()), 
-            //     thrust::raw_pointer_cast(Cout.d_data().data()), 
-            //     thrust::raw_pointer_cast(std::get<7>(*precomp).data()),
-            //     thrust::raw_pointer_cast(std::get<11>(*precomp).data()),
-            //     thrust::raw_pointer_cast(std::get<15>(*precomp).data()),
-            //     thrust::raw_pointer_cast(std::get<9>(*precomp).data()),
-            //     thrust::raw_pointer_cast(std::get<13>(*precomp).data()),
-            //     thrust::raw_pointer_cast(std::get<17>(*precomp).data()),
-            //     nbeta_strs_,
-            //     std::get<7>(*precomp).size(),
-            //     std::get<9>(*precomp).size(),
-            //     Cin.size() * sizeof(cuDoubleComplex));
+            apply_individual_nbody1_accumulate_wrapper(
+                cu_coeff_undag, 
+                thrust::raw_pointer_cast(Cin.read_d_data().data()), 
+                thrust::raw_pointer_cast(Cout.d_data().data()), 
+                thrust::raw_pointer_cast(std::get<7>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<11>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<15>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<9>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<13>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<17>(*precomp).data()),
+                nbeta_strs_,
+                std::get<7>(*precomp).size(),
+                std::get<9>(*precomp).size(),
+                Cin.size() * sizeof(cuDoubleComplex));
         }
 
         
@@ -1105,146 +1103,8 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
     // std::cout << "\n Cout After Second Accumulate Application Thrust \n" << Cout.str(true, true) << std::endl;
 }
 
-/// NOTE: Precomp tuple mapping:
-/// 0: inner_coeffs_[mu]
-/// 1: outer_coeffs_[mu]
-/// 2: terms_scale_indsa_dag_gpu_[mu]
-/// 3: terms_scale_indsa_undag_gpu_[mu]
-/// 4: terms_scale_indsb_dag_gpu_[mu]
-/// 5: terms_scale_indsb_undag_gpu_[mu]
-/// 6: terms_sourcea_dag_gpu_[mu]
-/// 7: terms_sourcea_undag_gpu_[mu]
-/// 8: terms_sourceb_dag_gpu_[mu]
-/// 9: terms_sourceb_undag_gpu_[mu]
-/// 10: terms_targeta_dag_gpu_[mu]
-/// 11: terms_targeta_undag_gpu_[mu]
-/// 12: terms_targetb_dag_gpu_[mu]
-/// 13: terms_targetb_undag_gpu_[mu]
-/// 14: terms_paritya_dag_gpu_[mu]
-/// 15: terms_paritya_undag_gpu_[mu]
-/// 16: terms_parityb_dag_gpu_[mu]
-/// 17: terms_parityb_undag_gpu_[mu]
-
-/// NOTE: Cin should be const, changing for now
-void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v4(
-    const std::complex<double> time,
-    const std::complex<double> coeff,
-    TensorThrust& Cout,
-    const std::vector<int>& crea,
-    const std::vector<int>& anna,
-    const std::vector<int>& creb,
-    const std::vector<int>& annb,
-    const PrecompTuple* precomp)
-{
-    /// TODO: Implement seperate CPU and GPU versions of this function
-    // cpu_error();
-
-    timer_.acc_begin("==>hard: setup");
-    std::vector<int> dagworka(crea);
-    std::vector<int> dagworkb(creb);
-    std::vector<int> undagworka(anna);
-    std::vector<int> undagworkb(annb);
-    std::vector<int> numbera;
-    std::vector<int> numberb;
-    
-    int parity = 0;
-    parity += isolate_number_operators_cpu(
-        crea,
-        anna,
-        dagworka,
-        undagworka,
-        numbera);
-
-    parity += isolate_number_operators_cpu(
-        creb,
-        annb,
-        dagworkb,
-        undagworkb,
-        numberb);
-
-    std::complex<double> ncoeff = coeff * std::pow(-1.0, parity);
-    std::complex<double> absol = std::abs(ncoeff);
-    std::complex<double> sinfactor = std::sin(time * absol) / absol;
-
-    int phase = std::pow(-1, (crea.size() + anna.size()) * (creb.size() + annb.size()));
-    std::complex<double> work_cof = std::conj(coeff) * static_cast<double>(phase) * std::complex<double>(0.0, -1.0);
-
-    const std::complex<double> cabs = std::abs(ncoeff);
-    const std::complex<double> factor = std::cos(time * cabs);
-
-    std::complex<double> acc_coeff1 = work_cof * sinfactor;
-    std::complex<double> acc_coeff2 = coeff * std::complex<double>(0.0, -1.0) * sinfactor;
-
-    // thrust::device_vector<int> *sourcea1 = std::get<6>(*precomp);
-    // thrust::device_vector<int> *sourcea2 = std::get<7>(*precomp);
-    // thrust::device_vector<int> *sourceb1 = std::get<8>(*precomp);
-    // thrust::device_vector<int> *sourceb2 = std::get<9>(*precomp);
-    // thrust::device_vector<int> *targeta1 = std::get<10>(*precomp);
-    // thrust::device_vector<int> *targeta2 = std::get<11>(*precomp);
-    // thrust::device_vector<int> *targetb1 = std::get<12>(*precomp);
-    // thrust::device_vector<int> *targetb2 = std::get<13>(*precomp);
-
-    timer_.acc_end("==>hard: setup");
-
-    // timer_.acc_begin("===>hard: if stmts");
-
-    if(precomp){
-
-        // if (!sourcea1->empty() && !sourceb1->empty() &&
-        //     sourcea1->size() == targeta1->size() &&
-        //     sourceb1->size() == targetb1->size() &&
-        //     sourcea1->size() == sourcea2->size() && targeta1->size() == sourcea2->size() &&
-        //     sourceb1->size() == sourceb2->size() && targetb1->size() == sourceb2->size()) {
-
-        // // (Optional) check the expected pairings; if you want hard asserts, replace with throws.
-        // const bool pairA_ok = std::equal(sourcea1->begin(), sourcea1->end(), targeta2->begin())
-        //                 && std::equal(sourcea2->begin(), sourcea2->end(), targeta1->begin());
-        // const bool pairB_ok = std::equal(sourceb1->begin(), sourceb1->end(), targetb2->begin())
-        //                 && std::equal(sourceb2->begin(), sourceb2->end(), targetb1->begin());
-
-            // if (pairA_ok && pairB_ok) {
-
-                // timer_.acc_end("===>hard: if stmts");
-
-                timer_.acc_begin("===>hard nbody given kernel");
-
-                // inplace_givens_update_wrapper(
-                //     thrust::raw_pointer_cast(Cout.d_data().data()),   // Cout
-                //     thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
-                //     thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
-                //     thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
-                //     thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
-                //     thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // const int* sourceb1 (dag)
-                //     thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // const int* targetb1
-                //     thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // const cuDoubleComplex* parityb1
-                //     thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // const cuDoubleComplex* parityb2
-                //     std::get<6>(*precomp).size(), // int na
-                //     std::get<8>(*precomp).size(), // int nb
-                //     nbeta_strs_,                  // int nbeta_strs_
-                //     make_cuDoubleComplex(factor.real(), factor.imag()), // cuDoubleComplex cos_factor
-                //     make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
-                //     make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
-
-                cudaError_t error2 = cudaGetLastError();
-                if (error2 != cudaSuccess) {
-                    std::cerr << "CUDA error: " << cudaGetErrorString(error2) << std::endl;
-                    throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
-                }
-
-                timer_.acc_end("===>hard nbody given kernel");
-          //  }
-        //}
-            
-    } else {
-        // just throw an error for now
-        throw std::invalid_argument("Precomputed data must be provided for v4 hard n-body evolution.");
-    }
-
-    // std::cout << "\n Cout After Second Accumulate Application Thrust \n" << Cout.str(true, true) << std::endl;
-}
-
 template<class Precomp>
-void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
+void FCIComputerThrust::evolve_individual_nbody_hard_gpu(
     const std::complex<double> time,
     const std::complex<double> coeff,
     TensorThrust& Cout,
@@ -1306,7 +1166,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
             }
         };
         if (!runtime_matches_compiletime()) {
-            throw std::runtime_error("evolve_individual_nbody_hard_cpu_v5: data_type_/Precomp mismatch.");
+            throw std::runtime_error("evolve_individual_nbody_hard_gpu: data_type_/Precomp mismatch.");
         }
 
         // DEBUG: Source Target Parity vectors 
@@ -1501,7 +1361,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
             timer_.acc_end("===>hard nbody given kernel");
 
         } else {
-            throw std::runtime_error("evolve_individual_nbody_hard_cpu_v5: Unsupported Precomp type.");
+            throw std::runtime_error("evolve_individual_nbody_hard_gpu: Unsupported Precomp type.");
         }
 
         // std::cout << "State Vec After: \n" << Cout.str(true, true) << std::endl;
@@ -1798,7 +1658,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu_v5(
             timer_.acc_end("===>hard nbody given kernel");
 
         } else {
-            throw std::runtime_error("evolve_individual_nbody_hard_cpu_v5: Unsupported data_type_.");
+            throw std::runtime_error("evolve_individual_nbody_hard_gpu: Unsupported data_type_.");
         }
     }
 }
@@ -1915,116 +1775,8 @@ void FCIComputerThrust::evolve_individual_nbody_cpu(
 }
 
 /// NOTE: Cin should be const, changing for now
-void FCIComputerThrust::evolve_individual_nbody_cpu_v4(
-    const std::complex<double> time,
-    const SQOperator& sqop,
-    TensorThrust& Cout,
-    const bool antiherm,
-    const bool adjoint,
-    const PrecompTuple* precomp)
-{
-    /// TODO: Implement seperate CPU and GPU versions of this function
-    // cpu_error();
-
-    if (sqop.terms().size() != 2) {
-        std::cout << "This sqop has " << sqop.terms().size() << " terms." << std::endl;
-        throw std::invalid_argument("Individual n-body code is called with multiple terms");
-    }
-
-    /// NICK: TODO, implement a hermitian check, at least for two term SQOperators
-    // sqop.hermitian_check();
-
-    timer_.acc_begin("=>evolve_individual_nbody_cpu(setup)");
-
-    auto term = sqop.terms()[0];
-
-    if(std::abs(std::get<0>(term)) < compute_threshold_){
-        return;
-    }
-
-    if(adjoint){
-        std::get<0>(term) *= -1.0;
-    }
-
-    if(antiherm){
-        std::complex<double> onei(0.0, 1.0);
-        std::get<0>(term) *= onei;
-    }
-
-    std::vector<int> crea;
-    std::vector<int> anna;
-    std::vector<int> creb;
-    std::vector<int> annb;
-
-    for(size_t i = 0; i < std::get<1>(term).size(); i++){
-        if(std::get<1>(term)[i]%2 == 0){
-            crea.push_back(std::floor(std::get<1>(term)[i] / 2));
-        } else {
-            creb.push_back(std::floor(std::get<1>(term)[i] / 2));
-        }
-    }
-
-    for(size_t i = 0; i < std::get<2>(term).size(); i++){
-        if(std::get<2>(term)[i]%2 == 0){
-            anna.push_back(std::floor(std::get<2>(term)[i] / 2));
-        } else {
-            annb.push_back(std::floor(std::get<2>(term)[i] / 2));
-        }
-    }
-
-    std::vector<size_t> ops1(std::get<1>(term));
-    std::vector<size_t> ops2(std::get<2>(term));
-    ops1.insert(ops1.end(), ops2.begin(), ops2.end());
-
-    int nswaps = parity_sort(ops1);
-
-    std::complex<double> parity = std::pow(-1, nswaps);
-
-    timer_.acc_end("=>evolve_individual_nbody_cpu(setup)");
-
-    if (crea == anna && creb == annb) {
-        // std::cout << "Made it to easy" << std::endl;
-
-        timer_.acc_begin("=>evolve_individual_nbody_easy_cpu_v4");
-
-        evolve_individual_nbody_easy_cpu_v4(
-            time,
-            parity * std::get<0>(term), 
-            Cout,
-            crea,
-            anna, 
-            creb,
-            annb,
-            precomp);
-
-        timer_.acc_end("=>evolve_individual_nbody_easy_cpu_v4");
-
-
-    } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
-        // std::cout << "Made it to hard" << std::endl;
-
-        timer_.acc_begin("=>evolve_individual_nbody_hard_cpu_v4");
-
-        evolve_individual_nbody_hard_cpu_v4(
-            time,
-            parity * std::get<0>(term),
-            Cout,
-            crea,
-            anna, 
-            creb,
-            annb,
-            precomp);
-
-        timer_.acc_end("=>evolve_individual_nbody_hard_cpu_v4");
-
-    } else {
-        throw std::invalid_argument("Evolved state must remain in spin and particle-number symmetry sector");
-    }
-}
-
-/// NOTE: Cin should be const, changing for now
 template<class Precomp>
-void FCIComputerThrust::evolve_individual_nbody_cpu_v5(
+void FCIComputerThrust::evolve_individual_nbody_gpu(
     const std::complex<double> time,
     const SQOperator& sqop,
     TensorThrust& Cout,
@@ -2033,7 +1785,7 @@ void FCIComputerThrust::evolve_individual_nbody_cpu_v5(
     const Precomp* precomp)
 {
 
-    // std::cout << "Entering evolve_individual_nbody_cpu_v5" << std::endl;
+    // std::cout << "Entering evolve_individual_nbody_gpu" << std::endl;
 
     /// TODO: Implement seperate CPU and GPU versions of this function
     // cpu_error();
@@ -2103,9 +1855,9 @@ void FCIComputerThrust::evolve_individual_nbody_cpu_v5(
         // // DEBUG: Optional: dump state just before
         // dump_tensor("  EASY: before", Cout);
 
-        timer_.acc_begin("=>evolve_individual_nbody_easy_cpu_v4");
+        timer_.acc_begin("=>evolve_individual_nbody_easy_gpu");
 
-        evolve_individual_nbody_easy_cpu_v4(
+        evolve_individual_nbody_easy_gpu(
             time,
             parity * std::get<0>(term),
             Cout,
@@ -2118,18 +1870,18 @@ void FCIComputerThrust::evolve_individual_nbody_cpu_v5(
         // // DEBUG: After
         // dump_tensor("  EASY: after", Cout);
 
-        timer_.acc_end("=>evolve_individual_nbody_easy_cpu_v4");
+        timer_.acc_end("=>evolve_individual_nbody_easy_gpu");
 
     } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
         // std::cout << "Made it to hard" << std::endl;
 
-        timer_.acc_begin("=>evolve_individual_nbody_hard_cpu_v5");
+        timer_.acc_begin("=>evolve_individual_nbody_hard_gpu");
 
         // // DEBUG:
         // dump_step_header("[HARD] (Givens)", parity * std::get<0>(term), crea, anna, creb, annb, nswaps, parity);
         // dump_tensor("  HARD: before", Cout);
 
-        evolve_individual_nbody_hard_cpu_v5(
+        evolve_individual_nbody_hard_gpu(
             time,
             parity * std::get<0>(term),
             Cout,
@@ -2142,7 +1894,7 @@ void FCIComputerThrust::evolve_individual_nbody_cpu_v5(
         // // DEBUG: After
         // dump_tensor("  HARD: after", Cout);
 
-        timer_.acc_end("=>evolve_individual_nbody_hard_cpu_v5");
+        timer_.acc_end("=>evolve_individual_nbody_hard_gpu");
 
     } else {
         throw std::invalid_argument("Evolved state must remain in spin and particle-number symmetry sector");
@@ -2204,307 +1956,6 @@ void FCIComputerThrust::evolve_pool_trotter_basic_gpu(
 }
 
 void FCIComputerThrust::evolve_pool_trotter_gpu(
-    const SQOpPool& pool,
-    const double evolution_time,
-    const int trotter_steps,
-    const int trotter_order,
-    const bool antiherm,
-    const bool adjoint)
-{
-    gpu_error();
-
-    timer_.acc_begin("evolve_pool_trotter_gpu(outer)");
-
-    if(trotter_order == 1){
-
-        std::complex<double> prefactor = evolution_time / static_cast<std::complex<double>>(trotter_steps);
-
-        if(adjoint){
-            for( int r = 0; r < trotter_steps; r++) {
-                for (int i = pool.terms().size() - 1; i >= 0; --i) {
-                    apply_sqop_evolution_gpu(
-                        prefactor * pool.terms()[i].first, 
-                        pool.terms()[i].second,
-                        antiherm,
-                        adjoint);
-                }
-            }
-                
-
-        } else {
-            for( int r = 0; r < trotter_steps; r++) {
-                for (const auto& sqop_term : pool.terms()) {
-                    apply_sqop_evolution_gpu(
-                        prefactor * sqop_term.first, 
-                        sqop_term.second,
-                        antiherm,
-                        adjoint);
-                }
-            }
-        }
-
-    } else if (trotter_order == 2 ) {
-        std::complex<double> prefactor = 0.5 * evolution_time / static_cast<std::complex<double>>(trotter_steps);
-
-        if(adjoint){
-            for( int r = 0; r < trotter_steps; r++) {
-                for (int i = pool.terms().size() - 1; i >= 0; --i) {
-                    (
-                        prefactor * pool.terms()[i].first, 
-                        pool.terms()[i].second,
-                        antiherm,
-                        adjoint);
-                }
-
-                for (const auto& sqop_term : pool.terms()) {
-                    (
-                        prefactor * sqop_term.first, 
-                        sqop_term.second,
-                        antiherm,
-                        adjoint);
-                }
-            }
-                
-
-        } else {
-            for( int r = 0; r < trotter_steps; r++) {
-                for (const auto& sqop_term : pool.terms()) {
-                    (
-                        prefactor * sqop_term.first, 
-                        sqop_term.second,
-                        antiherm,
-                        adjoint);
-                }
-
-                for (int i = pool.terms().size() - 1; i >= 0; --i) {
-                    (
-                        prefactor * pool.terms()[i].first, 
-                        pool.terms()[i].second,
-                        antiherm,
-                        adjoint);
-                }
-            }
-        }
-    } else {
-        throw std::runtime_error("Higher than 2nd order trotter not yet implemented"); 
-    }
-
-    timer_.acc_end("evolve_pool_trotter_gpu(outer)");
-}
-
-void FCIComputerThrust::evolve_pool_trotter_gpu_v2(
-    const SQOpPool& pool,
-    const double evolution_time,
-    const int trotter_steps,
-    const int trotter_order,
-    const bool antiherm,
-    const bool adjoint)
-{
-    gpu_error();
-
-    timer_.acc_begin("evolve_pool_trotter_gpu(outer)");
-
-    TensorThrust Cin(C_.shape(), "Cin", true);
-
-    if(trotter_order == 1){
-
-        std::complex<double> prefactor = evolution_time / static_cast<std::complex<double>>(trotter_steps);
-
-        if(adjoint){
-            for( int r = 0; r < trotter_steps; r++) {
-                for (int i = pool.terms().size() - 1; i >= 0; --i) {
-                    
-                    // timer_.acc_begin("=>copy in Cin <- C_");
-                    // Cin.copy_in_gpu(C_);
-                    // timer_.acc_end("=>copy in Cin <- C_");
-
-                    evolve_individual_nbody_cpu(
-                        prefactor * pool.terms()[i].first,
-                        pool.terms()[i].second,
-                        Cin,
-                        C_,
-                        antiherm,
-                        adjoint); 
-
-                }
-            }
-                
-
-        } else {
-            for( int r = 0; r < trotter_steps; r++) {
-                for (const auto& sqop_term : pool.terms()) {
-
-                    // timer_.acc_begin("=>copy in Cin <- C_");
-                    // Cin.copy_in_gpu(C_);
-                    // timer_.acc_end("=>copy in Cin <- C_");
-
-                    evolve_individual_nbody_cpu(
-                        prefactor * sqop_term.first,
-                        sqop_term.second,
-                        Cin,
-                        C_,
-                        antiherm,
-                        adjoint); 
-
-                }
-            }
-        }
-
-    }  else {
-        throw std::runtime_error("Higher than 1st order trotter not yet implemented"); 
-    }
-
-    timer_.acc_end("evolve_pool_trotter_gpu(outer)");
-}
-
-void FCIComputerThrust::evolve_pool_trotter_gpu_v3(
-    const SQOpPoolThrust& pool,
-    double evolution_time,
-    int trotter_steps,
-    int trotter_order,
-    bool antiherm,
-    bool adjoint)
-{
-    gpu_error();
-
-    if (pool.device_vecs_populated()==false){
-        throw std::runtime_error("SQOpPoolThrust STP device arrays must be populated before evolution.");
-    }
-
-    timer_.acc_begin("evolve_pool_trotter_gpu(outer)");
-
-    TensorThrust Cin(C_.shape(), "Cin", true);
-
-    if(trotter_order == 1){
-
-        std::complex<double> prefactor = evolution_time / static_cast<std::complex<double>>(trotter_steps);
-
-        if(adjoint){
-            for( int r = 0; r < trotter_steps; r++) {
-                for (int i = pool.terms().size() - 1; i >= 0; --i) {
-                    
-                    // timer_.acc_begin("=>copy in Cin <- C_");
-                    // Cin.copy_in_gpu(C_);
-                    // timer_.acc_end("=>copy in Cin <- C_");
-
-                    const auto& device_spt_arys = pool.get_mu_tuple(i);
-
-                    evolve_individual_nbody_cpu(
-                        prefactor * pool.terms()[i].first,
-                        pool.terms()[i].second,
-                        Cin,
-                        C_,
-                        antiherm,
-                        adjoint,
-                        &device_spt_arys); 
-
-                }
-            }
-                
-
-        } else {
-            for( int r = 0; r < trotter_steps; r++) {
-                for (int i = 0; i < pool.terms().size(); ++i) {
-
-                    // timer_.acc_begin("=>copy in Cin <- C_");
-                    // Cin.copy_in_gpu(C_);
-                    // timer_.acc_end("=>copy in Cin <- C_");
-
-                    const auto& device_spt_arys = pool.get_mu_tuple(i);
-
-                    evolve_individual_nbody_cpu(
-                        prefactor * pool.terms()[i].first,
-                        pool.terms()[i].second,
-                        Cin,
-                        C_,
-                        antiherm,
-                        adjoint,
-                        &device_spt_arys); 
-
-                }
-            }
-        }
-
-    }  else {
-        throw std::runtime_error("Higher than 1st order trotter not yet implemented"); 
-    }
-
-    timer_.acc_end("evolve_pool_trotter_gpu(outer)");
-}
-
-// implements C_ in place evolution so no need to copy Cin each time
-void FCIComputerThrust::evolve_pool_trotter_gpu_v4(
-    const SQOpPoolThrust& pool,
-    double evolution_time,
-    int trotter_steps,
-    int trotter_order,
-    bool antiherm,
-    bool adjoint)
-{
-    gpu_error();
-
-    if (pool.device_vecs_populated()==false){
-        throw std::runtime_error("SQOpPoolThrust STP device arrays must be populated before evolution.");
-    }
-
-    timer_.acc_begin("evolve_pool_trotter_gpu(outer)");
-
-    if(trotter_order == 1){
-
-        std::complex<double> prefactor = evolution_time / static_cast<std::complex<double>>(trotter_steps);
-
-        if(adjoint){
-            for( int r = 0; r < trotter_steps; r++) {
-                for (int i = pool.terms().size() - 1; i >= 0; --i) {
-                    
-                    // timer_.acc_begin("=>copy in Cin <- C_");
-                    // Cin.copy_in_gpu(C_);
-                    // timer_.acc_end("=>copy in Cin <- C_");
-
-                    const auto& device_spt_arys = pool.get_mu_tuple(i);
-
-                    evolve_individual_nbody_cpu_v4(
-                        prefactor * pool.terms()[i].first,
-                        pool.terms()[i].second,
-                        C_,
-                        antiherm,
-                        adjoint,
-                        &device_spt_arys); 
-
-                }
-            }
-                
-
-        } else {
-            for( int r = 0; r < trotter_steps; r++) {
-                for (int i = 0; i < pool.terms().size(); ++i) {
-
-                    // timer_.acc_begin("=>copy in Cin <- C_");
-                    // Cin.copy_in_gpu(C_);
-                    // timer_.acc_end("=>copy in Cin <- C_");
-
-                    const auto& device_spt_arys = pool.get_mu_tuple(i);
-
-                    evolve_individual_nbody_cpu_v4(
-                        prefactor * pool.terms()[i].first,
-                        pool.terms()[i].second,
-                        C_,
-                        antiherm,
-                        adjoint,
-                        &device_spt_arys); 
-
-                }
-            }
-        }
-
-    }  else {
-        throw std::runtime_error("Higher than 1st order trotter not yet implemented"); 
-    }
-
-    timer_.acc_end("evolve_pool_trotter_gpu(outer)");
-}
-
-void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
     const SQOpPoolThrust& pool,
     double evolution_time,
     int trotter_steps,
@@ -2542,7 +1993,7 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
                     if (pool.device_vecs_populated()==false) {
                         // no precomp provided
                         if (data_type_ == "complex") {
-                            evolve_individual_nbody_cpu_v5<PrecompTuple>(
+                            evolve_individual_nbody_gpu<PrecompTuple>(
                                 prefactor * pool.terms()[i].first,
                                 pool.terms()[i].second,
                                 C_,
@@ -2550,7 +2001,7 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
                                 adjoint,
                                 nullptr);
                         } else if (data_type_ == "real") {
-                            evolve_individual_nbody_cpu_v5<PrecompTupleReal>(
+                            evolve_individual_nbody_gpu<PrecompTupleReal>(
                                 prefactor * pool.terms()[i].first,
                                 pool.terms()[i].second,
                                 C_,
@@ -2563,7 +2014,7 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
                     } else {
                         if (data_type_ == "complex") {
                             const auto& device_spt_arys = pool.get_mu_tuple(i);
-                            evolve_individual_nbody_cpu_v5(
+                            evolve_individual_nbody_gpu(
                                 prefactor * pool.terms()[i].first,
                                 pool.terms()[i].second,
                                 C_,
@@ -2572,7 +2023,7 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
                                 &device_spt_arys); 
                         } else if (data_type_ == "real") {
                             const auto& device_spt_arys = pool.get_mu_tuple_real(i);
-                            evolve_individual_nbody_cpu_v5(
+                            evolve_individual_nbody_gpu(
                                 prefactor * pool.terms()[i].first,
                                 pool.terms()[i].second,
                                 C_,
@@ -2593,7 +2044,7 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
                     if (pool.device_vecs_populated()==false) {
                         // no precomp provided
                         if (data_type_ == "complex") {
-                            evolve_individual_nbody_cpu_v5<PrecompTuple>(
+                            evolve_individual_nbody_gpu<PrecompTuple>(
                                 prefactor * pool.terms()[i].first,
                                 pool.terms()[i].second,
                                 C_,
@@ -2601,7 +2052,7 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
                                 adjoint,
                                 nullptr);
                         } else if (data_type_ == "real") {
-                            evolve_individual_nbody_cpu_v5<PrecompTupleReal>(
+                            evolve_individual_nbody_gpu<PrecompTupleReal>(
                                 prefactor * pool.terms()[i].first,
                                 pool.terms()[i].second,
                                 C_,
@@ -2614,7 +2065,7 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
                     } else {
                         if (data_type_ == "complex") {
                             const auto& device_spt_arys = pool.get_mu_tuple(i);
-                            evolve_individual_nbody_cpu_v5(
+                            evolve_individual_nbody_gpu(
                                 prefactor * pool.terms()[i].first,
                                 pool.terms()[i].second,
                                 C_,
@@ -2623,7 +2074,7 @@ void FCIComputerThrust::evolve_pool_trotter_gpu_v5(
                                 &device_spt_arys); 
                         } else if (data_type_ == "real") {
                             const auto& device_spt_arys = pool.get_mu_tuple_real(i);
-                            evolve_individual_nbody_cpu_v5(
+                            evolve_individual_nbody_gpu(
                                 prefactor * pool.terms()[i].first,
                                 pool.terms()[i].second,
                                 C_,
