@@ -45,10 +45,6 @@ class FCIComputerThrust {
     // Alias for the big tuple type (tuple of const references) returned by get_mu_tuple()
     using PrecompTuple =
         decltype(std::declval<const SQOpPoolThrust&>().get_mu_tuple(std::size_t{}));
-    
-    // Alias for the SoA tuple type (tuple of const references) returned by get_mu_tuple_soa()
-    // using PrecompTupleSoA =
-    //     decltype(std::declval<const SQOpPoolThrust&>().get_mu_tuple_soa(std::size_t{}));
 
     // Alias for the Real tuple type (tuple of const references) returned by get_mu_tuple_real()
     using PrecompTupleReal =
@@ -88,10 +84,6 @@ class FCIComputerThrust {
     void to_gpu();
 
     void to_cpu();
-
-    // void complex_to_soa();
-
-    // void soa_to_complex();
 
     /// Set a particular element of this TensorThrust, specified by idxs
     void add_to_element(const std::vector<size_t>& idxs,
