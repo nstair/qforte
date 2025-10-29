@@ -70,17 +70,8 @@ public:
         thrust::device_vector<int>& source,
         thrust::device_vector<int>& target,
         thrust::device_vector<cuDoubleComplex>& parity);
-
-    void make_mapping_each_gpu(
-        bool alpha, 
-        const std::vector<int>& dag, 
-        const std::vector<int>& undag,
-        int* count,
-        thrust::device_vector<int>& source,
-        thrust::device_vector<int>& target,
-        thrust::device_vector<cuDoubleComplex>& parity);
     
-    void make_mapping_each_gpu_v2(
+    void make_mapping_each_otf_gpu_complex(
         bool alpha, 
         const std::vector<int>& dag, 
         const std::vector<int>& undag,
@@ -89,7 +80,7 @@ public:
         thrust::device_vector<int>& target_gpu,
         thrust::device_vector<cuDoubleComplex>& parity_gpu);
 
-    void make_mapping_each_gpu_v2_real(
+    void make_mapping_each_otf_gpu_real(
         bool alpha, 
         const std::vector<int>& dag, 
         const std::vector<int>& undag,
@@ -98,7 +89,7 @@ public:
         thrust::device_vector<int>& target_gpu,
         thrust::device_vector<double>& parity_gpu);
 
-    void make_mapping_each_gpu_v3(
+    void make_mapping_each_pre_gpu_complex(
         bool alpha, 
         const std::vector<int>& dag, 
         const std::vector<int>& undag,
@@ -108,7 +99,7 @@ public:
         std::vector<thrust::device_vector<cuDoubleComplex>>& terms_parity_gpu);
 
     // New: v4 that writes parity directly into real device vectors
-    void make_mapping_each_gpu_v4(
+    void make_mapping_each_pre_gpu_real(
         bool alpha,
         const std::vector<int>& dag,
         const std::vector<int>& undag,

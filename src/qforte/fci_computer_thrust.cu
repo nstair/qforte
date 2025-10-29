@@ -1377,7 +1377,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_gpu(
             int countb2 = 0;
 
             // DAG mapping: annihilators as dag, creators as undag
-            graph_.make_mapping_each_gpu_v2(
+            graph_.make_mapping_each_otf_gpu_complex(
                 true, // const bool is_alpha, 
                 anna, 
                 crea,
@@ -1389,7 +1389,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_gpu(
             // std::cout << "sourcea1 " << sourcea_gpu_.str() << std::endl;  // device_vector has no .str() method
 
             // UNDAG mapping: creators as dag, annihilators as undag
-            graph_.make_mapping_each_gpu_v2(
+            graph_.make_mapping_each_otf_gpu_complex(
                 true, // const bool is_alpha, 
                 crea, 
                 anna,
@@ -1399,7 +1399,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_gpu(
                 paritya_undag_gpu_);
 
             // DAG mapping: annihilators as dag, creators as undag
-            graph_.make_mapping_each_gpu_v2(
+            graph_.make_mapping_each_otf_gpu_complex(
                 false, // const bool is_alpha, 
                 annb, 
                 creb,
@@ -1409,7 +1409,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_gpu(
                 parityb_gpu_);
 
             // UNDAG mapping: creators as dag, annihilators as undag
-            graph_.make_mapping_each_gpu_v2(
+            graph_.make_mapping_each_otf_gpu_complex(
                 false, // const bool is_alpha, 
                 creb, 
                 annb,
@@ -1527,7 +1527,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_gpu(
             int countb2 = 0;
 
             // DAG mapping: annihilators as dag, creators as undag
-            graph_.make_mapping_each_gpu_v2_real(
+            graph_.make_mapping_each_otf_gpu_real(
                 true, // const bool is_alpha, 
                 anna, 
                 crea,
@@ -1539,7 +1539,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_gpu(
             // std::cout << "sourcea1 " << sourcea_gpu_.str() << std::endl;  // device_vector has no .str() method
 
             // UNDAG mapping: creators as dag, annihilators as undag
-            graph_.make_mapping_each_gpu_v2_real(
+            graph_.make_mapping_each_otf_gpu_real(
                 true, // const bool is_alpha, 
                 crea, 
                 anna,
@@ -1549,7 +1549,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_gpu(
                 paritya_undag_gpu_real_);
 
             // DAG mapping: annihilators as dag, creators as undag
-            graph_.make_mapping_each_gpu_v2_real(
+            graph_.make_mapping_each_otf_gpu_real(
                 false, // const bool is_alpha, 
                 annb, 
                 creb,
@@ -1559,7 +1559,7 @@ void FCIComputerThrust::evolve_individual_nbody_hard_gpu(
                 parityb_gpu_real_);
 
             // UNDAG mapping: creators as dag, annihilators as undag
-            graph_.make_mapping_each_gpu_v2_real(
+            graph_.make_mapping_each_otf_gpu_real(
                 false, // const bool is_alpha, 
                 creb, 
                 annb,
@@ -2194,7 +2194,7 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
     int counta = 0;
     int countb = 0;
 
-    graph_.make_mapping_each_gpu_v2(
+    graph_.make_mapping_each_otf_gpu_complex(
         true,
         daga,
         undaga,
@@ -2207,7 +2207,7 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
         return;
     }
 
-    graph_.make_mapping_each_gpu_v2(
+    graph_.make_mapping_each_otf_gpu_complex(
         false,
         dagb,
         undagb,
@@ -2676,7 +2676,7 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
 
             // DAG mappings
             if (need_complex) {
-                graph_.make_mapping_each_gpu_v3(
+                graph_.make_mapping_each_pre_gpu_complex(
                     true,
                     anna,
                     crea,
@@ -2687,7 +2687,7 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
 
                 // std::cout << "sourcea1 " << pool.terms_sourcea_dag_gpu().str() << std::endl;  // device_vector has no .str() method
             } else if (real_only) {
-                graph_.make_mapping_each_gpu_v4(
+                graph_.make_mapping_each_pre_gpu_real(
                     true,
                     anna,
                     crea,
@@ -2698,7 +2698,7 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
             }
 
             if (need_complex) {
-                graph_.make_mapping_each_gpu_v3(
+                graph_.make_mapping_each_pre_gpu_complex(
                     false,
                     annb,
                     creb,
@@ -2707,7 +2707,7 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
                     pool.terms_targetb_dag_gpu(),
                     pool.terms_parityb_dag_gpu());
             } else if (real_only) {
-                graph_.make_mapping_each_gpu_v4(
+                graph_.make_mapping_each_pre_gpu_real(
                     false,
                     annb,
                     creb,
@@ -2726,7 +2726,7 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
             countb = 0;
 
             if (need_complex) {
-                graph_.make_mapping_each_gpu_v3(
+                graph_.make_mapping_each_pre_gpu_complex(
                     true,
                     crea,
                     anna,
@@ -2735,7 +2735,7 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
                     pool.terms_targeta_undag_gpu(),
                     pool.terms_paritya_undag_gpu());
             } else if (real_only) {
-                graph_.make_mapping_each_gpu_v4(
+                graph_.make_mapping_each_pre_gpu_real(
                     true,
                     crea,
                     anna,
@@ -2746,7 +2746,7 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
             }
 
             if (need_complex) {
-                graph_.make_mapping_each_gpu_v3(
+                graph_.make_mapping_each_pre_gpu_complex(
                     false,
                     creb,
                     annb,
@@ -2755,7 +2755,7 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
                     pool.terms_targetb_undag_gpu(),
                     pool.terms_parityb_undag_gpu());
             } else if (real_only) {
-                graph_.make_mapping_each_gpu_v4(
+                graph_.make_mapping_each_pre_gpu_real(
                     false,
                     creb,
                     annb,
