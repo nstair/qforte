@@ -16,6 +16,7 @@ geom = [
     ]
 
 mol = qf.system_factory(
+    symmetry='D2h',
     build_type='psi4', 
     mol_geometry=geom, 
     basis='sto-3g',
@@ -40,7 +41,7 @@ alg_fci = qf.UCCNVQE(
     computer_type = 'fci',
     )
 
-alg_fci.run(opt_thresh=1.0e-2, 
+alg_fci.run(opt_thresh=1.0e-8, 
             pool_type='SD',
             optimizer='BFGS')
             

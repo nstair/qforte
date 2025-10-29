@@ -8,7 +8,11 @@ geom = [
     ('H', (0., 0., 3.00)),
     ('H', (0., 0., 4.00)),
     ('H', (0., 0., 5.00)),
-    ('H', (0., 0., 6.00))
+    ('H', (0., 0., 6.00)),
+    # ('H', (0., 0., 7.00)),
+    # ('H', (0., 0., 8.00)),
+    # ('H', (0., 0., 9.00)),
+    # ('H', (0., 0., 10.00))
     ]
 
 timer = qf.local_timer()
@@ -23,19 +27,19 @@ mol = qf.system_factory(
 
 timer.record("Psi4 Setup")
 
-timer.reset()
+# timer.reset()
 
-alg_fock = qf.SPQE(
-    mol,
-    computer_type = 'fock'
-    )
+# alg_fock = qf.SPQE(
+#     mol,
+#     computer_type = 'fock'
+#     )
 
-alg_fock.run(
-    opt_thresh=1.0e-2,
-    spqe_maxiter=1)
+# alg_fock.run(
+#     opt_thresh=1.0e-2,
+#     spqe_maxiter=1)
 
-timer.record("SPQE Fock")
-print(f'\n\n Efci:   {mol.fci_energy:+12.10f}')
+# timer.record("SPQE Fock")
+# print(f'\n\n Efci:   {mol.fci_energy:+12.10f}')
 
 timer.reset()
 
@@ -45,7 +49,7 @@ alg_fock = qf.SPQE(
     )
 
 alg_fock.run(
-    opt_thresh=1.0e-2,
+    opt_thresh=1.0e-3,
     spqe_maxiter=1)
 
 timer.record("SPQE FCI")
