@@ -136,7 +136,15 @@ void local_timer::acc_end(const std::string& name) {
         // Mismatched stop; nothing to do. You could throw or log if desired.
         return;
     }
+    const time_point t0 = it->second.back();
+    it->second.pop_back();
 
+    const auto dur   = clock::now() - t0;
+    const double sec = std::chrono::duration_cast<std::chrono::duration<double>>(dur).count();
+
+    // Add a per-call row (non-accumulating) and also add to accumulated totals
+    timings_.emplace_back(name, sec);
+    acc_record_seconds(name, sec);
 }
 
 void local_timer::accumulate(std::string name) {
