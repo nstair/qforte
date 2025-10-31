@@ -6,12 +6,12 @@
 #include "qubit_op_pool.h"
 #include "qubit_basis.h"
 
-#include "sq_op_pool_thrust.h"
+#include "sq_op_pool_gpu.h"
 
 #include <stdexcept>
 #include <algorithm>
 
-SQOpPoolThrust::~SQOpPoolThrust() {
+SQOpPoolGPU::~SQOpPoolGPU() {
     // Safe cleanup of device vectors to avoid segfaults during CUDA shutdown
     try {
         // Clear all device vectors in reverse order of potential dependencies
@@ -47,16 +47,16 @@ SQOpPoolThrust::~SQOpPoolThrust() {
     } catch (...) {
         // Silently catch any exceptions during cleanup to prevent terminate()
         // This can happen if CUDA has already been shut down
-        // std::cerr << "Exception caught during SQOpPoolThrust cleanup" << std::endl;
+        // std::cerr << "Exception caught during SQOpPoolGPU cleanup" << std::endl;
     }
 }
 
-void SQOpPoolThrust::add_term(std::complex<double> coeff, const SQOperator& sq_op ){
+void SQOpPoolGPU::add_term(std::complex<double> coeff, const SQOperator& sq_op ){
     terms_.push_back(std::make_pair(coeff, sq_op));
 }
 
 /// NICK: This funcion is working but needs testing for edge cases!!
-void SQOpPoolThrust::add_hermitian_pairs(std::complex<double> coeff, const SQOperator& sq_op ){
+void SQOpPoolGPU::add_hermitian_pairs(std::complex<double> coeff, const SQOperator& sq_op ){
     std::vector<std::pair< std::vector<size_t>, std::vector<size_t>>> h_vec;
     std::vector<std::pair< std::vector<size_t>, std::vector<size_t>>> hd_vec;
 
@@ -104,7 +104,7 @@ void SQOpPoolThrust::add_hermitian_pairs(std::complex<double> coeff, const SQOpe
     }
 }
 
-void SQOpPoolThrust::set_coeffs(const std::vector<std::complex<double>>& new_coeffs){
+void SQOpPoolGPU::set_coeffs(const std::vector<std::complex<double>>& new_coeffs){
     if(new_coeffs.size() != terms_.size()){
         throw std::invalid_argument( "Number of new coefficients for quantum operator must equal." );
     }
@@ -113,17 +113,17 @@ void SQOpPoolThrust::set_coeffs(const std::vector<std::complex<double>>& new_coe
     }
 }
 
-void SQOpPoolThrust::set_coeffs_to_scaler(std::complex<double> new_coeff){
+void SQOpPoolGPU::set_coeffs_to_scaler(std::complex<double> new_coeff){
     for (size_t l = 0; l < terms_.size(); l++){
         terms_[l].first = new_coeff;
     }
 }
 
-const std::vector<std::pair< std::complex<double>, SQOperator>>& SQOpPoolThrust::terms() const{
+const std::vector<std::pair< std::complex<double>, SQOperator>>& SQOpPoolGPU::terms() const{
     return terms_;
 }
 
-void SQOpPoolThrust::set_orb_spaces(const std::vector<int>& ref){
+void SQOpPoolGPU::set_orb_spaces(const std::vector<int>& ref){
     int norb = ref.size();
     if (norb%2 == 0){
         norb = static_cast<int>(norb/2);
@@ -145,7 +145,7 @@ void SQOpPoolThrust::set_orb_spaces(const std::vector<int>& ref){
     nvir_ = static_cast<int>(norb - nocc_);
 }
 
-QubitOpPool SQOpPoolThrust::get_qubit_op_pool(){
+QubitOpPool SQOpPoolGPU::get_qubit_op_pool(){
     QubitOpPool A;
     for (auto& term : terms_) {
         // QubitOperator a = term.second.jw_transform();
@@ -156,7 +156,7 @@ QubitOpPool SQOpPoolThrust::get_qubit_op_pool(){
 }
 
 
-QubitOperator SQOpPoolThrust::get_qubit_operator(const std::string& order_type, bool combine_like_terms, bool qubit_excitations){
+QubitOperator SQOpPoolGPU::get_qubit_operator(const std::string& order_type, bool combine_like_terms, bool qubit_excitations){
     QubitOperator parent;
 
     if(order_type=="unique_lex"){
@@ -184,7 +184,7 @@ QubitOperator SQOpPoolThrust::get_qubit_operator(const std::string& order_type, 
     return parent;
 }
 
-void SQOpPoolThrust::fill_pool(std::string pool_type){
+void SQOpPoolGPU::fill_pool(std::string pool_type){
     if(pool_type=="GSD"){
         size_t norb = nocc_ + nvir_;
         for(size_t i=0; i<norb; i++){
@@ -582,14 +582,14 @@ void SQOpPoolThrust::fill_pool(std::string pool_type){
     }
 }
 
-std::size_t SQOpPoolThrust::check_mu_tuple_container_sizes() const {
+std::size_t SQOpPoolGPU::check_mu_tuple_container_sizes() const {
     const std::size_t s_ref = terms().size();
 
     bool ok = true;
 
     auto check = [&](const char* name, std::size_t sz) {
         if (sz != s_ref) {
-            std::cerr << "[SQOpPoolThrust] size mismatch: "
+            std::cerr << "[SQOpPoolGPU] size mismatch: "
                       << name << " = " << sz << " (expected " << s_ref << ")\n";
             ok = false;
         }
@@ -626,21 +626,21 @@ std::size_t SQOpPoolThrust::check_mu_tuple_container_sizes() const {
         check("terms_parityb_dag_gpu_",        terms_parityb_dag_gpu_.size());
         check("terms_parityb_undag_gpu_",      terms_parityb_undag_gpu_.size());
     } else {
-        std::cerr << "[SQOpPoolThrust] Unknown data_type_: " << data_type_ << "\n";
+        std::cerr << "[SQOpPoolGPU] Unknown data_type_: " << data_type_ << "\n";
         ok = false;
     }
 
     if (!ok) {
-        std::cerr << "[SQOpPoolThrust] Not all μ-containers have the same length. "
+        std::cerr << "[SQOpPoolGPU] Not all μ-containers have the same length. "
                   << "Returning 0.\n";
         return 0;
     }
     return s_ref;
 }
 
-void SQOpPoolThrust::print_mu_tuple_dims(std::size_t mu) const {
+void SQOpPoolGPU::print_mu_tuple_dims(std::size_t mu) const {
     if (mu >= inner_coeffs_.size()) {
-        std::cerr << "[SQOpPoolThrust] print_mu_tuple_dims: mu=" << mu
+        std::cerr << "[SQOpPoolGPU] print_mu_tuple_dims: mu=" << mu
                   << " is out of range (size=" << inner_coeffs_.size() << ")\n";
         return;
     }
@@ -650,7 +650,7 @@ void SQOpPoolThrust::print_mu_tuple_dims(std::size_t mu) const {
                   << ": size = " << dv.size() << '\n';
     };
 
-    std::cout << "[SQOpPoolThrust] mu=" << mu << "  (array dimensions)\n";
+    std::cout << "[SQOpPoolGPU] mu=" << mu << "  (array dimensions)\n";
     std::cout << "  " << std::left << std::setw(28) << "inner_coeff (scalar)"
               << ": size = 1\n";
     std::cout << "  " << std::left << std::setw(28) << "outer_coeff (scalar)"
@@ -675,9 +675,9 @@ void SQOpPoolThrust::print_mu_tuple_dims(std::size_t mu) const {
 }
 
 
-void SQOpPoolThrust::print_mu_tuple_elements(std::size_t mu) const {
+void SQOpPoolGPU::print_mu_tuple_elements(std::size_t mu) const {
     if (mu >= inner_coeffs_.size()) {
-        std::cerr << "[SQOpPoolThrust] print_mu_tuple_elements: mu=" << mu
+        std::cerr << "[SQOpPoolGPU] print_mu_tuple_elements: mu=" << mu
                   << " is out of range (size=" << inner_coeffs_.size() << ")\n";
         return;
     }
@@ -714,7 +714,7 @@ void SQOpPoolThrust::print_mu_tuple_elements(std::size_t mu) const {
         std::cout << "]\n";
     };
 
-    std::cout << "[SQOpPoolThrust] mu=" << mu << "  (array contents)\n";
+    std::cout << "[SQOpPoolGPU] mu=" << mu << "  (array contents)\n";
     // Scalars
     {
         const auto& ic = inner_coeffs_[mu];
@@ -748,7 +748,7 @@ void SQOpPoolThrust::print_mu_tuple_elements(std::size_t mu) const {
     std::cout << std::setprecision(old_prec); // restore precision
 }
 
-std::string SQOpPoolThrust::str() const{
+std::string SQOpPoolGPU::str() const{
     std::vector<std::string> s;
     s.push_back("");
     int counter = 0;

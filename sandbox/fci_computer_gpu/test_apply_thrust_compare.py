@@ -49,7 +49,7 @@ if(norb < 6):
  
 fci_comp = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 fci_comp_gpu = qf.FCIComputerGPU(nel=nel, sz=sz, norb=norb)
-fci_comp_thrust = qf.FCIComputerThrust(nel=nel, sz=sz, norb=norb)
+fci_comp_thrust = qf.FCIComputerGPU(nel=nel, sz=sz, norb=norb)
 
 
 reference = 'random'

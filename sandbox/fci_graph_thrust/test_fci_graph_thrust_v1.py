@@ -29,7 +29,7 @@ if __name__ == "__main__":
     timer.reset()
 
     qg = qf.FCIGraph(na, nb, norb)
-    qg_thrust = qf.FCIGraphThrust(na, nb, norb)
+    qg_thrust = qf.FCIGraphGPU(na, nb, norb)
 
     timer.record('Initialize')
 
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     norb = 6
 
     qg = qf.FCIGraph(na, nb, norb)
-    qg_thrust = qf.FCIGraphThrust(na, nb, norb)
+    qg_thrust = qf.FCIGraphGPU(na, nb, norb)
 
     daga = [2, 3]
     undaga = [4, 5]

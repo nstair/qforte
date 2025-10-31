@@ -75,11 +75,10 @@ set(SOURCE_DIR "src/qforte")
 # CUDA sources (kernels + thrust-based .cu)
 set(CUDA_SOURCES
     "${SOURCE_DIR}/fci_computer_gpu_kernels.cu"
-    "${SOURCE_DIR}/tensor_thrust.cu"
-    "${SOURCE_DIR}/fci_computer_thrust.cu"
-    "${SOURCE_DIR}/fci_graph_thrust.cu"
-    "${SOURCE_DIR}/fci_graph_thrust_kernels.cu"
-    "${SOURCE_DIR}/sq_op_pool_thrust.cu"
+    "${SOURCE_DIR}/tensor_gpu.cu"
+    "${SOURCE_DIR}/fci_computer_gpu.cu"
+    "${SOURCE_DIR}/fci_graph_gpu.cu"
+    "${SOURCE_DIR}/sq_op_pool_gpu.cu"
 )
 
 # C++ sources

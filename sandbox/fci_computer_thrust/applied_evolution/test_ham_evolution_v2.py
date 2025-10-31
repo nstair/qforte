@@ -51,7 +51,7 @@ print(f" nel:       {nel}")
 fci_comp1 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 fci_comp2 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 
-fci_comp_thrust = qf.FCIComputerThrust(
+fci_comp_thrust = qf.FCIComputerGPU(
     nel=nel, 
     sz=sz, 
     norb=norb,
@@ -85,7 +85,7 @@ sqham = mol.sq_hamiltonian
 hermitian_pairs = qf.SQOpPool()
 hermitian_pairs.add_hermitian_pairs(1.0, sqham)
 
-hp_gpu = qf.SQOpPoolThrust()
+hp_gpu = qf.SQOpPoolGPU()
 hp_gpu.add_hermitian_pairs(1.0, sqham)
 
 timer.reset()

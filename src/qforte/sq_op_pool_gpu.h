@@ -1,5 +1,5 @@
-#ifndef _sq_op_pool_thrust_h_
-#define _sq_op_pool_thrust_h_
+#ifndef _sq_op_pool_gpu_h_
+#define _sq_op_pool_gpu_h_
 
 #include <complex>
 #include <string>
@@ -30,19 +30,19 @@ class QubitOpPool;
 // Represents an arbitrary linear combination of second quantized operators.
 // May also represent an array of second quantized operators by ignoring
 // the coefficients.
-class SQOpPoolThrust {
+class SQOpPoolGPU {
   public:
     /// default constructor: creates an empty second quantized operator pool
-    SQOpPoolThrust() {}
+    SQOpPoolGPU() {}
 
     /// construct with a data_type ("complex" or "real"). Defaults to "complex".
-    explicit SQOpPoolThrust(const std::string& data_type)
+    explicit SQOpPoolGPU(const std::string& data_type)
         : data_type_(data_type) {
         validate_data_type_();
     }
 
     /// destructor: safely cleans up device vectors
-    ~SQOpPoolThrust();
+    ~SQOpPoolGPU();
 
     /// add one set of annihilators and/or creators to the second quantized operator pool
     void add_term(std::complex<double> coeff, const SQOperator& sq_op );
@@ -319,9 +319,9 @@ class SQOpPoolThrust {
     /// ensure data_type_ is valid
     void validate_data_type_() const {
         if (data_type_ != "complex" && data_type_ != "real") {
-            throw std::invalid_argument("SQOpPoolThrust: unsupported data_type. Must be one of {complex, real}.");
+            throw std::invalid_argument("SQOpPoolGPU: unsupported data_type. Must be one of {complex, real}.");
         }
     }
 };
 
-#endif // _sq_op_pool_thrust_h_
+#endif // _sq_op_pool_gpu_h_

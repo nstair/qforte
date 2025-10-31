@@ -1,5 +1,5 @@
-#ifndef _fci_graph_gpu_h_
-#define _fci_graph_gpu_h_
+#ifndef _fci_graph_thrust_h_
+#define _fci_graph_thrust_h_
 
 #include <vector>
 #include <unordered_map>
@@ -7,6 +7,14 @@
 #include <cstdint>
 #include <cstddef>
 
+#include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
+#include <cuComplex.h>
+
+#include "timer.h"
+
+#ifndef _pair_hash_
+#define _pair_hash_
 struct PairHash {
     template <class T1, class T2>
     std::size_t operator () (const std::pair<T1, T2>& p) const {
@@ -15,16 +23,17 @@ struct PairHash {
         return h1 ^ (h2 << 1);
     }
 };
+#endif // _pair_hash_
 
 using Spinmap = std::unordered_map<std::pair<int, int>, std::vector<std::tuple<int, int, int>>, PairHash>;
 
-class FCIGraph {
+class FCIGraphGPU {
 public:
 
     /// Constructor
-    FCIGraph(int nalfa, int nbeta, int norb);
+    FCIGraphGPU(int nalfa, int nbeta, int norb);
 
-    FCIGraph();
+    FCIGraphGPU();
 
     /// Build alfa/beta bitstrings to index the FCI Computer
     std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> build_strings(
@@ -53,10 +62,51 @@ public:
 
     std::vector<std::vector<uint64_t>> get_z_matrix(int norb, int nele);
 
-    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> make_mapping_each(
+    void make_mapping_each(
+        bool alpha,
+        const std::vector<int>& dag,
+        const std::vector<int>& undag,
+        int* count,
+        thrust::device_vector<int>& source,
+        thrust::device_vector<int>& target,
+        thrust::device_vector<cuDoubleComplex>& parity);
+    
+    void make_mapping_each_otf_gpu_complex(
         bool alpha, 
         const std::vector<int>& dag, 
-        const std::vector<int>& undag); 
+        const std::vector<int>& undag,
+        int* count,
+        thrust::device_vector<int>& source_gpu,
+        thrust::device_vector<int>& target_gpu,
+        thrust::device_vector<cuDoubleComplex>& parity_gpu);
+
+    void make_mapping_each_otf_gpu_real(
+        bool alpha, 
+        const std::vector<int>& dag, 
+        const std::vector<int>& undag,
+        int* count,
+        thrust::device_vector<int>& source_gpu,
+        thrust::device_vector<int>& target_gpu,
+        thrust::device_vector<double>& parity_gpu);
+
+    void make_mapping_each_pre_gpu_complex(
+        bool alpha, 
+        const std::vector<int>& dag, 
+        const std::vector<int>& undag,
+        int* count,
+        std::vector<thrust::device_vector<int>>& terms_source_gpu,
+        std::vector<thrust::device_vector<int>>& terms_target_gpu,
+        std::vector<thrust::device_vector<cuDoubleComplex>>& terms_parity_gpu);
+
+    // New: v4 that writes parity directly into real device vectors
+    void make_mapping_each_pre_gpu_real(
+        bool alpha,
+        const std::vector<int>& dag,
+        const std::vector<int>& undag,
+        int* count,
+        std::vector<thrust::device_vector<int>>& terms_source_gpu,
+        std::vector<thrust::device_vector<int>>& terms_target_gpu,
+        std::vector<thrust::device_vector<double>>& terms_parity_re_gpu);
 
     /// ==> Utility Functions for Bit Math (may need to move) <== ///
 
@@ -177,6 +227,7 @@ public:
     const std::vector<int>& read_dexca_vec() const { return dexca_vec_; }
     const std::vector<int>& read_dexcb_vec() const { return dexcb_vec_; }
 
+    local_timer get_acc_timer() { return timer_; }
 private:
     int nalfa_;
     int nbeta_;
@@ -199,6 +250,7 @@ private:
     std::vector<int> dexca_vec_;
     std::vector<int> dexcb_vec_;
     
+    local_timer timer_; // Timer for performance measurement
 };
 
 #endif

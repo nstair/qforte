@@ -1,4 +1,4 @@
-#include "tensor_thrust.h"
+#include "tensor_gpu.h"
 #include "blas_math.h"
 #include "cuda_runtime.h"
 #include "tensor.h"
@@ -28,7 +28,7 @@
 #include <utility>
 #include <algorithm>
 
-size_t TensorThrust::total_memory__ = 0;
+size_t TensorGPU::total_memory__ = 0;
 
 // Custom functors for thrust operations
 struct complex_add {
@@ -150,7 +150,7 @@ __host__ std::complex<double> from_cuDoubleComplex(const cuDoubleComplex& z) {
 }
 
 /// Constructor
-TensorThrust::TensorThrust(
+TensorGPU::TensorGPU(
     const std::vector<size_t>& shape,
     const std::string& name,
     const bool on_gpu,
@@ -187,7 +187,7 @@ TensorThrust::TensorThrust(
         on_complex_ = true;
 
     } else {
-        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex' or 'real'.");
+        throw std::runtime_error("Invalid data_type specified for TensorGPU. Must be 'complex' or 'real'.");
     }
     
     initialized_ = true;
@@ -196,7 +196,7 @@ TensorThrust::TensorThrust(
     total_memory__ += h_data_.size() * sizeof(std::complex<double>);
 }
 
-TensorThrust::TensorThrust()
+TensorGPU::TensorGPU()
 {
     shape_.assign(1, 1);
     strides_.resize(1);
@@ -221,7 +221,7 @@ TensorThrust::TensorThrust()
 }
 
 /// Destructor
-TensorThrust::~TensorThrust()
+TensorGPU::~TensorGPU()
 {
     // Ed's special memory thing
     total_memory__ -= h_data_.size() * sizeof(std::complex<double>);
@@ -230,7 +230,7 @@ TensorThrust::~TensorThrust()
 }
 
 // TDDO: Get rid of temporary conversions and copy directly between host and device
-void TensorThrust::to_gpu()
+void TensorGPU::to_gpu()
 {
     cpu_error();
     if (initialized_ == 0) {
@@ -253,14 +253,14 @@ void TensorThrust::to_gpu()
         thrust::copy(h_re_data_.begin(), h_re_data_.end(), d_re_data_.begin());
 
     } else {
-        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex' or 'real'.");
+        throw std::runtime_error("Invalid data_type specified for TensorGPU. Must be 'complex' or 'real'.");
     }
 
     on_gpu_ = true;
 }
 
 // TDDO: Get rid of temporary conversions and copy directly between host and device
-void TensorThrust::to_cpu()
+void TensorGPU::to_cpu()
 {
     gpu_error();
     if (initialized_ == 0) {
@@ -284,13 +284,13 @@ void TensorThrust::to_cpu()
         thrust::copy(d_re_data_.begin(), d_re_data_.end(), h_re_data_.begin());
         
     } else {
-        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex' or 'real'.");
+        throw std::runtime_error("Invalid data_type specified for TensorGPU. Must be 'complex' or 'real'.");
     }
 
     on_gpu_ = false;
 }
 
-void TensorThrust::add(const TensorThrust& other) {
+void TensorGPU::add(const TensorGPU& other) {
     if (shape_ != other.shape_) {
         throw std::runtime_error("Tensor shapes are not compatible for addition.");
     }
@@ -326,7 +326,7 @@ void TensorThrust::add(const TensorThrust& other) {
     }
 }
 
-void TensorThrust::add_thrust(const TensorThrust& other) {
+void TensorGPU::add_thrust(const TensorGPU& other) {
     if (shape_ != other.shape_) {
         throw std::runtime_error("Tensor shapes are not compatible for addition.");
     }
@@ -346,19 +346,19 @@ void TensorThrust::add_thrust(const TensorThrust& other) {
     }
 }
 
-void TensorThrust::gpu_error() const {
+void TensorGPU::gpu_error() const {
     if (not on_gpu_) {
         throw std::runtime_error("Tensor is not on GPU but GPU operation was requested.");
     }
 }
 
-void TensorThrust::cpu_error() const {
+void TensorGPU::cpu_error() const {
     if (on_gpu_) {
         throw std::runtime_error("Tensor is on GPU but CPU operation was requested.");
     }
 }
 
-void TensorThrust::complex_error() const {
+void TensorGPU::complex_error() const {
     if (data_type_ == "real") {
         throw std::runtime_error("Tensor data type is not 'complex' but only complex operation is supported currently.");
     }
@@ -369,32 +369,32 @@ void TensorThrust::complex_error() const {
     }
 }
 
-void TensorThrust::on_complex_error() const {
+void TensorGPU::on_complex_error() const {
     if (on_complex_ != true) {
         throw std::runtime_error("Tensor data is not 'on complex' but needs to be for this operation.");
     }
 }
 
-void TensorThrust::on_real_error() const {
+void TensorGPU::on_real_error() const {
     if (on_complex_ != false) {
         throw std::runtime_error("Tensor data is not 'on real' but needs to be for this operation.");
     }
 }
 
-void TensorThrust::real_error() const {
+void TensorGPU::real_error() const {
     if (data_type_ != "real") {
         throw std::runtime_error("Tensor data type is not 'real' but only real operation is supported currently.");
     }
 }
 
-void TensorThrust::data_type_error(const std::string& other_data_type) const
+void TensorGPU::data_type_error(const std::string& other_data_type) const
 {
     if (data_type_ != other_data_type) {
         throw std::runtime_error("Tensor data type mismatch.");
     }
 }
 
-void TensorThrust::zero()
+void TensorGPU::zero()
 {
     cpu_error();
     if (data_type_ == "complex") {
@@ -406,7 +406,7 @@ void TensorThrust::zero()
     }
 }
 
-void TensorThrust::zero_gpu()
+void TensorGPU::zero_gpu()
 {
     gpu_error();
     if (data_type_ == "complex") {
@@ -422,56 +422,56 @@ void TensorThrust::zero_gpu()
 // These now should throw error depending on 
 // data_type_ and on_complex_
 // ==========================================
-thrust::host_vector<std::complex<double>>& TensorThrust::h_data() 
+thrust::host_vector<std::complex<double>>& TensorGPU::h_data() 
 {
     cpu_error();
     on_complex_error();
     return h_data_;
 }
 
-const thrust::host_vector<double>& TensorThrust::read_h_re_data() const 
+const thrust::host_vector<double>& TensorGPU::read_h_re_data() const 
 {
     cpu_error();
     on_real_error();
     return h_re_data_;
 }
 
-const thrust::host_vector<std::complex<double>>& TensorThrust::read_h_data() const 
+const thrust::host_vector<std::complex<double>>& TensorGPU::read_h_data() const 
 {
     cpu_error();
     on_complex_error();
     return h_data_; 
 }
 
-thrust::device_vector<cuDoubleComplex>& TensorThrust::d_data() 
+thrust::device_vector<cuDoubleComplex>& TensorGPU::d_data() 
 {
     gpu_error();
     on_complex_error();
     return d_data_; 
 }
 
-thrust::device_vector<double>& TensorThrust::d_re_data() 
+thrust::device_vector<double>& TensorGPU::d_re_data() 
 {
     gpu_error();
     on_real_error();
     return d_re_data_;
 }
 
-const thrust::device_vector<cuDoubleComplex>& TensorThrust::read_d_data() const 
+const thrust::device_vector<cuDoubleComplex>& TensorGPU::read_d_data() const 
 {
     gpu_error();
     on_complex_error();
     return d_data_; 
 }
 
-const thrust::device_vector<double>& TensorThrust::read_d_re_data() const 
+const thrust::device_vector<double>& TensorGPU::read_d_re_data() const 
 {
     gpu_error();
     on_real_error();
     return d_re_data_;
 }
 
-void TensorThrust::set(
+void TensorGPU::set(
     const std::vector<size_t>& idxs,
     const std::complex<double> val
         )
@@ -490,14 +490,14 @@ void TensorThrust::set(
     }
 }
 
-void TensorThrust::ndim_error(size_t ndims) const
+void TensorGPU::ndim_error(size_t ndims) const
 {
     if (!(ndim() == ndims)) {
         throw std::runtime_error("Tensor ndim mismatch.");
     }
 }
 
-void TensorThrust::fill_from_nparray(std::vector<std::complex<double>> arr, std::vector<size_t> shape)
+void TensorGPU::fill_from_nparray(std::vector<std::complex<double>> arr, std::vector<size_t> shape)
 {
     cpu_error();
     if (shape_ != shape) throw std::runtime_error("Shape mismatch in fill_from_nparray.");
@@ -515,7 +515,7 @@ void TensorThrust::fill_from_nparray(std::vector<std::complex<double>> arr, std:
     }
 }
 
-double TensorThrust::norm() {
+double TensorGPU::norm() {
     if (on_gpu_) {
         if (data_type_ == "complex") {
             double result = thrust::transform_reduce(thrust::device, d_data_.begin(), d_data_.end(), complex_norm_squared(), 0.0, thrust::plus<double>());
@@ -537,7 +537,7 @@ double TensorThrust::norm() {
     }
 }
 
-void TensorThrust::add_to_element(
+void TensorGPU::add_to_element(
     const std::vector<size_t>& idxs,
     const std::complex<double> val
         ) {
@@ -555,7 +555,7 @@ void TensorThrust::add_to_element(
     }
 }
 
-void TensorThrust::fill_from_np(std::vector<std::complex<double>> arr, std::vector<size_t> shape) {
+void TensorGPU::fill_from_np(std::vector<std::complex<double>> arr, std::vector<size_t> shape) {
     cpu_error();
     if (shape_ != shape) throw std::runtime_error("Shape mismatch in fill_from_np.");
     if (arr.size() != size_) throw std::runtime_error("Array size mismatch in fill_from_np.");
@@ -569,7 +569,7 @@ void TensorThrust::fill_from_np(std::vector<std::complex<double>> arr, std::vect
     }
 }
 
-void TensorThrust::zero_with_shape(
+void TensorGPU::zero_with_shape(
     const std::vector<size_t>& shape, 
     bool on_gpu, 
     const std::string& data_type)
@@ -604,7 +604,7 @@ void TensorThrust::zero_with_shape(
         on_complex_ = true;
 
     } else {
-        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex' or 'real'.");
+        throw std::runtime_error("Invalid data_type specified for TensorGPU. Must be 'complex' or 'real'.");
     }
     
     // Resize and zero the vectors
@@ -620,7 +620,7 @@ void TensorThrust::zero_with_shape(
 }
 
 /// Get the vector index for this tensor based on the tensor index
-size_t TensorThrust::tidx_to_vidx(const std::vector<size_t>& tidx) const
+size_t TensorGPU::tidx_to_vidx(const std::vector<size_t>& tidx) const
 {
     size_t vidx = 0;
     for (int i = ndim() - 1; i >= 0; i--) {
@@ -629,7 +629,7 @@ size_t TensorThrust::tidx_to_vidx(const std::vector<size_t>& tidx) const
     return vidx;
 }
 
-size_t TensorThrust::tidx_to_trans_vidx(const std::vector<size_t>& tidx, const std::vector<size_t>& axes) const
+size_t TensorGPU::tidx_to_trans_vidx(const std::vector<size_t>& tidx, const std::vector<size_t>& axes) const
 {
     size_t vidx = 0;
     for (int i = ndim() - 1; i >= 0; i--) {
@@ -639,7 +639,7 @@ size_t TensorThrust::tidx_to_trans_vidx(const std::vector<size_t>& tidx, const s
 }
 
 /// Get the tensor index for this tensor based on the vector index
-std::vector<size_t> TensorThrust::vidx_to_tidx(size_t vidx) const
+std::vector<size_t> TensorGPU::vidx_to_tidx(size_t vidx) const
 {
     std::vector<size_t> tidx(ndim());
     size_t vidx_tmp = vidx;
@@ -651,8 +651,8 @@ std::vector<size_t> TensorThrust::vidx_to_tidx(size_t vidx) const
     return tidx;
 }
 
-/// Get a particular element of this TensorThrust, specified by idxs
-std::complex<double> TensorThrust::get(
+/// Get a particular element of this TensorGPU, specified by idxs
+std::complex<double> TensorGPU::get(
     const std::vector<size_t>& idxs
     ) const
 {
@@ -669,7 +669,7 @@ std::complex<double> TensorThrust::get(
     }
 }
 
-void TensorThrust::shape_error(const std::vector<size_t>& shape) const
+void TensorGPU::shape_error(const std::vector<size_t>& shape) const
 {
     ndim_error(shape.size());
     for (size_t i = 0; i < ndim(); i++) {
@@ -679,7 +679,7 @@ void TensorThrust::shape_error(const std::vector<size_t>& shape) const
     }
 }
 
-void TensorThrust::square_error() const
+void TensorGPU::square_error() const
 {
     ndim_error(2);
     if (shape_[0] != shape_[1]) {
@@ -687,12 +687,12 @@ void TensorThrust::square_error() const
     }
 }
 
-std::shared_ptr<TensorThrust> TensorThrust::clone()
+std::shared_ptr<TensorGPU> TensorGPU::clone()
 {
-    return std::shared_ptr<TensorThrust>(new TensorThrust(*this));
+    return std::shared_ptr<TensorGPU>(new TensorGPU(*this));
 }
 
-void TensorThrust::identity()
+void TensorGPU::identity()
 {
     cpu_error();
     square_error();
@@ -707,7 +707,7 @@ void TensorThrust::identity()
     }
 }
 
-void TensorThrust::symmetrize()
+void TensorGPU::symmetrize()
 {
     cpu_error();
     square_error();
@@ -721,7 +721,7 @@ void TensorThrust::symmetrize()
     }
 }
 
-void TensorThrust::antisymmetrize()
+void TensorGPU::antisymmetrize()
 {
     cpu_error();
     square_error();
@@ -735,7 +735,7 @@ void TensorThrust::antisymmetrize()
     }
 }
 
-void TensorThrust::scale(std::complex<double> a)
+void TensorGPU::scale(std::complex<double> a)
 {
     if (data_type_ == "real" && std::abs(a.imag())>1e-14) throw std::runtime_error("Complex scale on real tensor.");
     
@@ -763,8 +763,8 @@ void TensorThrust::scale(std::complex<double> a)
     }
 }
 
-void TensorThrust::gather_in_2D_gpu(
-    const TensorThrust& other,
+void TensorGPU::gather_in_2D_gpu(
+    const TensorGPU& other,
     const thrust::device_vector<int>& i_inds,
     const thrust::device_vector<int>& j_inds
 )
@@ -800,7 +800,7 @@ void TensorThrust::gather_in_2D_gpu(
     }
 }
 
-void TensorThrust::copy_in(const TensorThrust& other)
+void TensorGPU::copy_in(const TensorGPU& other)
 {
     cpu_error();
     other.cpu_error();
@@ -814,12 +814,12 @@ void TensorThrust::copy_in(const TensorThrust& other)
         thrust::copy(other.h_re_data_.begin(), other.h_re_data_.end(), h_re_data_.begin());
         
     } else {
-        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex' or 'real'.");
+        throw std::runtime_error("Invalid data_type specified for TensorGPU. Must be 'complex' or 'real'.");
     }
 
 }
 
-void TensorThrust::copy_in_gpu(const TensorThrust& other)
+void TensorGPU::copy_in_gpu(const TensorGPU& other)
 {
     gpu_error();
     other.gpu_error();
@@ -833,13 +833,13 @@ void TensorThrust::copy_in_gpu(const TensorThrust& other)
         thrust::copy(thrust::device, other.d_re_data_.begin(), other.d_re_data_.end(), d_re_data_.begin());
         
     } else {
-        throw std::runtime_error("Invalid data_type specified for TensorThrust. Must be 'complex' or 'real'.");
+        throw std::runtime_error("Invalid data_type specified for TensorGPU. Must be 'complex' or 'real'.");
     }
 
     // thrust::copy(thrust::device, other.d_data_.begin(), other.d_data_.end(), d_data_.begin());
 }
 
-void TensorThrust::copy_in_from_tensor(const Tensor& other)
+void TensorGPU::copy_in_from_tensor(const Tensor& other)
 {
     cpu_error();
     complex_error();
@@ -847,7 +847,7 @@ void TensorThrust::copy_in_from_tensor(const Tensor& other)
     thrust::copy(other.read_data().begin(), other.read_data().end(), h_data_.begin());
 }
 
-void TensorThrust::copy_to_tensor(Tensor& dest) const
+void TensorGPU::copy_to_tensor(Tensor& dest) const
 {
     cpu_error();
     dest.shape_error(shape_);
@@ -864,7 +864,7 @@ void TensorThrust::copy_to_tensor(Tensor& dest) const
     }
 }
 
-void TensorThrust::subtract(const TensorThrust& other) {
+void TensorGPU::subtract(const TensorGPU& other) {
     shape_error(other.shape());
     if (data_type_ != other.data_type_) throw std::runtime_error("Data type mismatch in subtract.");
 
@@ -889,8 +889,8 @@ void TensorThrust::subtract(const TensorThrust& other) {
     }
 }
 
-void TensorThrust::zaxpby(
-    const TensorThrust& x,
+void TensorGPU::zaxpby(
+    const TensorGPU& x,
     std::complex<double> a,
     std::complex<double> b,
     const int incx,
@@ -932,8 +932,8 @@ void TensorThrust::zaxpby(
     }
 }
 
-void TensorThrust::zaxpy(
-    const TensorThrust& x,
+void TensorGPU::zaxpy(
+    const TensorGPU& x,
     const std::complex<double> alpha,
     const int incx,
     const int incy)
@@ -970,8 +970,8 @@ void TensorThrust::zaxpy(
     }
 }
 
-void TensorThrust::gemm(
-    const TensorThrust& B,
+void TensorGPU::gemm(
+    const TensorGPU& B,
     const char transa,
     const char transb,
     const std::complex<double> alpha,
@@ -997,7 +997,7 @@ void TensorThrust::gemm(
     }
 }
 
-std::complex<double> TensorThrust::vector_dot(const TensorThrust& other) const
+std::complex<double> TensorGPU::vector_dot(const TensorGPU& other) const
 {
     shape_error(other.shape());
     if (data_type_ != other.data_type_) throw std::runtime_error("Data type mismatch in vector_dot.");
@@ -1025,12 +1025,12 @@ std::complex<double> TensorThrust::vector_dot(const TensorThrust& other) const
     }
 }
 
-TensorThrust TensorThrust::transpose() const
+TensorGPU TensorGPU::transpose() const
 {
     cpu_error(); 
     ndim_error(2);
 
-    TensorThrust T({shape_[1], shape_[0]}, name_ + "_T", false, data_type_);
+    TensorGPU T({shape_[1], shape_[0]}, name_ + "_T", false, data_type_);
     if (data_type_ == "complex") {
         for (size_t i=0;i<shape_[0];++i) for (size_t j=0;j<shape_[1];++j) T.h_data_[j*shape_[0]+i] = h_data_[i*shape_[1]+j];
     } else if (data_type_ == "real") {
@@ -1041,7 +1041,7 @@ TensorThrust TensorThrust::transpose() const
     return T;
 }
 
-TensorThrust TensorThrust::general_transpose(const std::vector<size_t>& axes) const
+TensorGPU TensorGPU::general_transpose(const std::vector<size_t>& axes) const
 {
     cpu_error();
     if (axes.size() != ndim()) throw std::runtime_error("Axes size must match tensor dimensions.");
@@ -1051,7 +1051,7 @@ TensorThrust TensorThrust::general_transpose(const std::vector<size_t>& axes) co
         transposed_shape[i] = shape_[axes[i]];
     }
 
-    TensorThrust transposed_tensor(transposed_shape, name_+"_gt", false, data_type_);
+    TensorGPU transposed_tensor(transposed_shape, name_+"_gt", false, data_type_);
     for (size_t i=0 ; i < size_ ; ++i) { 
         std::vector<size_t> old_tidx = vidx_to_tidx(i); 
         std::vector<size_t> new_tidx(ndim()); 
@@ -1073,7 +1073,7 @@ TensorThrust TensorThrust::general_transpose(const std::vector<size_t>& axes) co
     return transposed_tensor;
 }
 
-TensorThrust TensorThrust::slice(std::vector<std::pair<size_t, size_t>> idxs) const
+TensorGPU TensorGPU::slice(std::vector<std::pair<size_t, size_t>> idxs) const
 {
     cpu_error();
     if (idxs.size() != ndim()) throw std::runtime_error("Number of slice indices must match tensor dimensions.");
@@ -1085,7 +1085,7 @@ TensorThrust TensorThrust::slice(std::vector<std::pair<size_t, size_t>> idxs) co
         if (new_shape[i] > 0) new_shape2.push_back(new_shape[i]);
     }
     
-    TensorThrust new_tensor(new_shape2, name_+"_sliced", false, data_type_);
+    TensorGPU new_tensor(new_shape2, name_+"_sliced", false, data_type_);
     size_t new_vidx = 0;
     for (size_t vidx = 0; vidx < size_; ++vidx) {
         auto tidx = vidx_to_tidx(vidx);
@@ -1112,7 +1112,7 @@ TensorThrust TensorThrust::slice(std::vector<std::pair<size_t, size_t>> idxs) co
     return new_tensor;
 }
 
-std::vector<std::vector<size_t>> TensorThrust::get_nonzero_tidxs() const
+std::vector<std::vector<size_t>> TensorGPU::get_nonzero_tidxs() const
 {
     cpu_error();
 
@@ -1135,7 +1135,7 @@ std::vector<std::vector<size_t>> TensorThrust::get_nonzero_tidxs() const
     return nonzero_tidxs;
 }
 
-std::string TensorThrust::str(
+std::string TensorGPU::str(
     bool print_data,
     bool print_complex,
     int maxcols,
@@ -1151,7 +1151,7 @@ std::string TensorThrust::str(
     
     cpu_error();
     std::ostringstream oss; 
-    oss << "TensorThrust: " << name_ << "\n"; 
+    oss << "TensorGPU: " << name_ << "\n"; 
     oss << "  Ndim  = " << ndim() << "\n"; 
     oss << "  Size  = " << size() << "\n"; 
     oss << "  Shape = ("; 
@@ -1194,11 +1194,11 @@ std::string TensorThrust::str(
     return oss.str();
 }
 
-std::string TensorThrust::print_nonzero() const
+std::string TensorGPU::print_nonzero() const
 {
     cpu_error();
     std::ostringstream oss; 
-    oss << "\n Nonzero indices and elements of TensorThrust: \n"; 
+    oss << "\n Nonzero indices and elements of TensorGPU: \n"; 
     oss << " ========================================== \n"; 
     
     if (data_type_=="complex") { 
@@ -1232,38 +1232,38 @@ std::string TensorThrust::print_nonzero() const
     return oss.str();
 }
 
-TensorThrust TensorThrust::chain(
-    const std::vector<TensorThrust>& As,
+TensorGPU TensorGPU::chain(
+    const std::vector<TensorGPU>& As,
     const std::vector<bool>& trans,
     std::complex<double> alpha,
     std::complex<double> beta)
 {
     // This would need to be implemented based on specific requirements
-    throw std::runtime_error("TensorThrust::chain not yet implemented");
+    throw std::runtime_error("TensorGPU::chain not yet implemented");
 }
 
-void TensorThrust::permute(
+void TensorGPU::permute(
     const std::vector<std::string>& Ainds,
     const std::vector<std::string>& Cinds,
-    const TensorThrust& A,
-    TensorThrust& C2,
+    const TensorGPU& A,
+    TensorGPU& C2,
     std::complex<double> alpha,
     std::complex<double> beta)
 {
     // This would need to be implemented based on specific requirements
-    throw std::runtime_error("TensorThrust::permute not yet implemented");
+    throw std::runtime_error("TensorGPU::permute not yet implemented");
 }
 
-void TensorThrust::einsum(
+void TensorGPU::einsum(
     const std::vector<std::string>& Ainds,
     const std::vector<std::string>& Binds,
     const std::vector<std::string>& Cinds,
-    const TensorThrust& A,
-    const TensorThrust& B,
-    TensorThrust& C3,
+    const TensorGPU& A,
+    const TensorGPU& B,
+    TensorGPU& C3,
     std::complex<double> alpha,
     std::complex<double> beta)
 {
     // This would need to be implemented based on specific requirements
-    throw std::runtime_error("TensorThrust::einsum not yet implemented");
+    throw std::runtime_error("TensorGPU::einsum not yet implemented");
 }

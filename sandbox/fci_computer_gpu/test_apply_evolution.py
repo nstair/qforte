@@ -14,7 +14,7 @@ fci_comp.hartree_fock()
 #fci_comp_gpu = qf.FCIComputerGPU(nel=nel, sz=sz, norb=norb)
 #fci_comp_gpu.hartree_fock()
 
-fci_comp_thrust = qf.FCIComputerThrust(nel=nel, sz=sz, norb=norb)
+fci_comp_thrust = qf.FCIComputerGPU(nel=nel, sz=sz, norb=norb)
 fci_comp_thrust.hartree_fock_cpu()
 
 if(RAND):

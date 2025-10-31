@@ -22,7 +22,7 @@
 
 class Tensor;
 
-class TensorThrust {
+class TensorGPU {
 
 public:
 
@@ -34,16 +34,16 @@ public:
  * @param shape the shape of the tensor
  * @param name name of the tensor (for printing/filename use)
  **/
-TensorThrust(
+TensorGPU(
     const std::vector<size_t>& shape,
     const std::string& name = "T",
     const bool on_gpu = false,
     const std::string& data_type = "complex"
     );
 
-TensorThrust();
+TensorGPU();
 
-~TensorThrust();
+~TensorGPU();
 
 void to_gpu();
 
@@ -51,7 +51,7 @@ void to_cpu();
 
 bool on_gpu() const { return on_gpu_; }
 
-void add(const TensorThrust&);
+void add(const TensorGPU&);
 
 void zero();
 
@@ -77,7 +77,7 @@ const thrust::device_vector<double>& read_d_re_data() const;
 
 const thrust::device_vector<double>& read_d_im_data() const;
 
-void add_thrust(const TensorThrust& other);
+void add_thrust(const TensorGPU& other);
 
 // Throw if not on GPU
 void gpu_error() const;
@@ -165,7 +165,7 @@ void zero_with_shape(
 // => Clone Actions <= //
 
 /// Create a new copy of this Tensor (same size and data)
-std::shared_ptr<TensorThrust> clone();
+std::shared_ptr<TensorGPU> clone();
 
 void fill_from_np(std::vector<std::complex<double>>, std::vector<size_t>);
 
@@ -214,16 +214,16 @@ void scale(std::complex<double> a);
 
 
 /**
- * Gather elements from another 2D TensorThrust into this Tensor using provided index vectors.
+ * Gather elements from another 2D TensorGPU into this Tensor using provided index vectors.
  * The indices specify which elements to copy from the source tensor.
  * Throw if shapes or indices are incompatible.
  *
- * @param other Source TensorThrust to gather from
+ * @param other Source TensorGPU to gather from
  * @param i_inds Device vector of row indices
  * @param j_inds Device vector of column indices
  **/
 void gather_in_2D_gpu(
-    const TensorThrust& other,
+    const TensorGPU& other,
     const thrust::device_vector<int>& i_inds, //sourcea_dag,
     const thrust::device_vector<int>& j_inds //sourceb_dag,
     );
@@ -234,9 +234,9 @@ void gather_in_2D_gpu(
  * @param other Tensor to copy data from
  * Throw if other is not same shape 
  **/
-void copy_in(const TensorThrust& other); 
+void copy_in(const TensorGPU& other); 
 
-void copy_in_gpu(const TensorThrust& other);
+void copy_in_gpu(const TensorGPU& other);
 
 void copy_in_from_tensor(const Tensor& other);
 
@@ -246,13 +246,13 @@ void copy_to_tensor(Tensor& dest) const;
  * Update this Tensor (y) to be y = a * x + b * y
  * Throw if x is not same shape 
  **/
-void axpby(const std::shared_ptr<TensorThrust>& x, double a, double b);
+void axpby(const std::shared_ptr<TensorGPU>& x, double a, double b);
 
 /**
  * Subtract one tensor from another
  * Throw if x is not same shape 
  **/
- void subtract(const TensorThrust& other);
+ void subtract(const TensorGPU& other);
 
 /**
  * Compute the dot product between this and other Tensors,
@@ -263,7 +263,7 @@ void axpby(const std::shared_ptr<TensorThrust>& x, double a, double b);
  * @return the dot product
  * Throw if other is not same shape 
  **/
-std::complex<double> vector_dot(const TensorThrust& other) const;
+std::complex<double> vector_dot(const TensorGPU& other) const;
 
 /**
  * Compute a new copy of this Tensor which is a transpose of this. Works only
@@ -272,14 +272,14 @@ std::complex<double> vector_dot(const TensorThrust& other) const;
  * @return a transposed copy of this
  * Throw if not 2 ndim
  **/
-TensorThrust transpose() const;
+TensorGPU transpose() const;
 
 /**
  * Compute a new copy of this Tensor which is a transpose of this.
  *
  * @return a transposed copy of this according to axes
  **/
-TensorThrust general_transpose(const std::vector<size_t>& axes) const;
+TensorGPU general_transpose(const std::vector<size_t>& axes) const;
 
 /**
  * Create a new tensor based off the given sliced indexes.
@@ -288,7 +288,7 @@ TensorThrust general_transpose(const std::vector<size_t>& axes) const;
  * @return a new tensor with new shape, size, and data
  * Throw if given too many indexes for the dimensions or if given invalid syntax for indexes.
  **/
-TensorThrust slice(std::vector<std::pair<size_t, size_t>> idxs) const;
+TensorGPU slice(std::vector<std::pair<size_t, size_t>> idxs) const;
 
 std::vector<std::vector<size_t>> get_nonzero_tidxs() const;
 
@@ -313,20 +313,20 @@ void square_error() const;
 /// ===============> MATH <===================== ///
 
 void zaxpy(
-    const TensorThrust& x, 
+    const TensorGPU& x, 
     const std::complex<double> alpha,
     const int incx,
     const int incy);
 
 void zaxpby(
-    const TensorThrust& x,
+    const TensorGPU& x,
     std::complex<double> a,
     std::complex<double> b,
     const int incx,
     const int incy);
 
 void gemm(
-    const TensorThrust& B,
+    const TensorGPU& B,
     const char transa,
     const char transb,
     const std::complex<double> alpha,
@@ -348,8 +348,8 @@ void gemm(
  *  @param beta the prefactor of the register tensor C
  *  @return C - the resultant tensor (for chaining and new allocation)
  **/
-static TensorThrust chain(
-    const std::vector<TensorThrust>& As,
+static TensorGPU chain(
+    const std::vector<TensorGPU>& As,
     const std::vector<bool>& trans,
     std::complex<double> alpha,
     std::complex<double> beta);
@@ -357,8 +357,8 @@ static TensorThrust chain(
 static void permute(
     const std::vector<std::string>& Ainds,
     const std::vector<std::string>& Cinds,
-    const TensorThrust& A,
-    TensorThrust& C2,
+    const TensorGPU& A,
+    TensorGPU& C2,
     std::complex<double> alpha = 1.0,
     std::complex<double> beta = 0.0);
 
@@ -366,9 +366,9 @@ static void einsum(
     const std::vector<std::string>& Ainds,
     const std::vector<std::string>& Binds,
     const std::vector<std::string>& Cinds,
-    const TensorThrust& A,
-    const TensorThrust& B,
-    TensorThrust& C3,
+    const TensorGPU& A,
+    const TensorGPU& B,
+    TensorGPU& C3,
     std::complex<double> alpha = 1.0,
     std::complex<double> beta = 0.0);
 

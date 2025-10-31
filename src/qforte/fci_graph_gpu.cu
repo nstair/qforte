@@ -1,14 +1,17 @@
-#include "fci_graph.h"
+#include "fci_graph_gpu.h"
 #include <stdexcept>
 #include <algorithm>
 #include <cstdint>
 #include <unordered_map>
 #include <iostream>
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <cuComplex.h>
 
 #include <bitset>
 
-/// Custom construcotr
-FCIGraph::FCIGraph(int nalfa, int nbeta, int norb) 
+/// Custom construcotor
+FCIGraphGPU::FCIGraphGPU(int nalfa, int nbeta, int norb) 
 {
     if (norb < 0)
         throw std::invalid_argument("norb needs to be >= 0");
@@ -41,9 +44,9 @@ FCIGraph::FCIGraph(int nalfa, int nbeta, int norb)
     dexcb_vec_ = unroll_from_3d(dexcb_);
 }
 
-FCIGraph::FCIGraph() : FCIGraph(0, 0, 0) {}
+FCIGraphGPU::FCIGraphGPU() : FCIGraphGPU(0, 0, 0) {}
 
-std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> FCIGraph::build_strings(
+std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> FCIGraphGPU::build_strings(
     int nele, 
     size_t length) 
 {
@@ -80,7 +83,7 @@ std::pair<std::vector<uint64_t>, std::unordered_map<uint64_t, size_t>> FCIGraph:
     return std::make_pair(string_list, index_list);
 }
 
-Spinmap FCIGraph::build_mapping(
+Spinmap FCIGraphGPU::build_mapping(
     const std::vector<uint64_t>& strings, 
     int nele, 
     const std::unordered_map<uint64_t, size_t>& index) 
@@ -128,7 +131,7 @@ Spinmap FCIGraph::build_mapping(
     return result;
 }
 
-std::vector<std::vector<std::vector<int>>> FCIGraph::map_to_deexc(
+std::vector<std::vector<std::vector<int>>> FCIGraphGPU::map_to_deexc(
     const Spinmap& mappings, 
     int states, 
     int norbs,
@@ -166,11 +169,104 @@ std::vector<std::vector<std::vector<int>>> FCIGraph::map_to_deexc(
 
 /// NICK: May be an accelerated version of this funciton, may also be important as it comes up in
 // every instance of apply individual op!
-std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::make_mapping_each(
+void FCIGraphGPU::make_mapping_each(
     bool alpha, 
     const std::vector<int>& dag, 
-    const std::vector<int>& undag) 
+    const std::vector<int>& undag,
+    int* count,
+    thrust::device_vector<int>& source,
+    thrust::device_vector<int>& target,
+    thrust::device_vector<cuDoubleComplex>& parity) 
 {
+    timer_.reset();
+
+    // Get the appropriate strings and mappings based on alpha/beta
+    std::vector<uint64_t> strings;
+    std::unordered_map<uint64_t, size_t> index_map;
+    int length;
+    
+    if (alpha) {
+        strings = get_astr();
+        index_map = get_aind();
+        length = lena_;
+    } else {
+        strings = get_bstr();
+        index_map = get_bind();
+        length = lenb_;
+    }
+
+    // Create masks for dag and undag operators
+    uint64_t dag_mask = 0;
+    uint64_t undag_mask = 0;
+
+    for (uint64_t i : dag) {
+        if (std::find(undag.begin(), undag.end(), i) == undag.end()) {
+            dag_mask = set_bit(dag_mask, i);
+        }
+    }
+
+    for (uint64_t i : undag) { 
+        undag_mask = set_bit(undag_mask, i); 
+    }
+
+    // Temporary host vectors to store results before copying to device
+    std::vector<int> source_host;
+    std::vector<int> target_host;
+    std::vector<cuDoubleComplex> parity_host;
+
+    for (uint64_t index = 0; index < length; index++) {
+        uint64_t current = strings[index];
+        bool check = ((current & dag_mask) == 0) && ((current & undag_mask ^ undag_mask) == 0);
+        
+        if (check) {
+            uint64_t parity_value = 0;
+            for (size_t i = undag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, undag[i - 1]);
+                current = unset_bit(current, undag[i - 1]);
+            }
+            
+            for (size_t i = dag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, dag[i - 1]);
+                current = set_bit(current, dag[i - 1]);
+            }
+            
+            // Store the mapping like the CPU version after processing:
+            // 1. source: original determinant index
+            // 2. target: resulting determinant BITSTRING (not index)
+            // 3. parity: +1/-1 format (converted from 0/1)
+            
+            source_host.push_back(static_cast<int>(index));
+            target_host.push_back(static_cast<int>(current));
+
+            parity_host.push_back(make_cuDoubleComplex(static_cast<double>(parity_value % 2), 0.0));
+        }
+    }
+
+    // Set the count
+    *count = source_host.size();
+
+    // Copy results to device vectors
+    if (*count > 0) {
+        // Copy data from host to device
+        thrust::copy(source_host.begin(), source_host.end(), source.begin());
+        thrust::copy(target_host.begin(), target_host.end(), target.begin());
+        thrust::copy(parity_host.begin(), parity_host.end(), parity.begin());
+    }
+
+    timer_.acc_record("make_mapping_each");
+}
+
+void FCIGraphGPU::make_mapping_each_otf_gpu_complex(
+    bool alpha, 
+    const std::vector<int>& dag, 
+    const std::vector<int>& undag,
+    int* count,
+    thrust::device_vector<int>& source_gpu,
+    thrust::device_vector<int>& target_gpu,
+    thrust::device_vector<cuDoubleComplex>& parity_gpu) 
+{
+    timer_.reset();
+
     std::vector<uint64_t> strings;
     int length;
     
@@ -182,13 +278,12 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::
         length = lenb_;
     }
 
-    std::vector<int> source(length);
-    std::vector<int> target(length);
-    std::vector<int> parity(length);
+    thrust::host_vector<int> source(length);
+    thrust::host_vector<int> target(length);
+    thrust::host_vector<cuDoubleComplex> parity(length);
 
     uint64_t dag_mask = 0;
     uint64_t undag_mask = 0;
-    int count = 0;
 
     for (uint64_t i : dag) {
         if (std::find(undag.begin(), undag.end(), i) == undag.end()) {
@@ -203,7 +298,6 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::
         bool check = ((current & dag_mask) == 0) && ((current & undag_mask ^ undag_mask) == 0);
         
         if (check) {
-            uint64_t tmp = current;
             uint64_t parity_value = 0;
             for (size_t i = undag.size(); i > 0; i--) {
                 parity_value += count_bits_above(current, undag[i - 1]);
@@ -215,22 +309,249 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::
                 current = set_bit(current, dag[i - 1]);
             }
             
-            source[count] = static_cast<int>(index);
-            target[count] = static_cast<int>(current);
-            parity[count] = static_cast<int>(parity_value % 2);
-            count++;
+            source[*count] = static_cast<int>(index);
+            target[*count] = alpha ? get_aind_for_str(static_cast<int>(current)) : get_bind_for_str(static_cast<int>(current));
+            parity[*count] = make_cuDoubleComplex(1.0 - 2.0 * static_cast<int>(parity_value % 2), 0.0);
+            (*count)++;
         }
     }
 
-    return std::make_tuple(
-                    count,
-                    source,
-                    target,
-                    parity);
+    source_gpu.resize(*count);
+    target_gpu.resize(*count);
+    parity_gpu.resize(*count);
+
+    if (*count > 0) {
+        thrust::copy_n(source.begin(), *count, source_gpu.begin());
+        thrust::copy_n(target.begin(), *count, target_gpu.begin());
+        thrust::copy_n(parity.begin(), *count, parity_gpu.begin());
+    }
+
+    timer_.acc_record("make_mapping_each");
+}
+
+void FCIGraphGPU::make_mapping_each_otf_gpu_real(
+    bool alpha, 
+    const std::vector<int>& dag, 
+    const std::vector<int>& undag,
+    int* count,
+    thrust::device_vector<int>& source_gpu,
+    thrust::device_vector<int>& target_gpu,
+    thrust::device_vector<double>& parity_gpu) 
+{
+    timer_.reset();
+
+    std::vector<uint64_t> strings;
+    int length;
+    
+    if (alpha) {
+        strings = get_astr();
+        length = lena_;
+    } else {
+        strings = get_bstr();
+        length = lenb_;
+    }
+
+    thrust::host_vector<int>    source(length);
+    thrust::host_vector<int>    target(length);
+    thrust::host_vector<double> parity(length);
+
+    uint64_t dag_mask   = 0;
+    uint64_t undag_mask = 0;
+
+    for (uint64_t i : dag) {
+        if (std::find(undag.begin(), undag.end(), static_cast<int>(i)) == undag.end()) {
+            dag_mask = set_bit(dag_mask, i);
+        }
+    }
+    for (uint64_t i : undag) { undag_mask = set_bit(undag_mask, i); }
+
+    for (uint64_t index = 0; index < static_cast<uint64_t>(length); index++) {
+        uint64_t current = strings[index];
+
+        bool check = ((current & dag_mask) == 0) && (((current & undag_mask) ^ undag_mask) == 0);
+        if (check) {
+            uint64_t parity_value = 0;
+
+            for (size_t i = undag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, static_cast<uint64_t>(undag[i - 1]));
+                current = unset_bit(current, static_cast<uint64_t>(undag[i - 1]));
+            }
+            for (size_t i = dag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, static_cast<uint64_t>(dag[i - 1]));
+                current = set_bit(current, static_cast<uint64_t>(dag[i - 1]));
+            }
+
+            source[*count] = static_cast<int>(index);
+            target[*count] = alpha
+                ? get_aind_for_str(static_cast<int>(current))
+                : get_bind_for_str(static_cast<int>(current));
+
+            parity[*count] = (parity_value % 2 == 0) ? 1.0 : -1.0;
+
+            (*count)++;
+        }
+    }
+
+    source_gpu.resize(*count);
+    target_gpu.resize(*count);
+    parity_gpu.resize(*count);
+
+    if (*count > 0) {
+        thrust::copy_n(source.begin(), *count, source_gpu.begin());
+        thrust::copy_n(target.begin(), *count, target_gpu.begin());
+        thrust::copy_n(parity.begin(), *count, parity_gpu.begin());
+    }
+
+    timer_.acc_record("make_mapping_each_real");
+}
+
+void FCIGraphGPU::make_mapping_each_pre_gpu_complex(
+    bool alpha, 
+    const std::vector<int>& dag, 
+    const std::vector<int>& undag,
+    int* count,
+    std::vector<thrust::device_vector<int>>& terms_source_gpu,
+    std::vector<thrust::device_vector<int>>& terms_target_gpu,
+    std::vector<thrust::device_vector<cuDoubleComplex>>& terms_parity_gpu) 
+{
+
+    std::vector<uint64_t> strings;
+    int length;
+    
+    if (alpha) {
+        strings = get_astr();
+        length = lena_;
+    } else {
+        strings = get_bstr();
+        length = lenb_;
+    }
+
+    thrust::host_vector<int> source(length);
+    thrust::host_vector<int> target(length);
+    thrust::host_vector<cuDoubleComplex> parity(length);
+
+    uint64_t dag_mask = 0;
+    uint64_t undag_mask = 0;
+
+    for (uint64_t i : dag) {
+        if (std::find(undag.begin(), undag.end(), i) == undag.end()) {
+            dag_mask = set_bit(dag_mask, i);
+        }
+    }
+
+    for (uint64_t i : undag) { undag_mask = set_bit(undag_mask, i); }
+
+    for (uint64_t index = 0; index < length; index++) {
+        uint64_t current = strings[index];
+        bool check = ((current & dag_mask) == 0) && ((current & undag_mask ^ undag_mask) == 0);
+        
+        if (check) {
+            uint64_t parity_value = 0;
+            for (size_t i = undag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, undag[i - 1]);
+                current = unset_bit(current, undag[i - 1]);
+            }
+            
+            for (size_t i = dag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, dag[i - 1]);
+                current = set_bit(current, dag[i - 1]);
+            }
+            
+            source[*count] = static_cast<int>(index);
+            target[*count] = alpha ? get_aind_for_str(static_cast<int>(current)) : get_bind_for_str(static_cast<int>(current));
+            parity[*count] = make_cuDoubleComplex(1.0 - 2.0 * static_cast<int>(parity_value % 2), 0.0);
+            (*count)++;
+        }
+    }
+
+    thrust::device_vector<int> source_gpu(*count);
+    thrust::device_vector<int> target_gpu(*count);
+    thrust::device_vector<cuDoubleComplex> parity_gpu(*count);
+
+    thrust::copy(source.begin(), source.begin() + *count, source_gpu.begin());
+    thrust::copy(target.begin(), target.begin() + *count, target_gpu.begin());
+    thrust::copy(parity.begin(), parity.begin() + *count, parity_gpu.begin());
+
+    terms_source_gpu.emplace_back(source_gpu);
+    terms_target_gpu.emplace_back(target_gpu);
+    terms_parity_gpu.emplace_back(parity_gpu);
+}
+
+void FCIGraphGPU::make_mapping_each_pre_gpu_real(
+    bool alpha,
+    const std::vector<int>& dag,
+    const std::vector<int>& undag,
+    int* count,
+    std::vector<thrust::device_vector<int>>& terms_source_gpu,
+    std::vector<thrust::device_vector<int>>& terms_target_gpu,
+    std::vector<thrust::device_vector<double>>& terms_parity_re_gpu)
+{
+    std::vector<uint64_t> strings;
+    int length;
+
+    if (alpha) {
+        strings = get_astr();
+        length = lena_;
+    } else {
+        strings = get_bstr();
+        length = lenb_;
+    }
+
+    thrust::host_vector<int> source(length);
+    thrust::host_vector<int> target(length);
+    thrust::host_vector<double> parity_re(length);
+
+    uint64_t dag_mask = 0;
+    uint64_t undag_mask = 0;
+
+    for (uint64_t i : dag) {
+        if (std::find(undag.begin(), undag.end(), i) == undag.end()) {
+            dag_mask = set_bit(dag_mask, i);
+        }
+    }
+
+    for (uint64_t i : undag) { undag_mask = set_bit(undag_mask, i); }
+
+    for (uint64_t index = 0; index < static_cast<uint64_t>(length); index++) {
+        uint64_t current = strings[index];
+        bool check = ((current & dag_mask) == 0) && ((current & undag_mask ^ undag_mask) == 0);
+
+        if (check) {
+            uint64_t parity_value = 0;
+            for (size_t i = undag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, undag[i - 1]);
+                current = unset_bit(current, undag[i - 1]);
+            }
+
+            for (size_t i = dag.size(); i > 0; i--) {
+                parity_value += count_bits_above(current, dag[i - 1]);
+                current = set_bit(current, dag[i - 1]);
+            }
+
+            source[*count] = static_cast<int>(index);
+            target[*count] = alpha ? get_aind_for_str(static_cast<int>(current)) : get_bind_for_str(static_cast<int>(current));
+            parity_re[*count] = 1.0 - 2.0 * static_cast<int>(parity_value % 2);
+            (*count)++;
+        }
+    }
+
+    thrust::device_vector<int> source_gpu(*count);
+    thrust::device_vector<int> target_gpu(*count);
+    thrust::device_vector<double> parity_re_gpu(*count);
+
+    thrust::copy(source.begin(), source.begin() + *count, source_gpu.begin());
+    thrust::copy(target.begin(), target.begin() + *count, target_gpu.begin());
+    thrust::copy(parity_re.begin(), parity_re.begin() + *count, parity_re_gpu.begin());
+
+    terms_source_gpu.emplace_back(source_gpu);
+    terms_target_gpu.emplace_back(target_gpu);
+    terms_parity_re_gpu.emplace_back(parity_re_gpu);
+
+    timer_.acc_record("make_mapping_each_v4");
 }
 
 /// NICK: 1. Consider a faster blas veriosn, 2. consider using qubit basis, 3. rename (too long)
-std::vector<uint64_t> FCIGraph::get_lex_bitstrings(int nele, int norb) {
+std::vector<uint64_t> FCIGraphGPU::get_lex_bitstrings(int nele, int norb) {
 
     if (nele > norb) {
         throw std::invalid_argument("can't have more electorns that orbitals");
@@ -261,7 +582,7 @@ std::vector<uint64_t> FCIGraph::get_lex_bitstrings(int nele, int norb) {
 }
 
 /// NICK: Seems slow..., may want to use qubit basis, convert to size_t maybe??
-uint64_t FCIGraph::build_string_address(
+uint64_t FCIGraphGPU::build_string_address(
     int nele, 
     int norb, 
     uint64_t occ,
@@ -283,7 +604,7 @@ uint64_t FCIGraph::build_string_address(
 }
 
 /// NICK: May want to make faster using blas calls if it becomes a bottleneck
-std::vector<std::vector<uint64_t>> FCIGraph::get_z_matrix(int norb, int nele) {
+std::vector<std::vector<uint64_t>> FCIGraphGPU::get_z_matrix(int norb, int nele) {
     // Initialize Z matrix with zeros
     std::vector<std::vector<uint64_t>> Z(nele, std::vector<uint64_t>(norb, 0)); 
 

@@ -20,12 +20,12 @@
 #include "blas_math.h"
 #include "cuda_runtime.h"
 
-#include "fci_computer_thrust.h"
-#include "fci_graph_thrust.h"
+#include "fci_computer_gpu.h"
+#include "fci_graph_gpu.h"
 
 #include "fci_computer_gpu_kernels.cuh"
 
-FCIComputerThrust::FCIComputerThrust(int nel, int sz, int norb, bool on_gpu, const std::string& data_type) : 
+FCIComputerGPU::FCIComputerGPU(int nel, int sz, int norb, bool on_gpu, const std::string& data_type) : 
     nel_(nel), 
     sz_(sz),
     norb_(norb),
@@ -93,13 +93,13 @@ FCIComputerThrust::FCIComputerThrust(int nel, int sz, int norb, bool on_gpu, con
     parityb_undag_gpu_.reserve(nbeta_strs_);
     parityb_undag_gpu_real_.reserve(nbeta_strs_);
 
-    graph_ = FCIGraphThrust(nalfa_el_, nbeta_el_, norb_);
+    graph_ = FCIGraphGPU(nalfa_el_, nbeta_el_, norb_);
 
     // timer_ = local_timer();
 }
 
 /// Destructor: properly cleanup GPU resources
-FCIComputerThrust::~FCIComputerThrust() {
+FCIComputerGPU::~FCIComputerGPU() {
     try {
         
         sourcea_gpu_.clear();
@@ -151,14 +151,14 @@ FCIComputerThrust::~FCIComputerThrust() {
         parityb_undag_gpu_real_.shrink_to_fit();
 
     } catch (const std::exception& e) {
-        // std::cerr << "Caught exception in FCIComputerThrust destructor: " << e.what() << std::endl;
+        // std::cerr << "Caught exception in FCIComputerGPU destructor: " << e.what() << std::endl;
     } catch (...) {
-        // std::cerr << "Caught unknown exception in FCIComputerThrust destructor." << std::endl;
+        // std::cerr << "Caught unknown exception in FCIComputerGPU destructor." << std::endl;
     }
 }
 
-/// Set a particular element of the tensor stored in FCIComputerThrust, specified by idxs
-void FCIComputerThrust::set_element(
+/// Set a particular element of the tensor stored in FCIComputerGPU, specified by idxs
+void FCIComputerGPU::set_element(
     const std::vector<size_t>& idxs,
     const std::complex<double> val
         )
@@ -166,23 +166,23 @@ void FCIComputerThrust::set_element(
     C_.set(idxs, val);
 }
 
-void FCIComputerThrust::gpu_error() const {
+void FCIComputerGPU::gpu_error() const {
 
     if (not on_gpu_) {
-        throw std::runtime_error("Data not on GPU for FCIComputerThrust" + name_);
+        throw std::runtime_error("Data not on GPU for FCIComputerGPU" + name_);
     }
 
 }
 
-void FCIComputerThrust::cpu_error() const {
+void FCIComputerGPU::cpu_error() const {
 
     if (on_gpu_) {
-        throw std::runtime_error("Data not on CPU for FCIComputerThrust" + name_);
+        throw std::runtime_error("Data not on CPU for FCIComputerGPU" + name_);
     }
 
 }
 
-void FCIComputerThrust::to_gpu()
+void FCIComputerGPU::to_gpu()
 {
     cpu_error();
     C_.to_gpu();
@@ -190,7 +190,7 @@ void FCIComputerThrust::to_gpu()
 }
 
 // change to 'to_cpu'
-void FCIComputerThrust::to_cpu()
+void FCIComputerGPU::to_cpu()
 {
     gpu_error();
     C_.to_cpu();
@@ -201,22 +201,22 @@ void FCIComputerThrust::to_cpu()
 // void apply_tensor_operator(const TensorOperator& top);
 
 /// apply a Tensor represending a 1-body spin-orbital indexed operator to the current state 
-void FCIComputerThrust::apply_tensor_spin_1bdy(const TensorThrust& h1e, size_t norb) {
+void FCIComputerGPU::apply_tensor_spin_1bdy(const TensorGPU& h1e, size_t norb) {
 
     if(h1e.size() != (norb * 2) * (norb * 2)){
         throw std::invalid_argument("Expecting h1e to be nso x nso for apply_tensor_spin_1bdy");
     }
 
-    TensorThrust Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
+    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
 
-    TensorThrust h1e_blk1 = h1e.slice(
+    TensorGPU h1e_blk1 = h1e.slice(
         {
             std::make_pair(0, norb_), 
             std::make_pair(0, norb_)
             }
         );
 
-    TensorThrust h1e_blk2 = h1e.slice(
+    TensorGPU h1e_blk2 = h1e.slice(
         {
             std::make_pair(norb_, 2*norb_), 
             std::make_pair(norb_, 2*norb_)
@@ -246,11 +246,11 @@ void FCIComputerThrust::apply_tensor_spin_1bdy(const TensorThrust& h1e, size_t n
     C_ = Cnew;
 }
 
-/// apply TensorThrusts represending 1-body and 2-body spatial-orbital indexed operator to the current state 
-void FCIComputerThrust::apply_tensor_spat_12bdy(
-    const TensorThrust& h1e, 
-    const TensorThrust& h2e, 
-    const TensorThrust& h2e_einsum, 
+/// apply TensorGPUs represending 1-body and 2-body spatial-orbital indexed operator to the current state 
+void FCIComputerGPU::apply_tensor_spat_12bdy(
+    const TensorGPU& h1e, 
+    const TensorGPU& h2e, 
+    const TensorGPU& h2e_einsum, 
     size_t norb) 
 {
     if(h1e.size() != norb * norb){
@@ -265,7 +265,7 @@ void FCIComputerThrust::apply_tensor_spat_12bdy(
         throw std::invalid_argument("Expecting h2e_einsum to be norb x norb x norb x norb for apply_tensor_spat_12bdy");
     }
 
-    TensorThrust Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
+    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
 
     // Apply one-body terms
     apply_array_1bdy_cpu(
@@ -326,16 +326,16 @@ void FCIComputerThrust::apply_tensor_spat_12bdy(
     C_ = Cnew;
 }
 
-/// apply TensorThrusts represending 1-body and 2-body spatial-orbital indexed operator
+/// apply TensorGPUs represending 1-body and 2-body spatial-orbital indexed operator
 /// as well as a constant to the current state 
-void FCIComputerThrust::apply_tensor_spat_012bdy(
+void FCIComputerGPU::apply_tensor_spat_012bdy(
     const std::complex<double> h0e,
-    const TensorThrust& h1e, 
-    const TensorThrust& h2e, 
-    const TensorThrust& h2e_einsum, 
+    const TensorGPU& h1e, 
+    const TensorGPU& h2e, 
+    const TensorGPU& h2e_einsum, 
     size_t norb) 
 {
-    TensorThrust Cold = C_;
+    TensorGPU Cold = C_;
     
     apply_tensor_spat_12bdy(
         h1e,
@@ -351,8 +351,8 @@ void FCIComputerThrust::apply_tensor_spat_012bdy(
     );
 }
 
-/// Set a particular element of this TensorThrust, specified by idxs
-void FCIComputerThrust::add_to_element(
+/// Set a particular element of this TensorGPU, specified by idxs
+void FCIComputerGPU::add_to_element(
     const std::vector<size_t>& idxs,
     const std::complex<double> val
         )
@@ -362,49 +362,49 @@ void FCIComputerThrust::add_to_element(
 
 /// TODO: Not implemented in GPU so skipping
 /*
-void FCIComputerThrust::apply_tensor_operator(const TensorOperator& top)
+void FCIComputerGPU::apply_tensor_operator(const TensorOperator& top)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // Implementation would be similar to FCIComputerGPU but using TensorGPU
     // This is a placeholder - full implementation would need to be added
     throw std::runtime_error("");
 }*/
 
 /// TODO: this is commented out in FCIComputerGPU, so skipping
 /*
-void FCIComputerThrust::apply_tensor_spin_12bdy(
-    const TensorThrust& h1e, 
-    const TensorThrust& h2e, 
+void FCIComputerGPU::apply_tensor_spin_12bdy(
+    const TensorGPU& h1e, 
+    const TensorGPU& h2e, 
     size_t norb)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // Implementation would be similar to FCIComputerGPU but using TensorGPU
     // This is a placeholder - full implementation would need to be added
     throw std::runtime_error("");
 }*/
 
 /// TODO: in GPU header but not implemented in GPU source
 /*
-void FCIComputerThrust::lm_apply_array1(
-    const TensorThrust& out,
+void FCIComputerGPU::lm_apply_array1(
+    const TensorGPU& out,
     const std::vector<int> dexc,
     const int astates,
     const int bstates,
     const int ndexc,
-    const TensorThrust& h1e,
+    const TensorGPU& h1e,
     const int norbs,
     const bool is_alpha)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // Implementation would be similar to FCIComputerGPU but using TensorGPU
     // This is a placeholder - full implementation would need to be added
     throw std::runtime_error("");
 }*/
 
-void FCIComputerThrust::apply_array_1bdy_cpu(
-    TensorThrust& out,
+void FCIComputerGPU::apply_array_1bdy_cpu(
+    TensorGPU& out,
     const std::vector<int>& dexc,
     const int astates,
     const int bstates,
     const int ndexc,
-    const TensorThrust& h1e,
+    const TensorGPU& h1e,
     const int norbs,
     const bool is_alpha)
 {
@@ -433,14 +433,14 @@ void FCIComputerThrust::apply_array_1bdy_cpu(
     }
 }
 
-void FCIComputerThrust::lm_apply_array12_same_spin_opt_cpu(
-    TensorThrust& out,
+void FCIComputerGPU::lm_apply_array12_same_spin_opt_cpu(
+    TensorGPU& out,
     const std::vector<int>& dexc,
     const int alpha_states,
     const int beta_states,
     const int ndexc,
-    const TensorThrust& h1e,
-    const TensorThrust& h2e,
+    const TensorGPU& h1e,
+    const TensorGPU& h2e,
     const int norbs,
     const bool is_alpha)
 {
@@ -486,15 +486,15 @@ void FCIComputerThrust::lm_apply_array12_same_spin_opt_cpu(
     }
 }
 
-void FCIComputerThrust::lm_apply_array12_diff_spin_opt_cpu(
-    TensorThrust& out,
+void FCIComputerGPU::lm_apply_array12_diff_spin_opt_cpu(
+    TensorGPU& out,
     const std::vector<int>& adexc,
     const std::vector<int>& bdexc,
     const int alpha_states,
     const int beta_states,
     const int nadexc,
     const int nbdexc,
-    const TensorThrust& h2e,
+    const TensorGPU& h2e,
     const int norbs)
 {
     cpu_error();
@@ -573,18 +573,18 @@ void FCIComputerThrust::lm_apply_array12_diff_spin_opt_cpu(
 
 /// TODO: Not implemented in GPU so skipping
 /*
-std::pair<TensorThrust, TensorThrust> FCIComputerThrust::calculate_dvec_spin_with_coeff()
+std::pair<TensorGPU, TensorGPU> FCIComputerGPU::calculate_dvec_spin_with_coeff()
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // Implementation would be similar to FCIComputerGPU but using TensorGPU
     // This is a placeholder - full implementation would need to be added
     throw std::runtime_error("");
 }*/
 
-TensorThrust FCIComputerThrust::calculate_coeff_spin_with_dvec_cpu(std::pair<TensorThrust, TensorThrust>& dvec)
+TensorGPU FCIComputerGPU::calculate_coeff_spin_with_dvec_cpu(std::pair<TensorGPU, TensorGPU>& dvec)
 {
     cpu_error();
 
-    TensorThrust Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
+    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew");
 
     for (size_t i = 0; i < norb_; ++i) {
         for (size_t j = 0; j < norb_; ++j) {
@@ -619,7 +619,7 @@ TensorThrust FCIComputerThrust::calculate_coeff_spin_with_dvec_cpu(std::pair<Ten
     return Cnew;
 }
 
-std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map_number_cpu(
+std::pair<std::vector<int>, std::vector<int>> FCIComputerGPU::evaluate_map_number_cpu(
     const std::vector<int>& numa,
     const std::vector<int>& numb)
 {
@@ -656,7 +656,7 @@ std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map_nu
     return std::make_pair(amap, bmap);
 }
 
-std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map_cpu(
+std::pair<std::vector<int>, std::vector<int>> FCIComputerGPU::evaluate_map_cpu(
     const std::vector<int>& crea,
     const std::vector<int>& anna,
     const std::vector<int>& creb,
@@ -696,14 +696,14 @@ std::pair<std::vector<int>, std::vector<int>> FCIComputerThrust::evaluate_map_cp
     return std::make_pair(amap, bmap);
 }
 
-void FCIComputerThrust::apply_cos_inplace_cpu(
+void FCIComputerGPU::apply_cos_inplace_cpu(
     const std::complex<double> time,
     const std::complex<double> coeff,
     const std::vector<int>& crea,
     const std::vector<int>& anna,
     const std::vector<int>& creb,
     const std::vector<int>& annb,
-    TensorThrust& Cout)
+    TensorGPU& Cout)
 {
     timer_.acc_begin("===>hard: apply cos setup");
 
@@ -729,7 +729,7 @@ void FCIComputerThrust::apply_cos_inplace_cpu(
     timer_.acc_end("===>hard: apply cos kernal");
 }
 
-int FCIComputerThrust::isolate_number_operators_cpu(
+int FCIComputerGPU::isolate_number_operators_cpu(
     const std::vector<int>& cre,
     const std::vector<int>& ann,
     std::vector<int>& crework,
@@ -757,11 +757,11 @@ int FCIComputerThrust::isolate_number_operators_cpu(
 
 /// NOTE: Cin should be const, changing for now
 /// NOTE: Cin is actually unused, should not be an arg.
-void FCIComputerThrust::evolve_individual_nbody_easy_cpu(
+void FCIComputerGPU::evolve_individual_nbody_easy_cpu(
     const std::complex<double> time,
     const std::complex<double> coeff,
-    TensorThrust& Cin,
-    TensorThrust& Cout,
+    TensorGPU& Cin,
+    TensorGPU& Cout,
     const std::vector<int>& crea,
     const std::vector<int>& anna,
     const std::vector<int>& creb,
@@ -817,10 +817,10 @@ void FCIComputerThrust::evolve_individual_nbody_easy_cpu(
 /// NOTE: Cin should be const, changing for now
 /// NOTE: Cin is actually unused, should not be an arg.
 template<class Precomp>
-void FCIComputerThrust::evolve_individual_nbody_easy_gpu(
+void FCIComputerGPU::evolve_individual_nbody_easy_gpu(
     const std::complex<double> time,
     const std::complex<double> coeff,
-    TensorThrust& Cout,
+    TensorGPU& Cout,
     const std::vector<int>& crea,
     const std::vector<int>& anna,
     const std::vector<int>& creb,
@@ -973,11 +973,11 @@ void FCIComputerThrust::evolve_individual_nbody_easy_gpu(
 }
 
 /// NOTE: Cin should be const, changing for now
-void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
+void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
     const std::complex<double> time,
     const std::complex<double> coeff,
-    TensorThrust& Cin,
-    TensorThrust& Cout,
+    TensorGPU& Cin,
+    TensorGPU& Cout,
     const std::vector<int>& crea,
     const std::vector<int>& anna,
     const std::vector<int>& creb,
@@ -1226,10 +1226,10 @@ void FCIComputerThrust::evolve_individual_nbody_hard_cpu(
 }
 
 template<class Precomp>
-void FCIComputerThrust::evolve_individual_nbody_hard_gpu(
+void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
     const std::complex<double> time,
     const std::complex<double> coeff,
-    TensorThrust& Cout,
+    TensorGPU& Cout,
     const std::vector<int>& crea,
     const std::vector<int>& anna,
     const std::vector<int>& creb,
@@ -1786,11 +1786,11 @@ void FCIComputerThrust::evolve_individual_nbody_hard_gpu(
 }
 
 /// NOTE: Cin should be const, changing for now
-void FCIComputerThrust::evolve_individual_nbody_cpu(
+void FCIComputerGPU::evolve_individual_nbody_cpu(
     const std::complex<double> time,
     const SQOperator& sqop,
-    TensorThrust& Cin,
-    TensorThrust& Cout,
+    TensorGPU& Cin,
+    TensorGPU& Cout,
     const bool antiherm,
     const bool adjoint,
     const PrecompTuple* precomp)
@@ -1905,10 +1905,10 @@ void FCIComputerThrust::evolve_individual_nbody_cpu(
 
 /// NOTE: Cin should be const, changing for now
 template<class Precomp>
-void FCIComputerThrust::evolve_individual_nbody_gpu(
+void FCIComputerGPU::evolve_individual_nbody_gpu(
     const std::complex<double> time,
     const SQOperator& sqop,
-    TensorThrust& Cout,
+    TensorGPU& Cout,
     const bool antiherm,
     const bool adjoint,
     const Precomp* precomp)
@@ -2060,7 +2060,7 @@ void FCIComputerThrust::evolve_individual_nbody_gpu(
 // NOTE(Nick): The trotter function should directly call evolve_individual_nbody_cpu so we don't 
 // need to re-initialize Cin for each mu index, only copy, is currently a big 
 // performace hit!
-void FCIComputerThrust::apply_sqop_evolution_gpu(
+void FCIComputerGPU::apply_sqop_evolution_gpu(
     const std::complex<double> time,
     const SQOperator& sqop,
     const bool antiherm,
@@ -2070,7 +2070,7 @@ void FCIComputerThrust::apply_sqop_evolution_gpu(
 
     timer_.acc_begin("=>copy in Cin <- C_");
 
-    TensorThrust Cin(C_.shape(), "Cin", true);
+    TensorGPU Cin(C_.shape(), "Cin", true);
     Cin.copy_in_gpu(C_);
 
     timer_.acc_end("=>copy in Cin <- C_");
@@ -2085,7 +2085,7 @@ void FCIComputerThrust::apply_sqop_evolution_gpu(
         adjoint); 
 }
 
-void FCIComputerThrust::evolve_pool_trotter_basic_gpu(
+void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
     const SQOpPool& pool,
     const bool antiherm,
     const bool adjoint)
@@ -2111,8 +2111,8 @@ void FCIComputerThrust::evolve_pool_trotter_basic_gpu(
     }
 }
 
-void FCIComputerThrust::evolve_pool_trotter_gpu(
-    const SQOpPoolThrust& pool,
+void FCIComputerGPU::evolve_pool_trotter_gpu(
+    const SQOpPoolGPU& pool,
     double evolution_time,
     int trotter_steps,
     int trotter_order,
@@ -2124,12 +2124,12 @@ void FCIComputerThrust::evolve_pool_trotter_gpu(
     // Need to support no precomp tuple case later
 
     // if (pool.device_vecs_populated()==false){
-    //     throw std::runtime_error("SQOpPoolThrust STP device arrays must be populated before evolution.");
+    //     throw std::runtime_error("SQOpPoolGPU STP device arrays must be populated before evolution.");
     // }
 
     // now checking data type and getting appropriate precomp tuple
     if (pool.data_type() != data_type_) {
-        throw std::runtime_error("Data type of SQOpPoolThrust does not match FCIComputerThrust data type.");
+        throw std::runtime_error("Data type of SQOpPoolGPU does not match FCIComputerGPU data type.");
     }
 
     if (!antiherm && (data_type_ == "real" || pool.data_type() == "real")) {
@@ -2253,7 +2253,7 @@ void FCIComputerThrust::evolve_pool_trotter_gpu(
     timer_.acc_end("evolve_pool_trotter_gpu(outer)");
 }
 
-void FCIComputerThrust::evolve_op_taylor_cpu(
+void FCIComputerGPU::evolve_op_taylor_cpu(
     const SQOperator& op,
     const double evolution_time,
     const double convergence_thresh,
@@ -2261,7 +2261,7 @@ void FCIComputerThrust::evolve_op_taylor_cpu(
 {
     cpu_error();
 
-    TensorThrust Cevol = C_;
+    TensorGPU Cevol = C_;
 
     for (int order = 1; order < max_taylor_iter; ++order) {
 
@@ -2288,10 +2288,10 @@ void FCIComputerThrust::evolve_op_taylor_cpu(
 }
 
 /// NOTE: Cin should be const, changing for now
-void FCIComputerThrust::apply_individual_nbody1_accumulate_gpu(
+void FCIComputerGPU::apply_individual_nbody1_accumulate_gpu(
     const std::complex<double> coeff, 
-    TensorThrust& Cin,
-    TensorThrust& Cout,
+    TensorGPU& Cin,
+    TensorGPU& Cout,
     int counta,
     int countb)
 {
@@ -2330,10 +2330,10 @@ void FCIComputerThrust::apply_individual_nbody1_accumulate_gpu(
 }
 
 /// NOTE: Cin should be const, changing for now
-void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
+void FCIComputerGPU::apply_individual_nbody_accumulate_gpu(
     const std::complex<double> coeff,
-    TensorThrust& Cin,
-    TensorThrust& Cout,
+    TensorGPU& Cin,
+    TensorGPU& Cout,
     const std::vector<int>& daga,
     const std::vector<int>& undaga, 
     const std::vector<int>& dagb,
@@ -2380,7 +2380,7 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
 
 
     timer_.acc_begin("===>hard nbody acc kernel");
-    /// TODO: changing this function to use private members of FCIComputerThrust
+    /// TODO: changing this function to use private members of FCIComputerGPU
     apply_individual_nbody1_accumulate_gpu(
         coeff, 
         Cin,
@@ -2392,10 +2392,10 @@ void FCIComputerThrust::apply_individual_nbody_accumulate_gpu(
 }
 
 /// NOTE: Cin should be const, changing for now
-void FCIComputerThrust::apply_individual_sqop_term_gpu(
+void FCIComputerGPU::apply_individual_sqop_term_gpu(
     const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
-    TensorThrust& Cin,
-    TensorThrust& Cout)
+    TensorGPU& Cin,
+    TensorGPU& Cout)
 {
     std::vector<int> crea;
     std::vector<int> anna;
@@ -2441,10 +2441,10 @@ void FCIComputerThrust::apply_individual_sqop_term_gpu(
         annb);
 }
 
-void FCIComputerThrust::apply_sqop_gpu(const SQOperator& sqop)
+void FCIComputerGPU::apply_sqop_gpu(const SQOperator& sqop)
 {
     C_.gpu_error();
-    TensorThrust Cin(C_.shape(), "Cin", true);
+    TensorGPU Cin(C_.shape(), "Cin", true);
     Cin.copy_in_gpu(C_);
 
     local_timer my_timer = local_timer();
@@ -2461,13 +2461,13 @@ void FCIComputerThrust::apply_sqop_gpu(const SQOperator& sqop)
     }
 }
 
-void FCIComputerThrust::apply_diagonal_of_sqop_cpu(
+void FCIComputerGPU::apply_diagonal_of_sqop_cpu(
     const SQOperator& sq_op, 
     const bool invert_coeff)
 {
     cpu_error();
 
-    TensorThrust Cin = C_;
+    TensorGPU Cin = C_;
     C_.zero();
 
     for(const auto& term : sq_op.terms()){
@@ -2498,11 +2498,11 @@ void FCIComputerThrust::apply_diagonal_of_sqop_cpu(
     }
 }
 
-void FCIComputerThrust::apply_sqop_pool_cpu(const SQOpPool& sqop_pool)
+void FCIComputerGPU::apply_sqop_pool_cpu(const SQOpPool& sqop_pool)
 {
     cpu_error();
 
-    TensorThrust Cin = C_;
+    TensorGPU Cin = C_;
     C_.zero();
 
     for (const auto& sqop : sqop_pool.terms()) {
@@ -2522,9 +2522,9 @@ void FCIComputerThrust::apply_sqop_pool_cpu(const SQOpPool& sqop_pool)
     }
 }
 
-std::complex<double> FCIComputerThrust::get_exp_val_cpu(const SQOperator& sqop)
+std::complex<double> FCIComputerGPU::get_exp_val_cpu(const SQOperator& sqop)
 {
-    TensorThrust Cin = C_;
+    TensorGPU Cin = C_;
     C_.zero();
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
@@ -2539,14 +2539,14 @@ std::complex<double> FCIComputerThrust::get_exp_val_cpu(const SQOperator& sqop)
     return val;
 }
 
-std::complex<double> FCIComputerThrust::get_exp_val_tensor_cpu(
+std::complex<double> FCIComputerGPU::get_exp_val_tensor_cpu(
     const std::complex<double> h0e, 
-    const TensorThrust& h1e, 
-    const TensorThrust& h2e, 
-    const TensorThrust& h2e_einsum, 
+    const TensorGPU& h1e, 
+    const TensorGPU& h2e, 
+    const TensorGPU& h2e_einsum, 
     size_t norb)
 {
-    TensorThrust Cin = C_;
+    TensorGPU Cin = C_;
 
     apply_tensor_spat_012bdy(
         h0e,
@@ -2562,63 +2562,63 @@ std::complex<double> FCIComputerThrust::get_exp_val_tensor_cpu(
     return val;
 }
 
-void FCIComputerThrust::scale_cpu(const std::complex<double> a)
+void FCIComputerGPU::scale_cpu(const std::complex<double> a)
 {
     C_.scale(a);
 }
 
 /// TODO: This is commented out in TensorGPU
 /*
-std::vector<double> FCIComputerThrust::direct_expectation_value(const TensorOperator& top)
+std::vector<double> FCIComputerGPU::direct_expectation_value(const TensorOperator& top)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // Implementation would be similar to FCIComputerGPU but using TensorGPU
     // This is a placeholder - full implementation would need to be added
     throw std::runtime_error("");
 }*/
 
 /// TODO: Not implemented in TensorGPU
 /*
-std::complex<double> FCIComputerThrust::coeff(const QubitBasis& abasis, const QubitBasis& bbasis)
+std::complex<double> FCIComputerGPU::coeff(const QubitBasis& abasis, const QubitBasis& bbasis)
 {
-    // Implementation would be similar to FCIComputerGPU but using TensorThrust
+    // Implementation would be similar to FCIComputerGPU but using TensorGPU
     // This is a placeholder - full implementation would need to be added
     throw std::runtime_error("");
 }*/
 
-void FCIComputerThrust::set_state_cpu(const TensorThrust& other_state)
+void FCIComputerGPU::set_state_cpu(const TensorGPU& other_state)
 {
     cpu_error();
     other_state.cpu_error();
     C_.copy_in(other_state);
 }
 
-void FCIComputerThrust::set_state_gpu(const TensorThrust& other_state)
+void FCIComputerGPU::set_state_gpu(const TensorGPU& other_state)
 {
     gpu_error();
     other_state.gpu_error();
     C_.copy_in_gpu(other_state);
 }
 
-void FCIComputerThrust::set_state_from_tensor_cpu(const Tensor& other_state)
+void FCIComputerGPU::set_state_from_tensor_cpu(const Tensor& other_state)
 {
     cpu_error();
     C_.copy_in_from_tensor(other_state);
 }
 
-void FCIComputerThrust::zero_cpu()
+void FCIComputerGPU::zero_cpu()
 {
     cpu_error();
     C_.zero();
 }
 
-void FCIComputerThrust::hartree_fock_cpu()
+void FCIComputerGPU::hartree_fock_cpu()
 {
     cpu_error();
     C_.zero();
     C_.set({0, 0}, 1.0);
 }
 
-void FCIComputerThrust::print_vector(const std::vector<int>& vec, const std::string& name)
+void FCIComputerGPU::print_vector(const std::vector<int>& vec, const std::string& name)
 {
     std::cout << "\n" << name << ": ";
     for (size_t i = 0; i < vec.size(); ++i) {
@@ -2630,7 +2630,7 @@ void FCIComputerThrust::print_vector(const std::vector<int>& vec, const std::str
     std::cout << std::endl;
 }
 
-void FCIComputerThrust::print_vector_thrust(const thrust::host_vector<int>& vec, const std::string& name)
+void FCIComputerGPU::print_vector_thrust(const thrust::host_vector<int>& vec, const std::string& name)
 {
     std::cout << "\n" << name << ": ";
     for (size_t i = 0; i < vec.size(); ++i) {
@@ -2642,7 +2642,7 @@ void FCIComputerThrust::print_vector_thrust(const thrust::host_vector<int>& vec,
     std::cout << std::endl;
 }
 
-void FCIComputerThrust::print_vector_uint(const std::vector<uint64_t>& vec, const std::string& name)
+void FCIComputerGPU::print_vector_uint(const std::vector<uint64_t>& vec, const std::string& name)
 {
     std::cout << "\n" << name << ": ";
     for (size_t i = 0; i < vec.size(); ++i) {
@@ -2654,7 +2654,7 @@ void FCIComputerThrust::print_vector_uint(const std::vector<uint64_t>& vec, cons
     std::cout << std::endl;
 }
 
-void FCIComputerThrust::print_vector_thrust_cuDoubleComplex(const thrust::host_vector<cuDoubleComplex>& vec, const std::string& name)
+void FCIComputerGPU::print_vector_thrust_cuDoubleComplex(const thrust::host_vector<cuDoubleComplex>& vec, const std::string& name)
 {
     std::cout << "\n" << name << ": ";
     for (size_t i = 0; i < vec.size(); ++i) {
@@ -2667,7 +2667,7 @@ void FCIComputerThrust::print_vector_thrust_cuDoubleComplex(const thrust::host_v
     std::cout << std::endl;
 }
 
-void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool){
+void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
     
     if(pool.device_vecs_populated()){
         return;
@@ -2677,7 +2677,7 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
     const std::string comp_dt = data_type_;
     const std::string pool_dt = pool.data_type();
     if (pool_dt != comp_dt) {
-        throw std::runtime_error("Data type mismatch between FCIComputerThrust and SQOpPoolThrust.");
+        throw std::runtime_error("Data type mismatch between FCIComputerGPU and SQOpPoolGPU.");
     }
 
     // Determine which parity storage formats we need to populate
@@ -2931,19 +2931,19 @@ void FCIComputerThrust::populate_index_arrays_for_pool_evo(SQOpPoolThrust& pool)
 }
 
 /* New methods for copying out data */
-void FCIComputerThrust::copy_to_tensor_cpu(Tensor& tensor) const
+void FCIComputerGPU::copy_to_tensor_cpu(Tensor& tensor) const
 {
     cpu_error();
     C_.copy_to_tensor(tensor);
 }
 
-void FCIComputerThrust::copy_to_tensor_thrust_gpu(TensorThrust& tensor) const
+void FCIComputerGPU::copy_to_tensor_thrust_gpu(TensorGPU& tensor) const
 {
     gpu_error();
     tensor.copy_in_gpu(C_);
 }
 
-void FCIComputerThrust::copy_to_tensor_thrust_cpu(TensorThrust& tensor) const
+void FCIComputerGPU::copy_to_tensor_thrust_cpu(TensorGPU& tensor) const
 {
     cpu_error();
     tensor.copy_in(C_);
