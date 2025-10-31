@@ -872,10 +872,29 @@ void FCIComputer::evolve_individual_nbody_easy_v2(
     int n_a = anna.size();
     int n_b = annb.size();
 
+    // std::cout << "\n  ====> n_a <==== " << n_a << std::endl;
+    // std::cout << "\n  ====> n_b <==== " << n_b << std::endl;
+
     int power = n_a * (n_a - 1) / 2 + n_b * (n_b - 1) / 2;
+
+    // std::cout << "\n  ====> power <==== " << power << std::endl;
+
     std::complex<double> prefactor = coeff * std::pow(-1, power);
+
+    // std::cout << "\n  ====> prefactor <==== " << prefactor << std::endl;
+
     std::complex<double> factor = std::exp(-time * std::real(prefactor) * std::complex<double>(0.0, 1.0));
+
+    // std::cout << "\n  ====> factor <====" << factor << std::endl;
+
     std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number(anna, annb);
+
+    // std::cout << "\n  ====> first <====";
+    // for (const auto& val : maps.first) std::cout << val << " "; 
+    // std::cout << std::endl;
+    // std::cout << "\n  ====> second <====";
+    // for (const auto& val : maps.second) std::cout << val << " "; 
+    // std::cout << std::endl;
 
     if (maps.first.size() != 0 and maps.second.size() != 0){
         for (size_t i = 0; i < maps.first.size(); i++){
@@ -1446,7 +1465,23 @@ void FCIComputer::evolve_individual_nbody_v2(
 
     std::complex<double> parity = std::pow(-1, nswaps);
 
+    // DEBUG: source and target lists
+    // std::cout << "crea: ";
+    // for (const auto& val : crea) std::cout << val << " ";
+    // std::cout << std::endl;
+    // std::cout << "anna: ";
+    // for (const auto& val : anna) std::cout << val << " ";
+    // std::cout << std::endl;
+    // std::cout << "creb: ";
+    // for (const auto& val : creb) std::cout << val << " ";
+    // std::cout << std::endl;
+    // std::cout << "annb: ";
+    // for (const auto& val : annb) std::cout << val << " ";
+    // std::cout << std::endl;
+
     if (crea == anna && creb == annb) {
+
+        // std::cout << "Evolving easy term..." << std::endl;
         
         std::complex<double> factor;
         evolve_individual_nbody_easy_v2(
@@ -1459,6 +1494,8 @@ void FCIComputer::evolve_individual_nbody_v2(
             annb);
 
     } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
+
+        // std::cout << "Evolving hard term..." << std::endl;
 
         evolve_individual_nbody_hard_v2(
             time,
@@ -1478,6 +1515,8 @@ void FCIComputer::evolve_individual_nbody_v2(
             "Evolved state must remain in spin and particle-number symmetry sector, bad op above"
         );
     }
+
+    // std::cout << "tensor after evolution:\n" << Cout.str(true, true) << std::endl;
 }
 
 void FCIComputer::evolve_op_taylor(
@@ -1907,6 +1946,21 @@ void FCIComputer::apply_sqop_evolution(
         antiherm,
         adjoint); 
 }
+
+void FCIComputer::apply_sqop_evolution_v2(
+      const std::complex<double> time,
+      const SQOperator& sqop,
+      const bool antiherm,
+      const bool adjoint)
+{
+    evolve_individual_nbody_v2(
+        time,
+        sqop,
+        C_,
+        antiherm,
+        adjoint); 
+}
+
 
 // void FCIComputer::apply_individual_nbody1_accumulate_gpu(
 //     const std::complex<double> coeff, 

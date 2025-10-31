@@ -589,6 +589,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_timings", &local_timer::get_timings)
         .def("get_acc_timings", &local_timer::get_acc_timings)
         .def("accumulate", &local_timer::accumulate, "Accumulate the elapsed time for a specific task.")
+        .def("acc_str_table", &local_timer::acc_str_table, "Get a string representation of the accumulated timings.")
         .def("__str__", &local_timer::str_table);
 
     py::class_<TensorThrust>(m, "TensorThrust")

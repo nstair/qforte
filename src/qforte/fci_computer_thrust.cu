@@ -770,8 +770,27 @@ void FCIComputerThrust::evolve_individual_nbody_easy_gpu(
 {
     /// TODO: Implement seperate CPU and GPU versions of this function
 
-    std::complex<double> factor = std::exp(-time * std::real(coeff) * std::complex<double>(0.0, 1.0));
+    int n_a = anna.size();
+    int n_b = annb.size();
+
+    // std::cout << "\n  ====> n_a <==== " << n_a << std::endl;
+    // std::cout << "\n  ====> n_b <==== " << n_b << std::endl;
+
+    int power = n_a * (n_a - 1) / 2 + n_b * (n_b - 1) / 2;
+
+    // std::cout << "\n  ====> power <==== " << power << std::endl;
+
+    std::complex<double> prefactor = coeff * std::pow(-1, power);
+
+    // std::cout << "\n  ====> prefactor <==== " << prefactor << std::endl;
+
+    std::complex<double> factor = std::exp(-time * std::real(prefactor) * std::complex<double>(0.0, 1.0));
+
+    // std::cout << "\n  ====> factor <==== " << factor << std::endl;
+
     cuDoubleComplex factor_gpu = make_cuDoubleComplex(factor.real(), factor.imag());
+
+    // std::cout << "\n  ====> factor_gpu <==== (" << factor_gpu.x << ", " << factor_gpu.y << ")" << std::endl;
 
     /// Optionally skip the on-the-fly device a/b-target idx formation
     
@@ -792,9 +811,23 @@ void FCIComputerThrust::evolve_individual_nbody_easy_gpu(
         timer_.acc_begin("==>easy: scale elements kernel (precomp)");
 
         if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
-            // AoS / "complex" path (your existing kernel)
-            auto const& first  = std::get<2>(*precomp); // e.g., device_vector<int> (const-ref inside tuple)
+            // Complex path
+            auto const& first  = std::get<2>(*precomp); 
             auto const& second = std::get<4>(*precomp);
+
+            // Copy device vectors to host for printing
+            thrust::host_vector<int> first_host = first;
+            thrust::host_vector<int> second_host = second;
+            
+            // std::cout << "\n  ====> first (size=" << first_host.size() << ") <====" << std::endl;
+            // for (size_t i = 0; i < first_host.size(); ++i) {
+            //     std::cout << "  [" << i << "] = " << first_host[i] << std::endl;
+            // }
+            
+            // std::cout << "\n  ====> second (size=" << second_host.size() << ") <====" << std::endl;
+            // for (size_t i = 0; i < second_host.size(); ++i) {
+            //     std::cout << "  [" << i << "] = " << second_host[i] << std::endl;
+            // }
 
             scale_elements_wrapper_complex(
                 thrust::raw_pointer_cast(Cout.d_data().data()),
@@ -806,8 +839,8 @@ void FCIComputerThrust::evolve_individual_nbody_easy_gpu(
                 factor_gpu);
 
         } else if constexpr (std::is_same_v<Precomp, PrecompTupleReal>) {
-            // Real / "real" path
-            auto const& first  = std::get<2>(*precomp); // e.g., device_vector<int> (const-ref inside tuple)
+            // Real path
+            auto const& first  = std::get<2>(*precomp);
             auto const& second = std::get<4>(*precomp);
 
             scale_elements_wrapper_real(
@@ -826,27 +859,57 @@ void FCIComputerThrust::evolve_individual_nbody_easy_gpu(
         timer_.acc_end("==>easy: scale elements kernel (precomp)");
 
     } else {
-        timer_.acc_begin("==>easy: setup");
+        if (data_type_ == "complex") {
 
-        std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number_cpu(anna, annb);
+            timer_.acc_begin("==>easy: setup");
 
-        thrust::device_vector<int> d_first(maps.first.begin(), maps.first.end());
-        thrust::device_vector<int> d_second(maps.second.begin(), maps.second.end());
-            
-        timer_.acc_end("==>easy: setup");
+            std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number_cpu(anna, annb);
 
-        timer_.acc_begin("==>easy: scale elements kernel");
+            thrust::device_vector<int> d_first(maps.first.begin(), maps.first.end());
+            thrust::device_vector<int> d_second(maps.second.begin(), maps.second.end());
+                
+            timer_.acc_end("==>easy: setup");
 
-        scale_elements_wrapper_complex(
-            thrust::raw_pointer_cast(Cout.d_data().data()),
-            thrust::raw_pointer_cast(d_first.data()), 
-            d_first.size(),
-            thrust::raw_pointer_cast(d_second.data()), 
-            d_second.size(),
-            nbeta_strs_,
-            factor_gpu);
+            timer_.acc_begin("==>easy: scale elements kernel");
 
-        timer_.acc_end("==>easy: scale elements kernel");
+            scale_elements_wrapper_complex(
+                thrust::raw_pointer_cast(Cout.d_data().data()),
+                thrust::raw_pointer_cast(d_first.data()), 
+                d_first.size(),
+                thrust::raw_pointer_cast(d_second.data()), 
+                d_second.size(),
+                nbeta_strs_,
+                factor_gpu);
+
+            timer_.acc_end("==>easy: scale elements kernel");
+        
+        } else if (data_type_ == "real") {
+
+            timer_.acc_begin("==>easy: setup");
+
+            std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number_cpu(anna, annb);
+
+            thrust::device_vector<int> d_first(maps.first.begin(), maps.first.end());
+            thrust::device_vector<int> d_second(maps.second.begin(), maps.second.end());
+                
+            timer_.acc_end("==>easy: setup");
+
+            timer_.acc_begin("==>easy: scale elements kernel");
+
+            scale_elements_wrapper_real(
+                thrust::raw_pointer_cast(Cout.d_re_data().data()),
+                thrust::raw_pointer_cast(d_first.data()),
+                d_first.size(),
+                thrust::raw_pointer_cast(d_second.data()),
+                d_second.size(),
+                nbeta_strs_,
+                factor_gpu.x); // Only real component for real data
+
+            timer_.acc_end("==>easy: scale elements kernel");
+        
+        } else {
+            throw std::runtime_error("evolve_individual_nbody_easy_gpu: Unknown data_type_.");
+        }
     }
 }
 
@@ -1701,6 +1764,13 @@ void FCIComputerThrust::evolve_individual_nbody_cpu(
         std::get<0>(term) *= onei;
     }
 
+    // TODO: Ask Nick about this early return
+    if(std::get<1>(term).size()==0 && std::get<2>(term).size()==0){
+        std::complex<double> twoi(0.0, -2.0);
+        Cout.scale(std::exp(twoi * time * std::get<0>(term)));
+        return;
+    }
+
     std::vector<int> crea;
     std::vector<int> anna;
     std::vector<int> creb;
@@ -1798,7 +1868,7 @@ void FCIComputerThrust::evolve_individual_nbody_gpu(
     /// NICK: TODO, implement a hermitian check, at least for two term SQOperators
     // sqop.hermitian_check();
 
-    timer_.acc_begin("=>evolve_individual_nbody_cpu(setup)");
+    timer_.acc_begin("=>evolve_individual_nbody_gpu(setup)");
 
     auto term = sqop.terms()[0];
 
@@ -1813,6 +1883,13 @@ void FCIComputerThrust::evolve_individual_nbody_gpu(
     if(antiherm){
         std::complex<double> onei(0.0, 1.0);
         std::get<0>(term) *= onei;
+    }
+
+    // TODO: Ask Nick about this early return
+    if(std::get<1>(term).size()==0 && std::get<2>(term).size()==0){
+        std::complex<double> twoi(0.0, -2.0);
+        Cout.scale(std::exp(twoi * time * std::get<0>(term)));
+        return;
     }
 
     std::vector<int> crea;
@@ -1846,6 +1923,20 @@ void FCIComputerThrust::evolve_individual_nbody_gpu(
 
     timer_.acc_end("=>evolve_individual_nbody_cpu(setup)");
 
+    // DEBUG: source and target lists
+    // std::cout << "crea: ";
+    // for (const auto& val : crea) std::cout << val << " ";
+    // std::cout << std::endl;
+    // std::cout << "anna: ";
+    // for (const auto& val : anna) std::cout << val << " ";
+    // std::cout << std::endl;
+    // std::cout << "creb: ";
+    // for (const auto& val : creb) std::cout << val << " ";
+    // std::cout << std::endl;
+    // std::cout << "annb: ";
+    // for (const auto& val : annb) std::cout << val << " ";
+    // std::cout << std::endl;
+
     if (crea == anna && creb == annb) {
         // std::cout << "Made it to easy" << std::endl;
 
@@ -1857,9 +1948,11 @@ void FCIComputerThrust::evolve_individual_nbody_gpu(
 
         timer_.acc_begin("=>evolve_individual_nbody_easy_gpu");
 
+        // std::cout << "Calling evolve_individual_nbody_easy_gpu" << std::endl;
+
         evolve_individual_nbody_easy_gpu(
             time,
-            parity * std::get<0>(term),
+            parity * 2.0 * std::get<0>(term), // TODO: Ask Nick about (* 2) to coeff?
             Cout,
             crea,
             anna, 
@@ -1881,6 +1974,8 @@ void FCIComputerThrust::evolve_individual_nbody_gpu(
         // dump_step_header("[HARD] (Givens)", parity * std::get<0>(term), crea, anna, creb, annb, nswaps, parity);
         // dump_tensor("  HARD: before", Cout);
 
+        // std::cout << "Calling evolve_individual_nbody_hard_gpu" << std::endl;
+
         evolve_individual_nbody_hard_gpu(
             time,
             parity * std::get<0>(term),
@@ -1899,6 +1994,8 @@ void FCIComputerThrust::evolve_individual_nbody_gpu(
     } else {
         throw std::invalid_argument("Evolved state must remain in spin and particle-number symmetry sector");
     }
+
+    // std::cout << "tensor after evolution:\n" << Cout.str(true, true) << std::endl;
 }
 
 // NOTE(Nick): The trotter function should directly call evolve_individual_nbody_cpu so we don't 
