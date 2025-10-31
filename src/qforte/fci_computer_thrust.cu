@@ -98,6 +98,65 @@ FCIComputerThrust::FCIComputerThrust(int nel, int sz, int norb, bool on_gpu, con
     // timer_ = local_timer();
 }
 
+/// Destructor: properly cleanup GPU resources
+FCIComputerThrust::~FCIComputerThrust() {
+    try {
+        
+        sourcea_gpu_.clear();
+        sourcea_gpu_.shrink_to_fit();
+        
+        targeta_gpu_.clear();
+        targeta_gpu_.shrink_to_fit();
+        
+        paritya_gpu_.clear();
+        paritya_gpu_.shrink_to_fit();
+        
+        paritya_gpu_real_.clear();
+        paritya_gpu_real_.shrink_to_fit();
+        
+        sourcea_undag_gpu_.clear();
+        sourcea_undag_gpu_.shrink_to_fit();
+        
+        targeta_undag_gpu_.clear();
+        targeta_undag_gpu_.shrink_to_fit();
+        
+        paritya_undag_gpu_.clear();
+        paritya_undag_gpu_.shrink_to_fit();
+        
+        paritya_undag_gpu_real_.clear();
+        paritya_undag_gpu_real_.shrink_to_fit();
+        
+        sourceb_gpu_.clear();
+        sourceb_gpu_.shrink_to_fit();
+        
+        targetb_gpu_.clear();
+        targetb_gpu_.shrink_to_fit();
+        
+        parityb_gpu_.clear();
+        parityb_gpu_.shrink_to_fit();
+        
+        parityb_gpu_real_.clear();
+        parityb_gpu_real_.shrink_to_fit();
+        
+        sourceb_undag_gpu_.clear();
+        sourceb_undag_gpu_.shrink_to_fit();
+        
+        targetb_undag_gpu_.clear();
+        targetb_undag_gpu_.shrink_to_fit();
+        
+        parityb_undag_gpu_.clear();
+        parityb_undag_gpu_.shrink_to_fit();
+        
+        parityb_undag_gpu_real_.clear();
+        parityb_undag_gpu_real_.shrink_to_fit();
+
+    } catch (const std::exception& e) {
+        // std::cerr << "Caught exception in FCIComputerThrust destructor: " << e.what() << std::endl;
+    } catch (...) {
+        // std::cerr << "Caught unknown exception in FCIComputerThrust destructor." << std::endl;
+    }
+}
+
 /// Set a particular element of the tensor stored in FCIComputerThrust, specified by idxs
 void FCIComputerThrust::set_element(
     const std::vector<size_t>& idxs,

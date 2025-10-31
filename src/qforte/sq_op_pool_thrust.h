@@ -41,6 +41,9 @@ class SQOpPoolThrust {
         validate_data_type_();
     }
 
+    /// destructor: safely cleans up device vectors
+    ~SQOpPoolThrust();
+
     /// add one set of annihilators and/or creators to the second quantized operator pool
     void add_term(std::complex<double> coeff, const SQOperator& sq_op );
 

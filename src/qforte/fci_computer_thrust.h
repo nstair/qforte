@@ -66,6 +66,9 @@ class FCIComputerThrust {
       const std::string& data_type = "complex"
       );
 
+    /// destructor: properly cleanup GPU resources
+    ~FCIComputerThrust();
+
     /// apply a SQOperator to the current state.
     /// (this operation is generally not a physical quantum computing operation).
     /// Only works if the sqo conservs particle number and multiplicity.

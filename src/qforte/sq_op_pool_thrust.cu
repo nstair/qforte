@@ -11,6 +11,46 @@
 #include <stdexcept>
 #include <algorithm>
 
+SQOpPoolThrust::~SQOpPoolThrust() {
+    // Safe cleanup of device vectors to avoid segfaults during CUDA shutdown
+    try {
+        // Clear all device vectors in reverse order of potential dependencies
+        // Parity arrays (complex)
+        terms_paritya_dag_gpu_.clear();
+        terms_paritya_undag_gpu_.clear();
+        terms_parityb_dag_gpu_.clear();
+        terms_parityb_undag_gpu_.clear();
+        
+        // Parity arrays (real)
+        terms_paritya_dag_re_gpu_.clear();
+        terms_paritya_undag_re_gpu_.clear();
+        terms_parityb_dag_re_gpu_.clear();
+        terms_parityb_undag_re_gpu_.clear();
+        
+        // Target index arrays
+        terms_targeta_dag_gpu_.clear();
+        terms_targeta_undag_gpu_.clear();
+        terms_targetb_dag_gpu_.clear();
+        terms_targetb_undag_gpu_.clear();
+        
+        // Source index arrays
+        terms_sourcea_dag_gpu_.clear();
+        terms_sourcea_undag_gpu_.clear();
+        terms_sourceb_dag_gpu_.clear();
+        terms_sourceb_undag_gpu_.clear();
+        
+        // Scale index arrays
+        terms_scale_indsa_dag_gpu_.clear();
+        terms_scale_indsa_undag_gpu_.clear();
+        terms_scale_indsb_dag_gpu_.clear();
+        terms_scale_indsb_undag_gpu_.clear();
+    } catch (...) {
+        // Silently catch any exceptions during cleanup to prevent terminate()
+        // This can happen if CUDA has already been shut down
+        // std::cerr << "Exception caught during SQOpPoolThrust cleanup" << std::endl;
+    }
+}
+
 void SQOpPoolThrust::add_term(std::complex<double> coeff, const SQOperator& sq_op ){
     terms_.push_back(std::make_pair(coeff, sq_op));
 }
