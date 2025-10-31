@@ -74,9 +74,7 @@ set(SOURCE_DIR "src/qforte")
 
 # CUDA sources (kernels + thrust-based .cu)
 set(CUDA_SOURCES
-    "${SOURCE_DIR}/tensor_gpu_kernels.cu"
     "${SOURCE_DIR}/fci_computer_gpu_kernels.cu"
-    "${SOURCE_DIR}/fci_computer_gpu.cu"
     "${SOURCE_DIR}/tensor_thrust.cu"
     "${SOURCE_DIR}/fci_computer_thrust.cu"
     "${SOURCE_DIR}/fci_graph_thrust.cu"
@@ -104,7 +102,6 @@ set(SOURCES
     "${SOURCE_DIR}/sq_op_pool.cc"
     "${SOURCE_DIR}/sparse_tensor.cc"
     "${SOURCE_DIR}/timer.cc"
-    "${SOURCE_DIR}/tensor_gpu.cc"
     "${SOURCE_DIR}/tensor.cc"
     "${SOURCE_DIR}/df_hamiltonian.cc")
 
