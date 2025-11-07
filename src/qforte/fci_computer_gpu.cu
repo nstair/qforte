@@ -1046,14 +1046,14 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
         // new funciton that will selectivly copy in 
         Cin.gather_in_2D_gpu(
             Cout,
-            std::get<6>(*precomp), //sourcea_dag,
-            std::get<8>(*precomp) //sourceb_dag,
+            std::get<2>(*precomp), //sourcea_dag,
+            std::get<4>(*precomp) //sourceb_dag,
             );
 
         Cin.gather_in_2D_gpu(
             Cout,
-            std::get<7>(*precomp), //sourcea_undag,
-            std::get<9>(*precomp) // sourceb_undag,
+            std::get<3>(*precomp), //sourcea_undag,
+            std::get<5>(*precomp) // sourceb_undag,
             );
 
         timer_.acc_end("=>gather in Cin <- C_");
@@ -1087,11 +1087,11 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
         timer_.acc_begin("===>hard nbody acc kernel");
 
 
-        if ((std::get<10>(*precomp).size() != std::get<6>(*precomp).size()) or (std::get<6>(*precomp).size() != std::get<14>(*precomp).size())) {
+        if ((std::get<3>(*precomp).size() != std::get<2>(*precomp).size()) or (std::get<2>(*precomp).size() != std::get<6>(*precomp).size())) {
             throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
         }
 
-        if ((std::get<12>(*precomp).size() != std::get<8>(*precomp).size()) or (std::get<8>(*precomp).size() != std::get<16>(*precomp).size())) {
+        if ((std::get<5>(*precomp).size() != std::get<4>(*precomp).size()) or (std::get<4>(*precomp).size() != std::get<8>(*precomp).size())) {
             throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
         }
 
@@ -1099,21 +1099,21 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
 
         cuDoubleComplex cu_coeff_dag = make_cuDoubleComplex(coeff_dag.real(), coeff_dag.imag());
 
-        if(std::get<6>(*precomp).size() != 0 and std::get<8>(*precomp).size() != 0) {
+        if(std::get<2>(*precomp).size() != 0 and std::get<4>(*precomp).size() != 0) {
 
             apply_individual_nbody1_accumulate_wrapper(
                 cu_coeff_dag, 
                 thrust::raw_pointer_cast(Cin.read_d_data().data()), 
                 thrust::raw_pointer_cast(Cout.d_data().data()), 
+                thrust::raw_pointer_cast(std::get<2>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<3>(*precomp).data()),
                 thrust::raw_pointer_cast(std::get<6>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<10>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<14>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<4>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<5>(*precomp).data()),
                 thrust::raw_pointer_cast(std::get<8>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<12>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<16>(*precomp).data()),
                 nbeta_strs_,
-                std::get<6>(*precomp).size(),
-                std::get<8>(*precomp).size(),
+                std::get<2>(*precomp).size(),
+                std::get<4>(*precomp).size(),
                 Cin.size() * sizeof(cuDoubleComplex));
         }
 
@@ -1123,11 +1123,11 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
             throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
         }
 
-        if ((std::get<11>(*precomp).size() != std::get<7>(*precomp).size()) or (std::get<7>(*precomp).size() != std::get<15>(*precomp).size())) {
+        if ((std::get<2>(*precomp).size() != std::get<3>(*precomp).size()) or (std::get<3>(*precomp).size() != std::get<7>(*precomp).size())) {
             throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
         }
 
-        if ((std::get<13>(*precomp).size() != std::get<9>(*precomp).size()) or (std::get<9>(*precomp).size() != std::get<17>(*precomp).size())) {
+        if ((std::get<4>(*precomp).size() != std::get<5>(*precomp).size()) or (std::get<5>(*precomp).size() != std::get<9>(*precomp).size())) {
             throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
         }
 
@@ -1135,21 +1135,21 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
 
         cuDoubleComplex cu_coeff_undag = make_cuDoubleComplex(coeff_undag.real(), coeff_undag.imag());
 
-        if(std::get<7>(*precomp).size() != 0 and std::get<7>(*precomp).size() != 0) {
+        if(std::get<3>(*precomp).size() != 0 and std::get<3>(*precomp).size() != 0) {
 
             apply_individual_nbody1_accumulate_wrapper(
                 cu_coeff_undag, 
                 thrust::raw_pointer_cast(Cin.read_d_data().data()), 
                 thrust::raw_pointer_cast(Cout.d_data().data()), 
+                thrust::raw_pointer_cast(std::get<3>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<2>(*precomp).data()),
                 thrust::raw_pointer_cast(std::get<7>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<11>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<15>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<5>(*precomp).data()),
+                thrust::raw_pointer_cast(std::get<4>(*precomp).data()),
                 thrust::raw_pointer_cast(std::get<9>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<13>(*precomp).data()),
-                thrust::raw_pointer_cast(std::get<17>(*precomp).data()),
                 nbeta_strs_,
-                std::get<7>(*precomp).size(),
-                std::get<9>(*precomp).size(),
+                std::get<3>(*precomp).size(),
+                std::get<5>(*precomp).size(),
                 Cin.size() * sizeof(cuDoubleComplex));
         }
 
@@ -1293,24 +1293,24 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
 
         // DEBUG: Source Target Parity vectors 
         // std::cout << "sourcea1: ";
-        //     thrust::copy(std::get<6>(*precomp).begin(), std::get<6>(*precomp).end(), std::ostream_iterator<int>(std::cout, " "));
+        //     thrust::copy(std::get<2>(*precomp).begin(), std::get<2>(*precomp).end(), std::ostream_iterator<int>(std::cout, " "));
         // std::cout << "\n";
 
         // std::cout << "targeta1: ";
-        //     thrust::copy(std::get<10>(*precomp).begin(), std::get<10>(*precomp).end(), std::ostream_iterator<int>(std::cout, " "));
+        //     thrust::copy(std::get<3>(*precomp).begin(), std::get<3>(*precomp).end(), std::ostream_iterator<int>(std::cout, " "));
         // std::cout << "\n";
 
         // std::cout << "paritya1: ";
         //     // Note: paritya type depends on Precomp template parameter
         //     if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
         //         // Complex case: cuDoubleComplex
-        //         thrust::host_vector<cuDoubleComplex> paritya_host(std::get<14>(*precomp));
+        //         thrust::host_vector<cuDoubleComplex> paritya_host(std::get<6>(*precomp));
         //         for (const auto& val : paritya_host) {
         //             std::cout << "(" << val.x << "," << val.y << ") ";
         //         }
         //     } else if constexpr (std::is_same_v<Precomp, PrecompTupleReal>) {
         //         // Real case: double
-        //         thrust::host_vector<double> paritya_host(std::get<14>(*precomp));
+        //         thrust::host_vector<double> paritya_host(std::get<6>(*precomp));
         //         for (const auto& val : paritya_host) {
         //             std::cout << val << " ";
         //         }
@@ -1330,16 +1330,16 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
                 inplace_givens_update_complex_tiled_wrapper(
                     32,
                     thrust::raw_pointer_cast(Cout.d_data().data()),
-                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // sourcea1 (dag)
-                    thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // targeta1
-                    thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // paritya1
-                    thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // paritya2
-                    thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // sourceb1 (dag)
-                    thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // targetb1
-                    thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // parityb1
-                    thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // parityb2
-                    std::get<6>(*precomp).size(), // nalpha
-                    std::get<8>(*precomp).size(), // nb
+                    thrust::raw_pointer_cast(std::get<2>(*precomp).data()), // sourcea1 (dag)
+                    thrust::raw_pointer_cast(std::get<3>(*precomp).data()), // targeta1
+                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // paritya1
+                    thrust::raw_pointer_cast(std::get<7>(*precomp).data()), // paritya2
+                    thrust::raw_pointer_cast(std::get<4>(*precomp).data()),  // sourceb1 (dag)
+                    thrust::raw_pointer_cast(std::get<5>(*precomp).data()), // targetb1
+                    thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // parityb1
+                    thrust::raw_pointer_cast(std::get<9>(*precomp).data()), // parityb2
+                    std::get<2>(*precomp).size(), // nalpha
+                    std::get<4>(*precomp).size(), // nb
                     nbeta_strs_,
                     make_cuDoubleComplex(factor.real(), factor.imag()),
                     make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
@@ -1353,13 +1353,13 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
 
                 inplace_givens_update_complex_rows_wrapper(
                     thrust::raw_pointer_cast(Cout.d_data().data()),  // Cout
-                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
-                    thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
-                    thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
-                    thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
-                    // thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // const cuDoubleComplex* parityb1
-                    // thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // const cuDoubleComplex* parityb2
-                    std::get<6>(*precomp).size(), // int na
+                    thrust::raw_pointer_cast(std::get<2>(*precomp).data()),  // const int* sourcea1 (dag)
+                    thrust::raw_pointer_cast(std::get<3>(*precomp).data()), // const int* targeta1
+                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // const cuDoubleComplex* paritya1
+                    thrust::raw_pointer_cast(std::get<7>(*precomp).data()), // const cuDoubleComplex* paritya2
+                    // thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // const cuDoubleComplex* parityb1
+                    // thrust::raw_pointer_cast(std::get<9>(*precomp).data()), // const cuDoubleComplex* parityb2
+                    std::get<2>(*precomp).size(), // int na
                     nbeta_strs_,                  // int nbeta_strs_
                     make_cuDoubleComplex(factor.real(), factor.imag()), // cuDoubleComplex cos_factor
                     make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
@@ -1375,16 +1375,16 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
             inplace_givens_update_complex_tiled_wrapper(
                 32,
                 thrust::raw_pointer_cast(Cout.d_data().data()),
-                thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // sourcea1 (dag)
-                thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // targeta1
-                thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // paritya1
-                thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // paritya2
-                thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // sourceb1 (dag)
-                thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // targetb1
-                thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // parityb1
-                thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // parityb2
-                std::get<6>(*precomp).size(), // nalpha
-                std::get<8>(*precomp).size(), // nb
+                thrust::raw_pointer_cast(std::get<2>(*precomp).data()), // sourcea1 (dag)
+                thrust::raw_pointer_cast(std::get<3>(*precomp).data()), // targeta1
+                thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // paritya1
+                thrust::raw_pointer_cast(std::get<7>(*precomp).data()), // paritya2
+                thrust::raw_pointer_cast(std::get<4>(*precomp).data()),  // sourceb1 (dag)
+                thrust::raw_pointer_cast(std::get<5>(*precomp).data()), // targetb1
+                thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // parityb1
+                thrust::raw_pointer_cast(std::get<9>(*precomp).data()), // parityb2
+                std::get<2>(*precomp).size(), // nalpha
+                std::get<4>(*precomp).size(), // nb
                 nbeta_strs_,
                 make_cuDoubleComplex(factor.real(), factor.imag()),
                 make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
@@ -1413,16 +1413,16 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
                 inplace_givens_update_real_tiled_wrapper(
                     32,
                     thrust::raw_pointer_cast(Cout.d_re_data().data()),
-                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // sourcea1 (dag)
-                    thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // targeta1
-                    thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // paritya1
-                    thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // paritya2
-                    thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // sourceb1 (dag)
-                    thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // targetb1
-                    thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // parityb1
-                    thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // parityb2
-                    std::get<6>(*precomp).size(), // nalpha
-                    std::get<8>(*precomp).size(), // nb
+                    thrust::raw_pointer_cast(std::get<2>(*precomp).data()), // sourcea1 (dag)
+                    thrust::raw_pointer_cast(std::get<3>(*precomp).data()), // targeta1
+                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // paritya1
+                    thrust::raw_pointer_cast(std::get<7>(*precomp).data()), // paritya2
+                    thrust::raw_pointer_cast(std::get<4>(*precomp).data()),  // sourceb1 (dag)
+                    thrust::raw_pointer_cast(std::get<5>(*precomp).data()), // targetb1
+                    thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // parityb1
+                    thrust::raw_pointer_cast(std::get<9>(*precomp).data()), // parityb2
+                    std::get<2>(*precomp).size(), // nalpha
+                    std::get<4>(*precomp).size(), // nb
                     nbeta_strs_,
                     factor.real(),
                     acc_coeff1.real(),
@@ -1436,11 +1436,11 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
 
                 inplace_givens_update_real_rows_wrapper(
                     thrust::raw_pointer_cast(Cout.d_re_data().data()),
-                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()),  // const int* sourcea1 (dag)
-                    thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // const int* targeta1
-                    thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // const cuDoubleComplex* paritya1
-                    thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // const cuDoubleComplex* paritya2
-                    std::get<6>(*precomp).size(), // nalpha
+                    thrust::raw_pointer_cast(std::get<2>(*precomp).data()),  // const int* sourcea1 (dag)
+                    thrust::raw_pointer_cast(std::get<3>(*precomp).data()), // const int* targeta1
+                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // const cuDoubleComplex* paritya1
+                    thrust::raw_pointer_cast(std::get<7>(*precomp).data()), // const cuDoubleComplex* paritya2
+                    std::get<2>(*precomp).size(), // nalpha
                     nbeta_strs_,
                     factor.real(),
                     acc_coeff1.real(),
@@ -1456,16 +1456,16 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
             inplace_givens_update_real_tiled_wrapper(
                 32,
                 thrust::raw_pointer_cast(Cout.d_re_data().data()),
-                thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // sourcea1 (dag)
-                thrust::raw_pointer_cast(std::get<10>(*precomp).data()), // targeta1
-                thrust::raw_pointer_cast(std::get<14>(*precomp).data()), // paritya1
-                thrust::raw_pointer_cast(std::get<15>(*precomp).data()), // paritya2
-                thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // sourceb1 (dag)
-                thrust::raw_pointer_cast(std::get<12>(*precomp).data()), // targetb1
-                thrust::raw_pointer_cast(std::get<16>(*precomp).data()), // parityb1
-                thrust::raw_pointer_cast(std::get<17>(*precomp).data()), // parityb2
-                std::get<6>(*precomp).size(), // nalpha
-                std::get<8>(*precomp).size(), // nb
+                thrust::raw_pointer_cast(std::get<2>(*precomp).data()), // sourcea1 (dag)
+                thrust::raw_pointer_cast(std::get<3>(*precomp).data()), // targeta1
+                thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // paritya1
+                thrust::raw_pointer_cast(std::get<7>(*precomp).data()), // paritya2
+                thrust::raw_pointer_cast(std::get<4>(*precomp).data()),  // sourceb1 (dag)
+                thrust::raw_pointer_cast(std::get<5>(*precomp).data()), // targetb1
+                thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // parityb1
+                thrust::raw_pointer_cast(std::get<9>(*precomp).data()), // parityb2
+                std::get<2>(*precomp).size(), // nalpha
+                std::get<4>(*precomp).size(), // nb
                 nbeta_strs_,
                 factor.real(),
                 acc_coeff1.real(),
