@@ -85,18 +85,6 @@ class SQOpPoolGPU {
     std::vector<thrust::device_vector<int>>& terms_scale_indsb_dag_gpu() { return terms_scale_indsb_dag_gpu_; }
     std::vector<thrust::device_vector<int>>& terms_scale_indsb_undag_gpu() { return terms_scale_indsb_undag_gpu_; }
 
-    // Accumulation (source) index maps
-    std::vector<thrust::device_vector<int>>& terms_sourcea_dag_gpu() { return terms_sourcea_dag_gpu_; }
-    std::vector<thrust::device_vector<int>>& terms_sourcea_undag_gpu() { return terms_sourcea_undag_gpu_; }
-    std::vector<thrust::device_vector<int>>& terms_sourceb_dag_gpu() { return terms_sourceb_dag_gpu_; }
-    std::vector<thrust::device_vector<int>>& terms_sourceb_undag_gpu() { return terms_sourceb_undag_gpu_; }
-
-    // Accumulation (target) index maps
-    std::vector<thrust::device_vector<int>>& terms_targeta_dag_gpu() { return terms_targeta_dag_gpu_; }
-    std::vector<thrust::device_vector<int>>& terms_targeta_undag_gpu() { return terms_targeta_undag_gpu_; }
-    std::vector<thrust::device_vector<int>>& terms_targetb_dag_gpu() { return terms_targetb_dag_gpu_; }
-    std::vector<thrust::device_vector<int>>& terms_targetb_undag_gpu() { return terms_targetb_undag_gpu_; }
-
     // Parity/phase maps (complex)
     std::vector<thrust::device_vector<cuDoubleComplex>>& terms_paritya_dag_gpu() { return terms_paritya_dag_gpu_; }
     std::vector<thrust::device_vector<cuDoubleComplex>>& terms_paritya_undag_gpu() { return terms_paritya_undag_gpu_; }
@@ -250,28 +238,13 @@ class SQOpPoolGPU {
     std::vector<std::complex<double>> inner_coeffs_;
 
 
-    /// ===> For Sclae inplace
+    /// ===> For Scale inplace
 
     /// the list of alfa/beta indicies for inplace ops for FCIComputerGPU
     std::vector<thrust::device_vector<int>> terms_scale_indsa_dag_gpu_; 
     std::vector<thrust::device_vector<int>> terms_scale_indsa_undag_gpu_; //note: not used in easy case
     std::vector<thrust::device_vector<int>> terms_scale_indsb_dag_gpu_; 
     std::vector<thrust::device_vector<int>> terms_scale_indsb_undag_gpu_; //note: not used in easy case
-
-
-    /// ===> For accumulation (gather->scale->transfer)
-
-    /// the list of alfa/beta source indicies for FCIComputerGPU
-    std::vector<thrust::device_vector<int>> terms_sourcea_dag_gpu_;
-    std::vector<thrust::device_vector<int>> terms_sourcea_undag_gpu_;
-    std::vector<thrust::device_vector<int>> terms_sourceb_dag_gpu_;
-    std::vector<thrust::device_vector<int>> terms_sourceb_undag_gpu_; 
-
-    /// the list of alfa/beta target indicies for FCIComputerGPU
-    std::vector<thrust::device_vector<int>> terms_targeta_dag_gpu_;
-    std::vector<thrust::device_vector<int>> terms_targeta_undag_gpu_;
-    std::vector<thrust::device_vector<int>> terms_targetb_dag_gpu_;
-    std::vector<thrust::device_vector<int>> terms_targetb_undag_gpu_;
     
     /// the list of alfa/beta parities for FCIComputerGPU (complex)
     std::vector<thrust::device_vector<cuDoubleComplex>> terms_paritya_dag_gpu_;

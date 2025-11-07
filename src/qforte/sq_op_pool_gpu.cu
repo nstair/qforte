@@ -27,18 +27,6 @@ SQOpPoolGPU::~SQOpPoolGPU() {
         terms_parityb_dag_re_gpu_.clear();
         terms_parityb_undag_re_gpu_.clear();
         
-        // Target index arrays
-        terms_targeta_dag_gpu_.clear();
-        terms_targeta_undag_gpu_.clear();
-        terms_targetb_dag_gpu_.clear();
-        terms_targetb_undag_gpu_.clear();
-        
-        // Source index arrays
-        terms_sourcea_dag_gpu_.clear();
-        terms_sourcea_undag_gpu_.clear();
-        terms_sourceb_dag_gpu_.clear();
-        terms_sourceb_undag_gpu_.clear();
-        
         // Scale index arrays
         terms_scale_indsa_dag_gpu_.clear();
         terms_scale_indsa_undag_gpu_.clear();
@@ -604,16 +592,6 @@ std::size_t SQOpPoolGPU::check_mu_tuple_container_sizes() const {
     check("terms_scale_indsb_dag_gpu_",    terms_scale_indsb_dag_gpu_.size());
     check("terms_scale_indsb_undag_gpu_",  terms_scale_indsb_undag_gpu_.size());
 
-    check("terms_sourcea_dag_gpu_",        terms_sourcea_dag_gpu_.size());
-    check("terms_sourcea_undag_gpu_",      terms_sourcea_undag_gpu_.size());
-    check("terms_sourceb_dag_gpu_",        terms_sourceb_dag_gpu_.size());
-    check("terms_sourceb_undag_gpu_",      terms_sourceb_undag_gpu_.size());
-
-    check("terms_targeta_dag_gpu_",        terms_targeta_dag_gpu_.size());
-    check("terms_targeta_undag_gpu_",      terms_targeta_undag_gpu_.size());
-    check("terms_targetb_dag_gpu_",        terms_targetb_dag_gpu_.size());
-    check("terms_targetb_undag_gpu_",      terms_targetb_undag_gpu_.size());
-
     // arrays depend on type
     if (data_type_ == "real") {
         check("terms_paritya_dag_re_gpu_",        terms_paritya_dag_re_gpu_.size());
@@ -660,14 +638,6 @@ void SQOpPoolGPU::print_mu_tuple_dims(std::size_t mu) const {
     print_sz("terms_scale_indsa_undag",  terms_scale_indsa_undag_gpu_[mu]);
     print_sz("terms_scale_indsb_dag",    terms_scale_indsb_dag_gpu_[mu]);
     print_sz("terms_scale_indsb_undag",  terms_scale_indsb_undag_gpu_[mu]);
-    print_sz("terms_sourcea_dag",        terms_sourcea_dag_gpu_[mu]);
-    print_sz("terms_sourcea_undag",      terms_sourcea_undag_gpu_[mu]);
-    print_sz("terms_sourceb_dag",        terms_sourceb_dag_gpu_[mu]);
-    print_sz("terms_sourceb_undag",      terms_sourceb_undag_gpu_[mu]);
-    print_sz("terms_targeta_dag",        terms_targeta_dag_gpu_[mu]);
-    print_sz("terms_targeta_undag",      terms_targeta_undag_gpu_[mu]);
-    print_sz("terms_targetb_dag",        terms_targetb_dag_gpu_[mu]);
-    print_sz("terms_targetb_undag",      terms_targetb_undag_gpu_[mu]);
     print_sz("terms_paritya_dag",        terms_paritya_dag_gpu_[mu]);
     print_sz("terms_paritya_undag",      terms_paritya_undag_gpu_[mu]);
     print_sz("terms_parityb_dag",        terms_parityb_dag_gpu_[mu]);
@@ -730,14 +700,6 @@ void SQOpPoolGPU::print_mu_tuple_elements(std::size_t mu) const {
     print_dvi("terms_scale_indsa_undag",  terms_scale_indsa_undag_gpu_[mu]);
     print_dvi("terms_scale_indsb_dag",    terms_scale_indsb_dag_gpu_[mu]);
     print_dvi("terms_scale_indsb_undag",  terms_scale_indsb_undag_gpu_[mu]);
-    print_dvi("terms_sourcea_dag",        terms_sourcea_dag_gpu_[mu]);
-    print_dvi("terms_sourcea_undag",      terms_sourcea_undag_gpu_[mu]);
-    print_dvi("terms_sourceb_dag",        terms_sourceb_dag_gpu_[mu]);
-    print_dvi("terms_sourceb_undag",      terms_sourceb_undag_gpu_[mu]);
-    print_dvi("terms_targeta_dag",        terms_targeta_dag_gpu_[mu]);
-    print_dvi("terms_targeta_undag",      terms_targeta_undag_gpu_[mu]);
-    print_dvi("terms_targetb_dag",        terms_targetb_dag_gpu_[mu]);
-    print_dvi("terms_targetb_undag",      terms_targetb_undag_gpu_[mu]);
 
     // cuDoubleComplex parity/phase arrays
     print_dvz("terms_paritya_dag",        terms_paritya_dag_gpu_[mu]);

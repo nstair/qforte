@@ -2741,16 +2741,6 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
             pool.terms_scale_indsb_dag_gpu().emplace_back(d_beta);
             pool.terms_scale_indsb_undag_gpu().emplace_back();
 
-            // Empty source/target
-            pool.terms_sourcea_dag_gpu().emplace_back();
-            pool.terms_sourcea_undag_gpu().emplace_back();
-            pool.terms_sourceb_dag_gpu().emplace_back();
-            pool.terms_sourceb_undag_gpu().emplace_back();
-            pool.terms_targeta_dag_gpu().emplace_back();
-            pool.terms_targeta_undag_gpu().emplace_back();
-            pool.terms_targetb_dag_gpu().emplace_back();
-            pool.terms_targetb_undag_gpu().emplace_back();
-
             if (need_complex) {
                 pool.terms_paritya_dag_gpu().emplace_back();
                 pool.terms_paritya_undag_gpu().emplace_back();
@@ -2837,8 +2827,6 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
                     anna,
                     crea,
                     &counta,
-                    pool.terms_sourcea_dag_gpu(),
-                    pool.terms_targeta_dag_gpu(),
                     pool.terms_paritya_dag_gpu());
 
                 // std::cout << "sourcea1 " << pool.terms_sourcea_dag_gpu().str() << std::endl;  // device_vector has no .str() method
@@ -2848,8 +2836,6 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
                     anna,
                     crea,
                     &counta,
-                    pool.terms_sourcea_dag_gpu(),
-                    pool.terms_targeta_dag_gpu(),
                     pool.terms_paritya_dag_re_gpu());
             }
 
@@ -2859,8 +2845,6 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
                     annb,
                     creb,
                     &countb,
-                    pool.terms_sourceb_dag_gpu(),
-                    pool.terms_targetb_dag_gpu(),
                     pool.terms_parityb_dag_gpu());
             } else if (real_only) {
                 graph_.make_mapping_each_pre_gpu_real(
@@ -2868,8 +2852,6 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
                     annb,
                     creb,
                     &countb,
-                    pool.terms_sourceb_dag_gpu(),
-                    pool.terms_targetb_dag_gpu(),
                     pool.terms_parityb_dag_re_gpu());
             }
 
@@ -2887,8 +2869,6 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
                     crea,
                     anna,
                     &counta,
-                    pool.terms_sourcea_undag_gpu(),
-                    pool.terms_targeta_undag_gpu(),
                     pool.terms_paritya_undag_gpu());
             } else if (real_only) {
                 graph_.make_mapping_each_pre_gpu_real(
@@ -2896,8 +2876,6 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
                     crea,
                     anna,
                     &counta,
-                    pool.terms_sourcea_undag_gpu(),
-                    pool.terms_targeta_undag_gpu(),
                     pool.terms_paritya_undag_re_gpu());
             }
 
@@ -2907,8 +2885,6 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
                     creb,
                     annb,
                     &countb,
-                    pool.terms_sourceb_undag_gpu(),
-                    pool.terms_targetb_undag_gpu(),
                     pool.terms_parityb_undag_gpu());
             } else if (real_only) {
                 graph_.make_mapping_each_pre_gpu_real(
@@ -2916,8 +2892,6 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
                     creb,
                     annb,
                     &countb,
-                    pool.terms_sourceb_undag_gpu(),
-                    pool.terms_targetb_undag_gpu(),
                     pool.terms_parityb_undag_re_gpu());
             }
 
