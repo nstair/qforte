@@ -59,12 +59,24 @@ conda install cmake
 conda install -c anaconda openblas-devel
 ```
 
-#### two-line install required packages (including optional fqe):
+#### two-line install required packages (CPU Only):
+```bash
+conda create -n new_envname -c conda-forge python=3.9 openblas psi4 cmake
+conda activate new_envname
+pip install fqe
+```
+
+**NOTE** prior to installation set env variable `ENABLE_CUDA`=0
+
+### two line install (CUDA - GPU Support):
+
 ```bash
 conda create -n new_envname -c conda-forge python=3.9 cuda-toolkit=12.4 openblas psi4 cmake
 conda activate new_envname
 pip install fqe
 ```
+
+**NOTE** prior to installation set env variable `ENABLE_CUDA`=1
 
 Installation (For Development)
 ------------------------------

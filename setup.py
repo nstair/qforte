@@ -86,6 +86,15 @@ class CMakeBuild(build_ext):
         cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
                       '-DPYTHON_EXECUTABLE=' + sys.executable] #  + ext.cmake_args # Last bit is crucial here
 
+        # Check for CUDA support (defaults to OFF, can be enabled via environment variable)
+        enable_cuda = os.environ.get('ENABLE_CUDA', '0').lower() not in ('0', 'false', 'no', 'off')
+        if enable_cuda:
+            print("Building with CUDA support enabled")
+            cmake_args.append('-DENABLE_CUDA=ON')
+        else:
+            print("Building WITHOUT CUDA support (CPU-only mode)")
+            cmake_args.append('-DENABLE_CUDA=OFF')
+
         cfg = 'Debug' if self.debug else 'Release'
         build_args = ['--config', cfg]
 

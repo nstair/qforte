@@ -20,7 +20,6 @@
 #include "timer.h"
 #include "sq_operator.h"
 #include "blas_math.h"
-#include "cuda_runtime.h"
 
 #include "fci_computer.h"
 #include "fci_graph.h"

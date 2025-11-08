@@ -34,10 +34,12 @@
 #include "tensor_operator.h"
 #include "blas_math.h"
 
+#ifdef QFORTE_CUDA_ENABLED
 #include "tensor_gpu.h"
 #include "fci_computer_gpu.h"
 #include "fci_graph_gpu.h"
 #include "sq_op_pool_gpu.h"
+#endif
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -181,6 +183,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("__str__", &SQOpPool::str)
         .def("__repr__", &SQOpPool::str);
 
+#ifdef QFORTE_CUDA_ENABLED
     py::class_<SQOpPoolGPU>(m, "SQOpPoolGPU")
         .def(py::init<std::string>(), "data_type"_a)
         .def("add", &SQOpPoolGPU::add_term)
@@ -204,6 +207,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("__len__", [](const SQOpPoolGPU &pool) { return pool.terms().size(); })
         .def("__str__", &SQOpPoolGPU::str)
         .def("__repr__", &SQOpPoolGPU::str);
+#endif
 
     py::class_<QubitOperator>(m, "QubitOperator")
         .def(py::init<>())
@@ -511,6 +515,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("acc_str_table", &local_timer::acc_str_table, "Get a string representation of the accumulated timings.")
         .def("__str__", &local_timer::str_table);
 
+#ifdef QFORTE_CUDA_ENABLED
     py::class_<TensorGPU>(m, "TensorGPU")
         .def(py::init<>())
         .def(py::init<const std::vector<size_t>&, const std::string&, bool>(),
@@ -606,6 +611,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_dexcb", &FCIGraphGPU::get_dexcb)
         .def("get_dexca_vec", &FCIGraphGPU::get_dexca_vec)
         .def("get_dexcb_vec", &FCIGraphGPU::get_dexcb_vec);
+#endif
 
     m.def(
         "gate",
