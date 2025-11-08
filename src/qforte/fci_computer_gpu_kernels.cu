@@ -130,6 +130,10 @@ extern "C" void scale_elements_wrapper_complex(
     int nbeta_strs_,
     cuDoubleComplex factor) 
 {
+    if (first_size <= 0 || second_size <= 0 || nbeta_strs_ <= 0) return;
+    // Fast path for identity scaling
+    if (cuCreal(factor) == 1.0 && cuCimag(factor) == 0.0) return;
+
     dim3 blockSize(16, 16);
     dim3 gridSize((first_size + blockSize.x - 1) / blockSize.x, 
                   (second_size + blockSize.y - 1) / blockSize.y);
