@@ -66,7 +66,11 @@ conda activate new_envname
 pip install fqe
 ```
 
-**NOTE** prior to installation set env variable `ENABLE_CUDA`=0
+**NOTE** prior to installation set env variable `ENABLE_CUDA`=0 
+
+**NOTE** Building with python 3.9+ is viable if pybind11 is updated with it's current main branch.
+
+**NOTE** For hardcoded paths in CMakeLists.txt use `.dylb` for mac OS and `.so` for Linux.
 
 ### two line install (CUDA - GPU Support):
 
