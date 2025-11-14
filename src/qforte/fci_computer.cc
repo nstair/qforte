@@ -25,6 +25,8 @@
 #include "fci_graph.h"
 
 
+
+
 FCIComputer::FCIComputer(int nel, int sz, int norb) : 
     nel_(nel), 
     sz_(sz),
@@ -67,6 +69,8 @@ FCIComputer::FCIComputer(int nel, int sz, int norb) :
     C_.set_name("FCI Computer");
 
     graph_ = FCIGraph(nalfa_el_, nbeta_el_, norb_);
+
+    timer_ = local_timer();
 }
 
 /// Set a particular element of the tensor stored in FCIComputer, specified by idxs
@@ -76,6 +80,14 @@ void FCIComputer::set_element(
         )
 {
     C_.set(idxs, val);
+}
+
+void FCIComputer::do_on_gpu() {
+    use_gpu_operations_ = true;
+}
+
+void FCIComputer::do_on_cpu() {
+    use_gpu_operations_ = false;
 }
 
 /// apply a TensorOperator to the current state 
@@ -859,10 +871,29 @@ void FCIComputer::evolve_individual_nbody_easy_v2(
     int n_a = anna.size();
     int n_b = annb.size();
 
+    // std::cout << "\n  ====> n_a <==== " << n_a << std::endl;
+    // std::cout << "\n  ====> n_b <==== " << n_b << std::endl;
+
     int power = n_a * (n_a - 1) / 2 + n_b * (n_b - 1) / 2;
+
+    // std::cout << "\n  ====> power <==== " << power << std::endl;
+
     std::complex<double> prefactor = coeff * std::pow(-1, power);
+
+    // std::cout << "\n  ====> prefactor <==== " << prefactor << std::endl;
+
     std::complex<double> factor = std::exp(-time * std::real(prefactor) * std::complex<double>(0.0, 1.0));
+
+    // std::cout << "\n  ====> factor <====" << factor << std::endl;
+
     std::pair<std::vector<int>, std::vector<int>> maps = evaluate_map_number(anna, annb);
+
+    // std::cout << "\n  ====> first <====";
+    // for (const auto& val : maps.first) std::cout << val << " "; 
+    // std::cout << std::endl;
+    // std::cout << "\n  ====> second <====";
+    // for (const auto& val : maps.second) std::cout << val << " "; 
+    // std::cout << std::endl;
 
     if (maps.first.size() != 0 and maps.second.size() != 0){
         for (size_t i = 0; i < maps.first.size(); i++){
@@ -1433,7 +1464,23 @@ void FCIComputer::evolve_individual_nbody_v2(
 
     std::complex<double> parity = std::pow(-1, nswaps);
 
+    // DEBUG: source and target lists
+    // std::cout << "crea: ";
+    // for (const auto& val : crea) std::cout << val << " ";
+    // std::cout << std::endl;
+    // std::cout << "anna: ";
+    // for (const auto& val : anna) std::cout << val << " ";
+    // std::cout << std::endl;
+    // std::cout << "creb: ";
+    // for (const auto& val : creb) std::cout << val << " ";
+    // std::cout << std::endl;
+    // std::cout << "annb: ";
+    // for (const auto& val : annb) std::cout << val << " ";
+    // std::cout << std::endl;
+
     if (crea == anna && creb == annb) {
+
+        // std::cout << "Evolving easy term..." << std::endl;
         
         std::complex<double> factor;
         evolve_individual_nbody_easy_v2(
@@ -1446,6 +1493,8 @@ void FCIComputer::evolve_individual_nbody_v2(
             annb);
 
     } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
+
+        // std::cout << "Evolving hard term..." << std::endl;
 
         evolve_individual_nbody_hard_v2(
             time,
@@ -1465,6 +1514,8 @@ void FCIComputer::evolve_individual_nbody_v2(
             "Evolved state must remain in spin and particle-number symmetry sector, bad op above"
         );
     }
+
+    // std::cout << "tensor after evolution:\n" << Cout.str(true, true) << std::endl;
 }
 
 void FCIComputer::evolve_op_taylor(
@@ -1885,6 +1936,7 @@ void FCIComputer::apply_sqop_evolution(
       const bool adjoint)
 {
     Tensor Cin = C_;
+    // NOTE(Nick): needs gpu treatment
     evolve_individual_nbody(
         time,
         sqop,
@@ -1909,7 +1961,143 @@ void FCIComputer::apply_sqop_evolution_v2(
 }
 
 
-void FCIComputer::apply_individual_nbody1_accumulate(
+// void FCIComputer::apply_individual_nbody1_accumulate_gpu(
+//     const std::complex<double> coeff, 
+//     const Tensor& Cin,
+//     Tensor& Cout,
+//     std::vector<int>& sourcea,
+//     std::vector<int>& targeta,
+//     std::vector<int>& paritya,
+//     std::vector<int>& sourceb,
+//     std::vector<int>& targetb,
+//     std::vector<int>& parityb)
+// {
+    
+//     local_timer my_timer = local_timer();
+//     my_timer.reset();
+//     if ((targetb.size() != sourceb.size()) or (sourceb.size() != parityb.size())) {
+//         throw std::runtime_error("The sizes of btarget, bsource, and bparity must be the same.");
+//     }
+
+//     if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
+//         throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
+//     }
+//     // only part that has kernel
+
+//     // make device pointers out of all the things coming in - use cuda mem copy to a device pointer
+//     my_timer.record("error checks");
+//     my_timer.reset();
+//     int* d_sourcea;
+//     int* d_sourceb;
+//     int* d_targeta;
+//     int* d_targetb;
+//     int* d_paritya;
+//     int* d_parityb;
+
+//     cuDoubleComplex* d_Cin;
+//     cuDoubleComplex* d_Cout;
+
+//     // cumalloc for these
+
+//     int sourcea_mem = sourcea.size() * sizeof(int);
+//     int sourceb_mem = sourceb.size() * sizeof(int);
+//     int targetb_mem = targetb.size() * sizeof(int);
+//     int targeta_mem = targeta.size() * sizeof(int);
+//     int paritya_mem = paritya.size() * sizeof(int);
+//     int parityb_mem = parityb.size() * sizeof(int);
+
+//     int tensor_mem = Cin.size() * sizeof(std::complex<double>);
+
+//     my_timer.record("making pointers");
+//     my_timer.reset();
+//     cudaMalloc(&d_sourcea, sourcea_mem);
+//     cudaMalloc(&d_sourceb, sourceb_mem);
+//     cudaMalloc(&d_targeta, targeta_mem);
+//     cudaMalloc(&d_targetb, targetb_mem);
+//     cudaMalloc(&d_paritya, paritya_mem);
+//     cudaMalloc(&d_parityb, parityb_mem);
+
+//     cudaMalloc(&d_Cin,  tensor_mem);
+//     cudaMalloc(&d_Cout, tensor_mem);
+
+//     my_timer.record("cudamallocs");
+//     my_timer.reset();
+
+//     cudaMemcpy(d_sourcea, sourcea.data(), sourcea_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_sourceb, sourceb.data(), sourceb_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_targeta, targeta.data(), targeta_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_targetb, targetb.data(), targetb_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_paritya, paritya.data(), paritya_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_parityb, parityb.data(), parityb_mem, cudaMemcpyHostToDevice);
+
+//     cudaMemcpy(d_Cin,  Cin.read_data().data(),  tensor_mem, cudaMemcpyHostToDevice);
+//     cudaMemcpy(d_Cout, Cout.read_data().data(), tensor_mem, cudaMemcpyHostToDevice);
+
+//     my_timer.record("cudamemcpy");
+//     my_timer.reset();
+
+//     cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
+
+//     apply_individual_nbody1_accumulate_wrapper(
+//         cu_coeff, 
+//         d_Cin, 
+//         d_Cout, 
+//         d_sourcea,
+//         d_targeta,
+//         d_paritya,
+//         d_sourceb,
+//         d_targetb,
+//         d_parityb,
+//         nbeta_strs_,
+//         targeta.size(),
+//         targetb.size(),
+//         tensor_mem);
+//     my_timer.record("gpu function");
+//     my_timer.reset();
+
+
+//     cudaMemcpy(Cout.data().data(), d_Cout, tensor_mem, cudaMemcpyDeviceToHost);
+
+
+//     cudaFree(d_sourcea);
+//     cudaFree(d_sourceb);
+//     cudaFree(d_targeta);
+//     cudaFree(d_targetb);
+//     cudaFree(d_paritya);
+//     cudaFree(d_parityb);
+//     cudaFree(d_Cin);
+//     cudaFree(d_Cout);
+
+
+//     cudaError_t error = cudaGetLastError();
+//     if (error != cudaSuccess) {
+//         std::cerr << "CUDA error: " << cudaGetErrorString(error) << std::endl;
+//         throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
+//     }
+
+//     my_timer.record("cuda free and transfer");
+//     // std::cout << my_timer.str_table() << std::endl;
+
+//     // do same thing for cin cout
+
+//     // call the add wrapper
+//     // do this in cu file with grid stride loop
+//     // for (int i = 0; i < targeta.size(); i++) {
+//     //     int ta_idx = targeta[i] * nbeta_strs_;
+//     //     int sa_idx = sourcea[i] * nbeta_strs_;
+//     //     std::complex<double> pref = coeff * static_cast<std::complex<double>>(paritya[i]);
+//     //     for (int j = 0; j < targetb.size(); j++) {
+//     //         Cout.data()[ta_idx + targetb[j]] += pref * static_cast<std::complex<double>>(parityb[j]) * Cin.read_data()[sa_idx + sourceb[j]];
+//     //     }
+//     // }
+
+
+
+//     // free it
+// }
+
+
+void FCIComputer::apply_individual_nbody1_accumulate_cpu(
     const std::complex<double> coeff, 
     const Tensor& Cin,
     Tensor& Cout,
@@ -1927,7 +2115,9 @@ void FCIComputer::apply_individual_nbody1_accumulate(
     if ((targeta.size() != sourcea.size()) or (sourcea.size() != paritya.size())) {
         throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
     }
-
+    // local_timer my_timer = local_timer();
+    timer_.reset();
+    // only part that has kernel
     for (int i = 0; i < targeta.size(); i++) {
         int ta_idx = targeta[i] * nbeta_strs_;
         int sa_idx = sourcea[i] * nbeta_strs_;
@@ -1936,6 +2126,33 @@ void FCIComputer::apply_individual_nbody1_accumulate(
             Cout.data()[ta_idx + targetb[j]] += pref * static_cast<std::complex<double>>(parityb[j]) * Cin.read_data()[sa_idx + sourceb[j]];
         }
     }
+    
+    timer_.acc_record("cpu function");
+    // std::cout << my_timer.str_table() << std::endl;
+}
+
+
+void FCIComputer::apply_individual_nbody1_accumulate(
+    const std::complex<double> coeff, 
+    const Tensor& Cin,
+    Tensor& Cout,
+    std::vector<int>& sourcea,
+    std::vector<int>& targeta,
+    std::vector<int>& paritya,
+    std::vector<int>& sourceb,
+    std::vector<int>& targetb,
+    std::vector<int>& parityb)
+{
+       apply_individual_nbody1_accumulate_cpu(
+        coeff, 
+        Cin,
+        Cout,
+        sourcea,
+        targeta,
+        paritya,
+        sourceb,
+        targetb,
+        parityb);
 }
 
 void FCIComputer::apply_individual_nbody_accumulate(
@@ -1952,10 +2169,16 @@ void FCIComputer::apply_individual_nbody_accumulate(
         throw std::runtime_error("must be same number of alpha anihilators/creators and beta anihilators/creators.");
     }
 
+    local_timer my_timer = local_timer();
+    my_timer.reset();
+
     std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> ualfamap = graph_.make_mapping_each(
         true,
         daga,
         undaga);
+
+    my_timer.record("first 'make_mapping_each' in apply_individual_nbody_accumulate");
+    my_timer.reset();
 
     if (std::get<0>(ualfamap) == 0) {
         return;
@@ -1965,6 +2188,9 @@ void FCIComputer::apply_individual_nbody_accumulate(
         false,
         dagb,
         undagb);
+
+    my_timer.record("second 'make_mapping_each' in apply_individual_nbody_accumulate");
+    my_timer.reset();
 
     if (std::get<0>(ubetamap) == 0) {
         return;
@@ -1977,6 +2203,9 @@ void FCIComputer::apply_individual_nbody_accumulate(
     std::vector<int> targetb(std::get<0>(ubetamap));
     std::vector<int> parityb(std::get<0>(ubetamap));
 
+    my_timer.record("a lot of initialization in apply_individual_nbody_accumulate");
+    my_timer.reset();
+
     /// NICK: All this can be done in the make_mapping_each fucntion.
     /// Maybe try like a make_abbrev_mapping_each
 
@@ -1987,12 +2216,25 @@ void FCIComputer::apply_individual_nbody_accumulate(
         paritya[i] = 1.0 - 2.0 * std::get<3>(ualfamap)[i];
     }
 
+    my_timer.record("first for loop in apply_individual_nbody_accumulate");
+    my_timer.reset();
+
     for (int i = 0; i < std::get<0>(ubetamap); i++) {
         sourceb[i] = std::get<1>(ubetamap)[i];
         targetb[i] = graph_.get_bind_for_str(std::get<2>(ubetamap)[i]);
         parityb[i] = 1.0 - 2.0 * std::get<3>(ubetamap)[i];
     }
 
+    // print_vector(sourcea, "sourcea");
+    // print_vector(targeta, "targeta");
+    // print_vector(paritya, "paritya");
+    // print_vector(sourceb, "sourceb");
+    // print_vector(targetb, "targetb");
+    // print_vector(parityb, "parityb");
+
+    my_timer.record("second for loop in apply_individual_nbody_accumulate");
+    // std::cout << my_timer.str_table() << std::endl;
+    // this is where the if statement goes
     apply_individual_nbody1_accumulate(
         coeff, 
         Cin,
@@ -2018,6 +2260,9 @@ void FCIComputer::apply_individual_sqop_term(
     std::vector<int> creb;
     std::vector<int> annb;
 
+    local_timer my_timer = local_timer();
+    my_timer.reset();
+
     for(size_t i = 0; i < std::get<1>(term).size(); i++){
         if(std::get<1>(term)[i]%2 == 0){
             crea.push_back(std::floor(std::get<1>(term)[i] / 2));
@@ -2026,6 +2271,9 @@ void FCIComputer::apply_individual_sqop_term(
         }
     }
 
+    my_timer.record("first loop in apply_individual_sqop_term");
+    my_timer.reset();
+
     for(size_t i = 0; i < std::get<2>(term).size(); i++){
         if(std::get<2>(term)[i]%2 == 0){
             anna.push_back(std::floor(std::get<2>(term)[i] / 2));
@@ -2033,6 +2281,9 @@ void FCIComputer::apply_individual_sqop_term(
             annb.push_back(std::floor(std::get<2>(term)[i] / 2));
         }
     }
+
+    my_timer.record("second loop in apply_individual_sqop_term");
+    my_timer.reset();
 
     if (std::get<1>(term).size() != std::get<2>(term).size()) {
         throw std::invalid_argument("Each term must have same number of anihilators and creators");
@@ -2043,6 +2294,8 @@ void FCIComputer::apply_individual_sqop_term(
     ops1.insert(ops1.end(), ops2.begin(), ops2.end());
 
     int nswaps = parity_sort(ops1);
+    my_timer.record("some parity things");
+    // std::cout << my_timer.str_table() << std::endl;
 
     apply_individual_nbody_accumulate(
         pow(-1, nswaps) * std::get<0>(term),
@@ -2056,8 +2309,15 @@ void FCIComputer::apply_individual_sqop_term(
 
 /// NICK: Check out  accumulation, don't need to do it this way..
 void FCIComputer::apply_sqop(const SQOperator& sqop){
+    
+    local_timer my_timer = local_timer();
+    my_timer.reset();
     Tensor Cin = C_;
     C_.zero();
+
+    my_timer.record("making tensor things");
+    my_timer.reset();
+
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
         apply_individual_sqop_term(
@@ -2066,6 +2326,8 @@ void FCIComputer::apply_sqop(const SQOperator& sqop){
             C_);
         }
     }
+    my_timer.record("first for loop in apply_sqop");
+    // std::cout << my_timer.str_table() << std::endl;
 }
 
 /// diagonal only 

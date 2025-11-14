@@ -171,6 +171,8 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::
     const std::vector<int>& dag, 
     const std::vector<int>& undag) 
 {
+    timer_.reset();
+
     std::vector<uint64_t> strings;
     int length;
     
@@ -221,6 +223,9 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::
             count++;
         }
     }
+
+    timer_.acc_record("make_mapping_each");
+    //std::cout << timer_.acc_str_table() << std::endl;
 
     return std::make_tuple(
                     count,

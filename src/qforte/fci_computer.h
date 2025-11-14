@@ -7,9 +7,10 @@
 #include "qforte-def.h" 
 #include "tensor.h" 
 #include "fci_graph.h" 
+#include "timer.h"
 #include "df_hamiltonian.h" 
 
-
+class local_timer;
 class Gate;
 class QubitBasis;
 class SQOperator;
@@ -452,6 +453,28 @@ class FCIComputer {
       std::vector<int>& sourceb,
       std::vector<int>& parityb);
 
+    // void apply_individual_nbody1_accumulate_gpu(
+    //   const std::complex<double> coeff, 
+    //   const Tensor& Cin,
+    //   Tensor& Cout,
+    //   std::vector<int>& targeta,
+    //   std::vector<int>& sourcea,
+    //   std::vector<int>& paritya,
+    //   std::vector<int>& targetb,
+    //   std::vector<int>& sourceb,
+    //   std::vector<int>& parityb);
+
+    void apply_individual_nbody1_accumulate_cpu(
+      const std::complex<double> coeff, 
+      const Tensor& Cin,
+      Tensor& Cout,
+      std::vector<int>& targeta,
+      std::vector<int>& sourcea,
+      std::vector<int>& paritya,
+      std::vector<int>& targetb,
+      std::vector<int>& sourceb,
+      std::vector<int>& parityb);
+
     /// Apply a single term of a SQOperator to the FCIComputer after
     /// re-indexing the creators and anihilators. 
     /// NICK: Still need a top level function which takes a sqop term...
@@ -642,10 +665,18 @@ class FCIComputer {
     /// get timings
     std::vector<std::pair<std::string, double>> get_timings() { return timings_; }
 
+    local_timer get_acc_timer() { return timer_; }
+
     /// clear the timings
     void clear_timings() { timings_.clear(); }
 
+    void do_on_gpu();
+    void do_on_cpu();
+
   private:
+
+    bool use_gpu_operations_ = false;
+
     /// the number of electrons
     size_t nel_;
 
@@ -685,6 +716,8 @@ class FCIComputer {
 
     /// The corresponding FCIGraph for this computer
     FCIGraph graph_;
+
+    local_timer timer_;
 
     /// the coefficients of the ending state in the tensor product basis
     // std::vector<std::complex<double>> new_coeff_;

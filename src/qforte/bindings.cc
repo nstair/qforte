@@ -1,3 +1,10 @@
+
+// Force Thrust to use the host (CPP) backend in this translation unit.
+// This prevents CUB / device intrinsics from being pulled in by mistake.
+#define THRUST_DEVICE_SYSTEM THRUST_DEVICE_SYSTEM_CPP
+#define THRUST_HOST_SYSTEM   THRUST_HOST_SYSTEM_CPP
+
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/complex.h>
@@ -8,6 +15,9 @@
 #include "circuit.h"
 #include "gate.h"
 #include "computer.h"
+
+// #include "fci_computer_gpu.h"
+
 #include "fci_computer.h"
 #include "fci_graph.h"
 #include "qubit_operator.h"
@@ -18,8 +28,18 @@
 #include "sparse_tensor.h"
 #include "timer.h"
 #include "tensor.h"
+
+// #include "tensor_gpu.h"
+
 #include "tensor_operator.h"
 #include "blas_math.h"
+
+#ifdef QFORTE_CUDA_ENABLED
+#include "tensor_gpu.h"
+#include "fci_computer_gpu.h"
+#include "fci_graph_gpu.h"
+#include "sq_op_pool_gpu.h"
+#endif
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -163,6 +183,32 @@ PYBIND11_MODULE(qforte, m) {
         .def("__str__", &SQOpPool::str)
         .def("__repr__", &SQOpPool::str);
 
+#ifdef QFORTE_CUDA_ENABLED
+    py::class_<SQOpPoolGPU>(m, "SQOpPoolGPU")
+        .def(py::init<std::string>(), "data_type"_a)
+        .def("add", &SQOpPoolGPU::add_term)
+        .def("add_hermitian_pairs", &SQOpPoolGPU::add_hermitian_pairs)
+        .def("add_term", &SQOpPoolGPU::add_term)
+        .def("set_coeffs", &SQOpPoolGPU::set_coeffs)
+        .def("set_coeffs_to_scaler", &SQOpPoolGPU::set_coeffs_to_scaler)
+        .def("terms", &SQOpPoolGPU::terms)
+        .def("set_orb_spaces", &SQOpPoolGPU::set_orb_spaces)
+        .def("get_qubit_op_pool", &SQOpPoolGPU::get_qubit_op_pool)
+        .def("get_qubit_operator", &SQOpPoolGPU::get_qubit_operator, py::arg("order_type"),
+             py::arg("combine_like_terms") = true, py::arg("qubit_excitations") = false)
+        .def("fill_pool", &SQOpPoolGPU::fill_pool)
+        .def("check_mu_tuple_container_sizes", &SQOpPoolGPU::check_mu_tuple_container_sizes)
+        .def("print_mu_tuple_dims", &SQOpPoolGPU::print_mu_tuple_dims)
+        .def("print_mu_tuple_elements", &SQOpPoolGPU::print_mu_tuple_elements)
+        .def("str", &SQOpPoolGPU::str)
+        .def("__getitem__", [](const SQOpPoolGPU &pool, size_t i) { return pool.terms()[i]; })
+        .def("__iter__", [](const SQOpPoolGPU &pool) { return py::make_iterator(pool.terms()); },
+            py::keep_alive<0, 1>())
+        .def("__len__", [](const SQOpPoolGPU &pool) { return pool.terms().size(); })
+        .def("__str__", &SQOpPoolGPU::str)
+        .def("__repr__", &SQOpPoolGPU::str);
+#endif
+
     py::class_<QubitOperator>(m, "QubitOperator")
         .def(py::init<>())
         .def("add", &QubitOperator::add_term)
@@ -256,6 +302,9 @@ PYBIND11_MODULE(qforte, m) {
         .def("hartree_fock", &FCIComputer::hartree_fock)
         .def("zero_state", &FCIComputer::zero_state)
         .def("set_element", &FCIComputer::set_element)
+        .def("do_on_gpu", &FCIComputer::do_on_gpu)
+        .def("do_on_cpu", &FCIComputer::do_on_cpu)
+        .def("get_acc_timer", &FCIComputer::get_acc_timer)
         .def("apply_tensor_spat_1bdy", &FCIComputer::apply_tensor_spat_1bdy)
         .def("apply_tensor_spin_1bdy", &FCIComputer::apply_tensor_spin_1bdy)
         .def("apply_tensor_spin_12bdy", &FCIComputer::apply_tensor_spin_12bdy)
@@ -347,7 +396,6 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_dexca_vec", &FCIGraph::get_dexca_vec)
         .def("get_dexcb_vec", &FCIGraph::get_dexcb_vec);
 
-
     py::class_<Tensor>(m, "Tensor")
         .def(py::init<std::vector<size_t>, std::string>(), "shape"_a, "name"_a, "Make a Tensor with a particualr shape")
         .def(py::init<>())
@@ -378,6 +426,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("general_transpose", &Tensor::general_transpose) // TODO(Tyler) Need Test (use numpy)
         .def("fill_from_nparray", &Tensor::fill_from_nparray)
         // .def("copy_to_nparray", &Tensor::copy_to_nparray) // WE STILL NEED THIS!!
+        //.def("copy_in_tensorgpu", &Tensor::copy_in_tensorgpu)
         .def("zaxpy", &Tensor::zaxpy, "x"_a, "alpha"_a, "incx"_a = 1, "incy"_a = 1) // TODO(Tyler) Need Test (use numpy)
         .def("zaxpby", &Tensor::zaxpby, "x"_a, "a"_a, "b"_a, "incx"_a = 1, "incy"_a = 1)
         .def("gemm", &Tensor::gemm, "B"_a, 
@@ -460,8 +509,109 @@ PYBIND11_MODULE(qforte, m) {
         .def("reset", &local_timer::reset)
         .def("get", &local_timer::get)
         .def("record", &local_timer::record)
+        .def("get_timings", &local_timer::get_timings)
+        .def("get_acc_timings", &local_timer::get_acc_timings)
         .def("accumulate", &local_timer::accumulate, "Accumulate the elapsed time for a specific task.")
+        .def("acc_str_table", &local_timer::acc_str_table, "Get a string representation of the accumulated timings.")
         .def("__str__", &local_timer::str_table);
+
+#ifdef QFORTE_CUDA_ENABLED
+    py::class_<TensorGPU>(m, "TensorGPU")
+        .def(py::init<>())
+        .def(py::init<const std::vector<size_t>&, const std::string&, bool>(),
+             py::arg("shape"),
+             py::arg("name") = "T",
+             py::arg("on_gpu") = false)
+        .def("to_gpu", &TensorGPU::to_gpu)
+        .def("to_cpu", &TensorGPU::to_cpu)
+        .def("add", &TensorGPU::add, py::arg("other"))
+        .def("zero", &TensorGPU::zero)
+        .def("set", &TensorGPU::set, "idx"_a, "value"_a)
+        .def("fill_from_nparray", &TensorGPU::fill_from_nparray, "array"_a, "shape"_a)
+        .def("__repr__", &TensorGPU::str);
+
+    py::class_<FCIComputerGPU>(m, "FCIComputerGPU")
+        .def(py::init<int, int, int, bool, std::string>(), "nel"_a, "sz"_a, "norb"_a, "on_gpu"_a, "data_type"_a, "Make a FCIComputerGPU with nel, sz, and norb")
+        .def("hartree_fock_cpu", &FCIComputerGPU::hartree_fock_cpu)
+        .def("get_hf_dot", &FCIComputerGPU::get_hf_dot)
+        .def("set_element", &FCIComputerGPU::set_element)
+        .def("to_gpu", &FCIComputerGPU::to_gpu)
+        .def("to_cpu", &FCIComputerGPU::to_cpu)
+        .def("copy_to_tensor_cpu", &FCIComputerGPU::copy_to_tensor_cpu)
+        .def("get_acc_timer", &FCIComputerGPU::get_acc_timer)
+        .def("set_state_cpu", &FCIComputerGPU::set_state_cpu)
+        .def("set_state_gpu", &FCIComputerGPU::set_state_gpu)
+        .def("set_state_from_tensor_cpu", &FCIComputerGPU::set_state_from_tensor_cpu)
+        .def("apply_tensor_spin_1bdy", &FCIComputerGPU::apply_tensor_spin_1bdy)
+        // .def("apply_tensor_spin_12bdy", &FCIComputerGPU::apply_tensor_spin_12bdy)
+        // .def("apply_tensor_spin_012bdy", &FCIComputerGPU::apply_tensor_spin_012bdy)
+        .def("apply_tensor_spat_12bdy", &FCIComputerGPU::apply_tensor_spat_12bdy)
+        .def("apply_tensor_spat_012bdy", &FCIComputerGPU::apply_tensor_spat_012bdy)
+        .def("apply_individual_sqop_term_gpu", &FCIComputerGPU::apply_individual_sqop_term_gpu)
+        .def("apply_sqop_gpu", &FCIComputerGPU::apply_sqop_gpu)
+        .def("apply_diagonal_of_sqop_cpu", &FCIComputerGPU::apply_diagonal_of_sqop_cpu, 
+            py::arg("sqop"),
+            py::arg("invert_coeff") = true
+            )
+        .def("apply_sqop_pool_cpu", &FCIComputerGPU::apply_sqop_pool_cpu)
+        .def("get_exp_val_cpu", &FCIComputerGPU::get_exp_val_cpu)
+        .def("get_exp_val_tensor_cpu", &FCIComputerGPU::get_exp_val_tensor_cpu)
+        .def("evolve_op_taylor_cpu", &FCIComputerGPU::evolve_op_taylor_cpu)
+        .def("apply_sqop_evolution_gpu", &FCIComputerGPU::apply_sqop_evolution_gpu, 
+            py::arg("time"),
+            py::arg("sqop"),
+            py::arg("antiherm") = false,
+            py::arg("adjoint") = false
+            )
+        .def("evolve_pool_trotter_basic_gpu", &FCIComputerGPU::evolve_pool_trotter_basic_gpu, 
+            py::arg("sqop"),
+            py::arg("antiherm") = false,
+            py::arg("adjoint") = false
+            )
+        .def("evolve_pool_trotter_gpu", &FCIComputerGPU::evolve_pool_trotter_gpu, 
+            py::arg("sqop"),
+            py::arg("evolution_time"),
+            py::arg("trotter_steps"),
+            py::arg("trotter_order"),
+            py::arg("antiherm") = false,
+            py::arg("adjoint") = false
+            )
+        .def("set_state_cpu", &FCIComputerGPU::set_state_cpu)
+        //.def("get_state", &FCIComputerGPU::get_state)
+        //.def("get_state_deep", &FCIComputerGPU::get_state_deep)
+        .def("populate_index_arrays_for_pool_evo", &FCIComputerGPU::populate_index_arrays_for_pool_evo)
+        .def("copy_to_tensor_cpu", &FCIComputerGPU::copy_to_tensor_cpu)
+        .def("copy_to_tensor_thrust_gpu", &FCIComputerGPU::copy_to_tensor_thrust_gpu)
+        .def("copy_to_tensor_thrust_cpu", &FCIComputerGPU::copy_to_tensor_thrust_cpu)
+        .def("get_shape", &FCIComputerGPU::get_shape)
+        .def("str", &FCIComputerGPU::str, 
+            py::arg("print_data") = true, 
+            py::arg("print_complex") = false)
+        .def("__str__", &FCIComputerGPU::str, 
+            py::arg("print_data") = true, 
+            py::arg("print_complex") = false)
+        .def("__repr__", &FCIComputerGPU::str, 
+            py::arg("print_data") = true, 
+            py::arg("print_complex") = false);
+
+    py::class_<FCIGraphGPU>(m, "FCIGraphGPU")
+        .def(py::init<int, int, int>(), "nalfa"_a, "nbeta"_a, "norb"_a, "Make a FCIGraphGPU")
+        //.def("make_mapping_each", &FCIGraphGPU::make_mapping_each)
+        .def("get_nalfa", &FCIGraphGPU::get_nalfa)
+        .def("get_nbeta", &FCIGraphGPU::get_nbeta)
+        .def("get_lena", &FCIGraphGPU::get_lena)
+        .def("get_lenb", &FCIGraphGPU::get_lenb)
+        .def("get_astr", &FCIGraphGPU::get_astr)
+        .def("get_bstr", &FCIGraphGPU::get_bstr)
+        .def("get_aind", &FCIGraphGPU::get_aind)
+        .def("get_bind", &FCIGraphGPU::get_bind)
+        .def("get_alfa_map", &FCIGraphGPU::get_alfa_map)
+        .def("get_beta_map", &FCIGraphGPU::get_beta_map)
+        .def("get_dexca", &FCIGraphGPU::get_dexca)
+        .def("get_dexcb", &FCIGraphGPU::get_dexcb)
+        .def("get_dexca_vec", &FCIGraphGPU::get_dexca_vec)
+        .def("get_dexcb_vec", &FCIGraphGPU::get_dexcb_vec);
+#endif
 
     m.def(
         "gate",

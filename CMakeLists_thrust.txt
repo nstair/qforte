@@ -1,0 +1,70 @@
+# CMakeLists.txt for ThrustVectorWrapper
+cmake_minimum_required(VERSION 3.18)
+project(ThrustVectorWrapper LANGUAGES CXX CUDA)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Set CUDA standard
+set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+
+# Find CUDA
+find_package(CUDA REQUIRED)
+
+# Add CUDA flags
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_61,code=sm_61")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_70,code=sm_70")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_75,code=sm_75")
+
+# Include directories
+include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+
+# Create library
+add_library(thrustVectorWrapper
+    thrustVectorWrapper.cu
+)
+
+# Set target properties
+set_target_properties(thrustVectorWrapper PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    POSITION_INDEPENDENT_CODE ON
+)
+
+# Create example executable
+add_executable(thrustVectorWrapper_example
+    thrustVectorWrapper_example.cu
+)
+
+# Link libraries
+target_link_libraries(thrustVectorWrapper_example
+    thrustVectorWrapper
+    ${CUDA_LIBRARIES}
+)
+
+# Set target properties for example
+set_target_properties(thrustVectorWrapper_example PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+)
+
+# Add compile definitions
+target_compile_definitions(thrustVectorWrapper PUBLIC
+    -DWITH_CUDA
+)
+
+target_compile_definitions(thrustVectorWrapper_example PUBLIC
+    -DWITH_CUDA
+)
+
+# Installation
+install(TARGETS thrustVectorWrapper
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)
+
+install(FILES
+    thrustVectorWrapper.cuh
+    thrustVectorWrapper_impl.cuh
+    DESTINATION include
+)
