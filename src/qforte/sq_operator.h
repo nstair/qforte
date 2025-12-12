@@ -50,6 +50,9 @@ class SQOperator {
     /// returns -1 if there are no operators present.
     std::pair<int, int> get_largest_alfa_beta_indices() const;
 
+    /// return all unique (cre and ann) alpha and beta orbital indicies present in the sq operator
+    std::vector< std::tuple<std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>>> get_unique_ab_inds() const;
+
     /// return the largerst n-body order of the sq operator (same as largerst rank)
     int many_body_order() const;
 

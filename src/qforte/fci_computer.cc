@@ -1172,7 +1172,7 @@ void FCIComputer::evolve_individual_nbody_hard_v2(
     // Notes:
     //   - factor  = cos(time * |ncoeff|)
     //   - acc_coeff1 = conj(coeff) * phase * (-i) * sin(time*|ncoeff|)/|ncoeff|
-    //   - acc_coeff2 = coeff        *       (-i) * sin(time*|ncoeff|)/|ncoeff|
+    //   - acc_coeff2 = coeff       * 1     * (-i) * sin(time*|ncoeff|)/|ncoeff|
     //   - We snapshot u0,v0 before writing so the update is safely in-place.
     //
 

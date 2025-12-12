@@ -3,6 +3,7 @@
 #include <tuple>
 #include <map>
 #include <set>
+#include <algorithm>
 
 #include "helpers.h"
 #include "gate.h"
@@ -55,6 +56,80 @@ std::pair<int, int> SQOperator::get_largest_alfa_beta_indices() const {
         }        
     }
     return std::make_pair(maxeven, maxodd);
+}
+
+std::vector< std::tuple<std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>>> SQOperator::get_unique_ab_inds() const {
+    std::vector<std::vector<int>> alfa_cre_set;
+    std::vector<std::vector<int>> alfa_ann_set;
+
+
+    std::vector<std::vector<int>> beta_cre_set;
+    std::vector<std::vector<int>> beta_ann_set;
+
+    std::vector< std::tuple<std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>>> ab_inds;
+
+
+
+    // std::vector<std::vector<int>> alfa_set;
+    // std::vector<std::vector<int>> beta_set;
+
+    for (const auto& term : terms_){
+        std::vector<int> alfa_cre_inds;
+        std::vector<int> alfa_ann_inds;
+        std::vector<int> beta_cre_inds;
+        std::vector<int> beta_ann_inds;
+
+        for (const auto& cre_idx : std::get<1>(term) ){
+            if (cre_idx % 2 == 0){
+                alfa_cre_inds.push_back(static_cast<int>(cre_idx / 2));
+            } else {
+                beta_cre_inds.push_back(static_cast<int>(cre_idx / 2));
+            }
+        } 
+        for (const auto& ann_idx : std::get<2>(term) ){
+            if (ann_idx % 2 == 0){
+                alfa_ann_inds.push_back(static_cast<int>(ann_idx / 2));
+            } else {
+                beta_ann_inds.push_back(static_cast<int>(ann_idx / 2));
+            }
+        }        
+
+        ab_inds.push_back(
+            std::make_tuple(
+                alfa_cre_inds, alfa_ann_inds, beta_cre_inds, beta_ann_inds
+            )
+        );
+
+        // Sort before inserting into set to ensure uniqueness
+        // Careful with this, as order matter for pairity
+        // std::sort(alfa_cre_inds.begin(), alfa_cre_inds.end());
+        // std::sort(alfa_ann_inds.begin(), alfa_ann_inds.end());
+        // std::sort(beta_cre_inds.begin(), beta_cre_inds.end());
+        // std::sort(beta_ann_inds.begin(), beta_ann_inds.end());
+
+        // alfa_cre_set.push_back(alfa_cre_inds);
+        // alfa_ann_set.push_back(alfa_ann_inds);
+        // beta_cre_set.push_back(beta_cre_inds);
+        // beta_ann_set.push_back(beta_ann_inds);
+
+        // for (const auto& a_cre_inds : alfa_cre_inds){
+        //     for (const auto& a_ann_inds : alfa_ann_inds){
+        //         for (const auto& b_cre_inds : beta_cre_inds){
+        //             for (const auto& b_ann_inds : beta_ann_inds){
+        //                 ab_inds.push_back(
+        //                     std::make_tuple(
+        //                         a_cre_inds, a_ann_inds, b_cre_inds, b_ann_inds
+        //                     )
+        //                 );
+        //             }
+        //         }
+        //     }
+        // }
+        
+
+    }
+
+    return ab_inds;
 }
 
 // TODO(Tyler): Need to expose and need a test case

@@ -72,6 +72,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("mult_coeffs", &SQOperator::mult_coeffs)
         .def("terms", &SQOperator::terms)
         .def("get_largest_alfa_beta_indices", &SQOperator::get_largest_alfa_beta_indices) // TODO(Tyler) Need Test
+        .def("get_unique_ab_inds", &SQOperator::get_unique_ab_inds) // TODO(Tyler) Need Test
         .def("many_body_order", &SQOperator::many_body_order) // TODO(Tyler) Need Test
         .def("ranks_present", &SQOperator::ranks_present) // TODO(Tyler) Need Test
         .def("canonical_order", &SQOperator::canonical_order)
@@ -365,6 +366,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("set_state", &FCIComputer::set_state)
         .def("get_state", &FCIComputer::get_state)
         .def("get_state_deep", &FCIComputer::get_state_deep)
+        .def("get_graph", &FCIComputer::get_graph)
         .def("get_hf_dot", &FCIComputer::get_hf_dot)
         .def("get_nonzero_idxs", &FCIComputer::get_nonzero_idxs)
         .def("scale", &FCIComputer::scale)
@@ -389,6 +391,8 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_bstr", &FCIGraph::get_bstr)
         .def("get_aind", &FCIGraph::get_aind)
         .def("get_bind", &FCIGraph::get_bind)
+        .def("get_aind_for_str", &FCIGraph::get_aind_for_str)
+        .def("get_bind_for_str", &FCIGraph::get_bind_for_str)
         .def("get_alfa_map", &FCIGraph::get_alfa_map)
         .def("get_beta_map", &FCIGraph::get_beta_map)
         .def("get_dexca", &FCIGraph::get_dexca)

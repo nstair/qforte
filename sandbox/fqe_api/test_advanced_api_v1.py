@@ -13,10 +13,10 @@ geom = [
     ('H', (0., 0., 6.0)),
     ('H', (0., 0., 7.0)), 
     ('H', (0., 0., 8.0)),
-    ('H', (0., 0., 9.0)), 
-    ('H', (0., 0.,10.0)),
-    ('H', (0., 0.,11.0)), 
-    ('H', (0., 0.,12.0))
+    # ('H', (0., 0., 9.0)), 
+    # ('H', (0., 0.,10.0)),
+    # ('H', (0., 0.,11.0)), 
+    # ('H', (0., 0.,12.0))
     ]
 
 # Get the molecule object that now contains both the fermionic and qubit Hamiltonians.
@@ -82,10 +82,10 @@ print(f" antiherm:  {ah}")
 print(f" adjoint:   {adj}")
 print("\n")
 
-app_sqop = False
+app_sqop = True
 app_tens = True
-app_exact_evo = False
-app_trot = False
+app_exact_evo = True
+app_trot = True
 
 
 

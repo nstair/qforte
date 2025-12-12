@@ -37,11 +37,13 @@ set(BLA_VENDOR "Generic")             # bypass FindBLAS vendor picks
 
 # (Nick) kept as-is so CMake finds headers/libs inside the env.
 # set(CMAKE_PREFIX_PATH "/home/nstair/anaconda3/envs/cuqf_8_25_25_v2")
-set(CMAKE_PREFIX_PATH "/home/zach_gonzales/anaconda3/envs/qforte")
+# set(CMAKE_PREFIX_PATH "/home/zach_gonzales/anaconda3/envs/qforte")
+set(CMAKE_PREFIX_PATH "/Users/nstair/anaconda3/envs/qfe_env_v1")
 
 set(BLAS_LIBRARIES "${CMAKE_PREFIX_PATH}/lib")
 set(CBLAS_INCLUDE_DIR "${CMAKE_PREFIX_PATH}/include")         # need
-set(OPENBLAS_EXE "${CMAKE_PREFIX_PATH}/lib/libopenblas.so")   # need
+# set(OPENBLAS_EXE "${CMAKE_PREFIX_PATH}/lib/libopenblas.so")   # need
+set(OPENBLAS_EXE "${CMAKE_PREFIX_PATH}/lib/libopenblas.dylib")   # need
 
 # -------------------------------------------------------------------
 # CUDA toolkit & flags
