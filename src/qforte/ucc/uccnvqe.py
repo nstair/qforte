@@ -182,6 +182,42 @@ class UCCNVQE(UCCVQE):
         print('Number of grad vector evaluations:           ', self._res_vec_evals)
         print('Number of individual grad evaluations:       ', self._res_m_evals)
 
+        if self._gpu_timers is not None:
+            print('\n\n                ==> GPU Profiling <==')
+            print('-----------------------------------------------------------')
+            sorted_timers = sorted(self._gpu_timers.items(), key=lambda x: x[1], reverse=True)
+            total_gpu_time = sum(self._gpu_timers.values())
+            print(f'Total GPU time:                              {total_gpu_time:12.6f} s')
+            print('\nGPU call breakdown (sorted by time):')
+            for name, time in sorted_timers:
+                if time > 0:
+                    percent = 100.0 * time / total_gpu_time if total_gpu_time > 0 else 0.0
+                    print(f'  {name:40s} {time:12.6f} s  ({percent:5.1f}%)')
+
+        if self._fci_timers is not None:
+            print('\n\n                ==> FCI Profiling <==')
+            print('-----------------------------------------------------------')
+            sorted_timers = sorted(self._fci_timers.items(), key=lambda x: x[1], reverse=True)
+            total_fci_time = sum(self._fci_timers.values())
+            print(f'Total FCI time:                              {total_fci_time:12.6f} s')
+            print('\nFCI call breakdown (sorted by time):')
+            for name, time in sorted_timers:
+                if time > 0:
+                    percent = 100.0 * time / total_fci_time if total_fci_time > 0 else 0.0
+                    print(f'  {name:40s} {time:12.6f} s  ({percent:5.1f}%)')
+
+        if self._fqe_timers is not None:
+            print('\n\n                ==> FQE Profiling <==')
+            print('-----------------------------------------------------------')
+            sorted_timers = sorted(self._fqe_timers.items(), key=lambda x: x[1], reverse=True)
+            total_fqe_time = sum(self._fqe_timers.values())
+            print(f'Total FQE time:                              {total_fqe_time:12.6f} s')
+            print('\nFQE call breakdown (sorted by time):')
+            for name, time in sorted_timers:
+                if time > 0:
+                    percent = 100.0 * time / total_fqe_time if total_fqe_time > 0 else 0.0
+                    print(f'  {name:40s} {time:12.6f} s  ({percent:5.1f}%)')
+
         print("\n\n")
         print(self._timer)
 

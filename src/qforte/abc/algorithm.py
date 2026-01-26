@@ -160,11 +160,46 @@ class Algorithm(ABC):
                 self._mo_oeis = system.mo_oeis 
                 self._mo_teis = system.mo_teis 
                 self._mo_teis_einsum = system.mo_teis_einsum
+            
+            # Initialize FCI profiling timers
+            import time
+            self._fci_timers = {
+                'hartree_fock': 0.0,
+                'evolve_pool_trotter_basic': 0.0,
+                'get_state_deep': 0.0,
+                'set_state': 0.0,
+                'apply_tensor_spat_012bdy': 0.0,
+                'apply_sqop': 0.0,
+                'apply_sqop_evolution': 0.0,
+                'get_exp_val_tensor': 0.0,
+                'vector_dot': 0.0
+            }
+            self._fci_time = time
+        else:
+            self._fci_timers = None
+            self._fci_time = None
 
         if(computer_type=='fqe'):
             if(apply_ham_as_tensor):
                 self._mo_oeis_np = system.mo_oeis_np 
                 self._mo_teis_np = system.mo_teis_np
+            
+            # Initialize FQE profiling timers
+            import time
+            self._fqe_timers = {
+                'hartree_fock': 0.0,
+                'evolve_pool_trotter_basic': 0.0,
+                'get_state_deep': 0.0,
+                'set_state': 0.0,
+                'apply_tensor_spat_012bdy': 0.0,
+                'apply_sqop': 0.0,
+                'apply_sqop_evolution': 0.0,
+                'vector_dot': 0.0
+            }
+            self._fqe_time = time
+        else:
+            self._fqe_timers = None
+            self._fqe_time = None
 
         if(computer_type=='fci_gpu'):
             if(apply_ham_as_tensor):
@@ -180,6 +215,25 @@ class Algorithm(ABC):
                 self._mo_oeis_gpu.to_gpu()
                 self._mo_teis_gpu.to_gpu()
                 self._mo_teis_einsum_gpu.to_gpu()
+            
+            # Initialize GPU profiling timers
+            import time
+            self._gpu_timers = {
+                'hartree_fock_cpu': 0.0,
+                'to_gpu': 0.0,
+                'evolve_pool_trotter_basic_gpu': 0.0,
+                'get_state_deep': 0.0,
+                'set_state_gpu': 0.0,
+                'apply_tensor_spat_012bdy_gpu': 0.0,
+                'apply_sqop_gpu': 0.0,
+                'apply_sqop_evolution_gpu': 0.0,
+                'get_exp_val_tensor_gpu': 0.0,
+                'vector_dot': 0.0
+            }
+            self._gpu_time = time
+        else:
+            self._gpu_timers = None
+            self._gpu_time = None
                 
 
         if len(self._qb_ham.terms()) > 0 and self._qb_ham.num_qubits() != self._nqb:
@@ -544,15 +598,19 @@ class AnsatzAlgorithm(Algorithm):
             self._2_spin, 
             self._norb)
         
+        t0 = self._fci_time.time()
         qc.hartree_fock()
+        self._fci_timers['hartree_fock'] += self._fci_time.time() - t0
 
+        t0 = self._fci_time.time()
         qc.evolve_pool_trotter_basic(
             temp_pool,
             antiherm=True,
             adjoint=False)
+        self._fci_timers['evolve_pool_trotter_basic'] += self._fci_time.time() - t0
         
         if(self._apply_ham_as_tensor):
-            
+            t0 = self._fci_time.time()
             self._curr_energy = np.real(
                 qc.get_exp_val_tensor(
                     self._zero_body_energy, 
@@ -561,6 +619,7 @@ class AnsatzAlgorithm(Algorithm):
                     self._mo_teis_einsum, 
                     self._norb)
             )
+            self._fci_timers['get_exp_val_tensor'] += self._fci_time.time() - t0
         else:   
             self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
 
@@ -584,7 +643,9 @@ class AnsatzAlgorithm(Algorithm):
             self._2_spin, 
             self._norb)
         
+        t0 = self._fqe_time.time()
         qc.hartree_fock()
+        self._fqe_timers['hartree_fock'] += self._fqe_time.time() - t0
 
         qc.evolve_pool_trotter_basic(
             temp_pool,
@@ -622,17 +683,23 @@ class AnsatzAlgorithm(Algorithm):
             on_gpu=False,
             data_type=self.data_type)
         
+        t0 = self._gpu_time.time()
         qc.hartree_fock_cpu()
+        self._gpu_timers['hartree_fock_cpu'] += self._gpu_time.time() - t0
 
+        t0 = self._gpu_time.time()
         qc.to_gpu()
+        self._gpu_timers['to_gpu'] += self._gpu_time.time() - t0
 
+        t0 = self._gpu_time.time()
         qc.evolve_pool_trotter_basic_gpu(
             temp_pool,
             antiherm=True,
             adjoint=False)
+        self._gpu_timers['evolve_pool_trotter_basic_gpu'] += self._gpu_time.time() - t0
         
         if(self._apply_ham_as_tensor):
-            
+            t0 = self._gpu_time.time()
             self._curr_energy = np.real(
                 qc.get_exp_val_tensor_gpu(
                     self._zero_body_energy, 
@@ -641,6 +708,7 @@ class AnsatzAlgorithm(Algorithm):
                     self._mo_teis_einsum_gpu, 
                     self._norb)
             )
+            self._gpu_timers['get_exp_val_tensor_gpu'] += self._gpu_time.time() - t0
         else:   
             self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
 
