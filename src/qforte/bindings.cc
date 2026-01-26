@@ -602,6 +602,7 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("antiherm") = false,
             py::arg("adjoint") = false
             )
+        .def("state_vector_dot_gpu", &FCIComputerGPU::state_vector_dot_gpu)
         .def("set_state_cpu", &FCIComputerGPU::set_state_cpu)
         .def("set_state", &FCIComputerGPU::set_state_cpu)  // alias for compatibility
         .def("get_state", &FCIComputerGPU::get_state)

@@ -2739,6 +2739,12 @@ void FCIComputerGPU::scale(const std::complex<double> a)
     C_.scale(a);
 }
 
+std::complex<double> FCIComputerGPU::state_vector_dot_gpu(FCIComputerGPU& other) const {
+    gpu_error();
+    other.gpu_error();
+    return C_.vector_dot(other.C_);
+}
+
 void FCIComputerGPU::copy_state_into(TensorGPU& tensor) const {
     tensor.shape_error(C_.shape());
     gpu_error();

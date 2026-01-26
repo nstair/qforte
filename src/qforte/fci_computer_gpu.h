@@ -352,6 +352,8 @@ class FCIComputerGPU {
       return C_.str(print_data, print_complex); 
     }
 
+    std::complex<double> state_vector_dot_gpu(FCIComputerGPU& other) const;
+
     /// return a tensor of the coeficients
     TensorGPU get_state() const { return C_; }
 

@@ -812,7 +812,7 @@ class UCCVQE(VQE, UCC):
         
         t0 = self._gpu_time.time()
         grads[mu] = 2.0 * np.real(
-            qc_sig.get_state().vector_dot(qc_psi.get_state())
+            qc_sig.state_vector_dot_gpu(qc_psi)
             )
         self._gpu_timers['vector_dot'] += self._gpu_time.time() - t0
 
@@ -865,7 +865,7 @@ class UCCVQE(VQE, UCC):
             
             t0 = self._gpu_time.time()
             grads[mu] = 2.0 * np.real(
-                qc_sig.get_state().vector_dot(qc_psi.get_state())
+                qc_sig.state_vector_dot_gpu(qc_psi)
                 )
             self._gpu_timers['vector_dot'] += self._gpu_time.time() - t0
 
@@ -966,7 +966,7 @@ class UCCVQE(VQE, UCC):
             self._gpu_timers['apply_sqop_gpu'] += self._gpu_time.time() - t0
             
             t0 = self._gpu_time.time()
-            grads[mu] = 2.0 * np.real(qc_sig.get_state().vector_dot(qc_psi.get_state()))
+            grads[mu] = 2.0 * np.real(qc_sig.state_vector_dot_gpu(qc_psi))
             self._gpu_timers['vector_dot'] += self._gpu_time.time() - t0
             
             t0 = self._gpu_time.time()
