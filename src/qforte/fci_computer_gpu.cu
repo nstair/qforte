@@ -2121,29 +2121,136 @@ void FCIComputerGPU::apply_sqop_evolution_gpu(
 }
 
 void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
-    const SQOpPool& pool,
+    const SQOpPoolGPU& pool,
     const bool antiherm,
     const bool adjoint)
 {
     gpu_error();
 
-    if(adjoint){
-        for (int i = pool.terms().size() - 1; i >= 0; --i) {
-            apply_sqop_evolution_gpu(
-                pool.terms()[i].first, 
-                pool.terms()[i].second,
-                antiherm,
-                adjoint);
+    if (pool.device_vecs_populated()==false){
+        // No precomp provided
+
+        if (data_type_ == "complex") {
+            if(adjoint){
+                for (int i = pool.terms().size() - 1; i >= 0; --i) {
+                    evolve_individual_nbody_gpu<PrecompTuple>(
+                        pool.terms()[i].first, 
+                        pool.terms()[i].second,
+                        C_,
+                        antiherm,
+                        adjoint,
+                        nullptr);
+                }
+            } else {
+                for (const auto& sqop_term : pool.terms()) {
+                    evolve_individual_nbody_gpu<PrecompTuple>(
+                        sqop_term.first, 
+                        sqop_term.second,
+                        C_,
+                        antiherm,
+                        adjoint,
+                        nullptr);
+                    }
+            }
+        } else if (data_type_ == "real") {
+            if(adjoint){
+                for (int i = pool.terms().size() - 1; i >= 0; --i) {
+                    evolve_individual_nbody_gpu<PrecompTupleReal>(
+                        pool.terms()[i].first, 
+                        pool.terms()[i].second,
+                        C_,
+                        antiherm,
+                        adjoint,
+                        nullptr);
+                }
+            } else {
+                for (const auto& sqop_term : pool.terms()) {
+                    evolve_individual_nbody_gpu<PrecompTupleReal>(
+                        sqop_term.first, 
+                        sqop_term.second,
+                        C_,
+                        antiherm,
+                        adjoint,
+                        nullptr);
+                    }
+            }
+        } else {
+            throw std::runtime_error("Unsupported data type in v5 evolution.");
         }
     } else {
-        for (const auto& sqop_term : pool.terms()) {
-            apply_sqop_evolution_gpu(
-                sqop_term.first, 
-                sqop_term.second,
-                antiherm,
-                adjoint);
+        // Precomp provided
+
+        if (data_type_ == "complex") {
+            if(adjoint){
+                for (int i = pool.terms().size() - 1; i >= 0; --i) {
+                    const auto& device_spt_arys = pool.get_mu_tuple(i);
+                    evolve_individual_nbody_gpu(
+                        pool.terms()[i].first,
+                        pool.terms()[i].second,
+                        C_,
+                        antiherm,
+                        adjoint,
+                        &device_spt_arys); 
+                }
+            } else {
+                for (int i = 0; i < pool.terms().size(); ++i) {
+                    const auto& device_spt_arys = pool.get_mu_tuple(i);
+                    evolve_individual_nbody_gpu(
+                        pool.terms()[i].first,
+                        pool.terms()[i].second,
+                        C_,
+                        antiherm,
+                        adjoint,
+                        &device_spt_arys); 
+                }
             }
+        } else if (data_type_ == "real") {
+            if(adjoint){
+                for (int i = pool.terms().size() - 1; i >= 0; --i) {
+                    const auto& device_spt_arys = pool.get_mu_tuple_real(i);
+                    evolve_individual_nbody_gpu(
+                        pool.terms()[i].first,
+                        pool.terms()[i].second,
+                        C_,
+                        antiherm,
+                        adjoint,
+                        &device_spt_arys); 
+                }
+            } else {
+                for (int i = 0; i < pool.terms().size(); ++i) {
+                    const auto& device_spt_arys = pool.get_mu_tuple_real(i);
+                    evolve_individual_nbody_gpu(
+                        pool.terms()[i].first,
+                        pool.terms()[i].second,
+                        C_,
+                        antiherm,
+                        adjoint,
+                        &device_spt_arys); 
+                }
+            }
+        } else {
+            throw std::runtime_error("Unsupported data type in v5 evolution.");
+        }
     }
+    
+
+    // if(adjoint){
+    //     for (int i = pool.terms().size() - 1; i >= 0; --i) {
+    //         apply_sqop_evolution_gpu(
+    //             pool.terms()[i].first, 
+    //             pool.terms()[i].second,
+    //             antiherm,
+    //             adjoint);
+    //     }
+    // } else {
+    //     for (const auto& sqop_term : pool.terms()) {
+    //         apply_sqop_evolution_gpu(
+    //             sqop_term.first, 
+    //             sqop_term.second,
+    //             antiherm,
+    //             adjoint);
+    //         }
+    // }
 }
 
 void FCIComputerGPU::evolve_pool_trotter_gpu(
