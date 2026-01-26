@@ -3,6 +3,7 @@
 #include "blas_math.h"
 #include "cuda_runtime.h"
 #include "tensor.h"
+#include <cublas_v2.h>
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
@@ -1071,11 +1072,22 @@ std::complex<double> TensorGPU::vector_dot(const TensorGPU& other) const
 
     if (on_gpu_) {
         gpu_error(); other.gpu_error();
+        
         if (data_type_ == "complex") {
-            cuDoubleComplex result = thrust::inner_product(thrust::device, d_data_.begin(), d_data_.end(), other.d_data_.begin(), make_cuDoubleComplex(0.0,0.0), complex_add(), complex_dot_product());
-            return {cuCreal(result), cuCimag(result)};
+            cuDoubleComplex result;
+            auto x = thrust::raw_pointer_cast(d_data_.data());
+            auto y = thrust::raw_pointer_cast(other.d_data_.data());
+            
+            // dotc: result = conj(x)^T y
+            cublasZdotc(g_handle, (int)size_, x, 1, y, 1, &result);
+            
+            return {result.x, result.y};
         } else if (data_type_ == "real") {
-            double result = thrust::inner_product(thrust::device, d_re_data_.begin(), d_re_data_.end(), other.d_re_data_.begin(), 0.0, thrust::plus<double>(), thrust::multiplies<double>());
+            double result = 0.0;
+            auto x = thrust::raw_pointer_cast(d_re_data_.data());
+            auto y = thrust::raw_pointer_cast(other.d_re_data_.data());
+            
+            cublasDdot(g_handle, (int)size_, x, 1, y, 1, &result);
             return {result, 0.0};
         } else {
             throw std::runtime_error("Unsupported data type in vector_dot (GPU).");

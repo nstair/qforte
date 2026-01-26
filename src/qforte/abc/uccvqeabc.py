@@ -769,13 +769,20 @@ class UCCVQE(VQE, UCC):
             on_gpu=True,
             data_type=self.data_type) 
 
+        # Initialize psi_i if it doesn't exist
+        if not hasattr(self, 'psi_i'):
+            self.psi_i = None
+
         t0 = self._gpu_time.time()
-        psi_i = qc_psi.get_state_deep()
+        if self.psi_i:
+            qc_psi.copy_state_into(self.psi_i)
+        else:
+            self.psi_i = qc_psi.get_state_deep()
         self._gpu_timers['get_state_deep'] += self._gpu_time.time() - t0
 
         # not sure if copy is faster or reapplication of state
         t0 = self._gpu_time.time()
-        qc_sig.set_state_gpu(psi_i)
+        qc_sig.set_state_gpu(self.psi_i)
         self._gpu_timers['set_state_gpu'] += self._gpu_time.time() - t0
 
         if(self._apply_ham_as_tensor):
@@ -811,7 +818,7 @@ class UCCVQE(VQE, UCC):
 
         #reset Kmu_prev |psi_i> -> |psi_i>
         t0 = self._gpu_time.time()
-        qc_psi.set_state_gpu(psi_i)
+        qc_psi.set_state_gpu(self.psi_i)
         self._gpu_timers['set_state_gpu'] += self._gpu_time.time() - t0
 
         for mu in reversed(range(M-1)):
@@ -849,7 +856,7 @@ class UCCVQE(VQE, UCC):
             self._gpu_timers['apply_sqop_evolution_gpu'] += self._gpu_time.time() - t0
 
             t0 = self._gpu_time.time()
-            psi_i = qc_psi.get_state_deep()
+            qc_psi.copy_state_into(self.psi_i)
             self._gpu_timers['get_state_deep'] += self._gpu_time.time() - t0
 
             t0 = self._gpu_time.time()
@@ -864,7 +871,7 @@ class UCCVQE(VQE, UCC):
 
             #reset Kmu |psi_i> -> |psi_i>
             t0 = self._gpu_time.time()
-            qc_psi.set_state_gpu(psi_i)
+            qc_psi.set_state_gpu(self.psi_i)
             self._gpu_timers['set_state_gpu'] += self._gpu_time.time() - t0
             Kmu_prev = Kmu
 
@@ -913,8 +920,15 @@ class UCCVQE(VQE, UCC):
             adjoint=False)
         self._gpu_timers['evolve_pool_trotter_basic_gpu'] += self._gpu_time.time() - t0
 
+        # Initialize psi_i if it doesn't exist
+        if not hasattr(self, 'psi_i'):
+            self.psi_i = None
+
         t0 = self._gpu_time.time()
-        psi_i = qc_psi.get_state_deep()
+        if self.psi_i:
+            qc_psi.copy_state_into(self.psi_i)
+        else:
+            self.psi_i = qc_psi.get_state_deep()
         self._gpu_timers['get_state_deep'] += self._gpu_time.time() - t0
         
         qc_sig = qforte.FCIComputerGPU(
@@ -925,7 +939,7 @@ class UCCVQE(VQE, UCC):
             data_type=self.data_type) 
         
         t0 = self._gpu_time.time()
-        qc_sig.set_state_gpu(psi_i)
+        qc_sig.set_state_gpu(self.psi_i)
         self._gpu_timers['set_state_gpu'] += self._gpu_time.time() - t0
 
         if(self._apply_ham_as_tensor):
@@ -956,7 +970,7 @@ class UCCVQE(VQE, UCC):
             self._gpu_timers['vector_dot'] += self._gpu_time.time() - t0
             
             t0 = self._gpu_time.time()
-            qc_psi.set_state_gpu(psi_i)
+            qc_psi.set_state_gpu(self.psi_i)
             self._gpu_timers['set_state_gpu'] += self._gpu_time.time() - t0
 
         np.testing.assert_allclose(np.imag(grads), np.zeros_like(grads), atol=1e-7)

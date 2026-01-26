@@ -44,7 +44,8 @@ class UCCNVQE(UCCVQE):
             pool_type='SD',
             optimizer='BFGS',
             use_analytic_grad = True,
-            noise_factor = 0.0):
+            noise_factor = 0.0,
+            psi_i=None):
 
         self._opt_thresh = opt_thresh
         self._opt_ftol = opt_ftol
@@ -109,6 +110,8 @@ class UCCNVQE(UCCVQE):
         for tmu in self._tamps:
             if(np.abs(tmu) > 1.0e-12):
                 self._n_nonzero_params += 1
+
+        self.psi_i = psi_i
 
         # verify that required attributes were defined
         # (should be called for all algorithms!)

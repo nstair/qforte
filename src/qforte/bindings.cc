@@ -606,6 +606,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("set_state", &FCIComputerGPU::set_state_cpu)  // alias for compatibility
         .def("get_state", &FCIComputerGPU::get_state)
         .def("get_state_deep", &FCIComputerGPU::get_state_deep)
+        .def("copy_state_into", &FCIComputerGPU::copy_state_into)
         .def("populate_index_arrays_for_pool_evo", &FCIComputerGPU::populate_index_arrays_for_pool_evo)
         .def("copy_to_tensor_cpu", &FCIComputerGPU::copy_to_tensor_cpu)
         .def("copy_to_tensor_thrust_gpu", &FCIComputerGPU::copy_to_tensor_thrust_gpu)

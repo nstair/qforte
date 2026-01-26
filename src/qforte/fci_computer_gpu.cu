@@ -2739,6 +2739,13 @@ void FCIComputerGPU::scale(const std::complex<double> a)
     C_.scale(a);
 }
 
+void FCIComputerGPU::copy_state_into(TensorGPU& tensor) const {
+    tensor.shape_error(C_.shape());
+    gpu_error();
+    tensor = C_;
+}
+
+
 /// TODO: This is commented out in TensorGPU
 /*
 std::vector<double> FCIComputerGPU::direct_expectation_value(const TensorOperator& top)

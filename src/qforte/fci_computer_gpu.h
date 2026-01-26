@@ -361,6 +361,9 @@ class FCIComputerGPU {
       return Cprime; 
     }
 
+    // copy into pre-allocated tensor
+    void copy_state_into(TensorGPU& tensor) const;
+
     std::complex<double> coeff(const QubitBasis& abasis, const QubitBasis& bbasis);
 
     /// return the dot product of the current FCIComputerGPU state (as the ket) and the HF state (i.e. <HF|C_>)
