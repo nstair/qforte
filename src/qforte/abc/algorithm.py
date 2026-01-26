@@ -62,6 +62,9 @@ class Algorithm(ABC):
 
     _res_m_evals : int
         The total number of times an individual residual element was evaluated.
+
+    _data_type : str
+        The data type for GPU computations; 'real' or 'complex'.
     """
 
     def __init__(self,
@@ -75,6 +78,7 @@ class Algorithm(ABC):
                  fast=True,
                  verbose=False,
                  print_summary_file=False,
+                 data_type='complex',
                  **kwargs):
 
         if isinstance(self, qf.QPE) and hasattr(system, 'frozen_core'):
@@ -161,6 +165,21 @@ class Algorithm(ABC):
             if(apply_ham_as_tensor):
                 self._mo_oeis_np = system.mo_oeis_np 
                 self._mo_teis_np = system.mo_teis_np
+
+        if(computer_type=='fci_gpu'):
+            if(apply_ham_as_tensor):
+                # TODO: Refactor to use TensorGPU objects in system build
+
+                self._mo_oeis_gpu = qf.TensorGPU(system.mo_oeis.shape(), "mo_oeis_gpu", False, "real")
+                self._mo_teis_gpu = qf.TensorGPU(system.mo_teis.shape(), "mo_teis_gpu", False, "real")
+                self._mo_teis_einsum_gpu = qf.TensorGPU(system.mo_teis_einsum.shape(), "mo_teis_einsum_gpu", False, "real")
+                self._mo_oeis_gpu.fill_from_tensor_cpu(system.mo_oeis, system.mo_oeis.shape())
+                self._mo_teis_gpu.fill_from_tensor_cpu(system.mo_teis, system.mo_teis.shape())
+                self._mo_teis_einsum_gpu.fill_from_tensor_cpu(system.mo_teis_einsum, system.mo_teis_einsum.shape())
+
+                self._mo_oeis_gpu.to_gpu()
+                self._mo_teis_gpu.to_gpu()
+                self._mo_teis_einsum_gpu.to_gpu()
                 
 
         if len(self._qb_ham.terms()) > 0 and self._qb_ham.num_qubits() != self._nqb:
@@ -187,6 +206,9 @@ class Algorithm(ABC):
 
         elif(computer_type=='fqe'):
             self._computer_type = 'fqe'
+
+        elif(computer_type=='fci_gpu'):
+            self._computer_type = 'fci_gpu'
         
         else:
             raise ValueError(f"Computer type must be fci or fock.")
@@ -205,6 +227,9 @@ class Algorithm(ABC):
         self._n_cnot = None
         self._n_pauli_trm_measures = None
 
+        # Data type for GPU computations; 'real' or 'complex'
+        # Default is 'complex'
+        self.data_type = data_type
 
     @abstractmethod
     def print_options_banner(self):
@@ -337,7 +362,10 @@ class AnsatzAlgorithm(Algorithm):
         timer2 = qforte.local_timer()
 
         if self._pool_type in {'sa_SD', 'GSD', 'SD', 'SDT', 'SDTQ', 'SDTQP', 'SDTQPH'}:
-            self._pool_obj = qf.SQOpPool()
+            if self._computer_type == 'fci_gpu':
+                self._pool_obj = qf.SQOpPoolGPU(data_type=self.data_type)
+            else:
+                self._pool_obj = qf.SQOpPool()
 
             timer2.reset()
             self._pool_obj.set_orb_spaces(self._ref)
@@ -348,7 +376,10 @@ class AnsatzAlgorithm(Algorithm):
             timer2.record("_pool_obj.fill_pool")
 
         elif (self._pool_type[0].isdigit() and self._pool_type[1:] == '-UpCCGSD'):
-            self._pool_obj = qf.SQOpPool()
+            if self._computer_type == 'fci_gpu':
+                self._pool_obj = qf.SQOpPoolGPU(data_type=self.data_type)
+            else:
+                self._pool_obj = qf.SQOpPool()
 
             timer2.reset()
             self._pool_obj.set_orb_spaces(self._ref)
@@ -367,7 +398,10 @@ class AnsatzAlgorithm(Algorithm):
         # Currently, symmetry is supported for system_type='molecule' and build_type='psi4'
         if hasattr(self._sys, 'point_group'):
             timer2.reset()
-            temp_sq_pool = qf.SQOpPool()
+            if self._computer_type == 'fci_gpu':
+                temp_sq_pool = qf.SQOpPoolGPU(data_type=self.data_type)
+            else:
+                temp_sq_pool = qf.SQOpPool()
             for sq_operator in self._pool_obj.terms():
                 create = sq_operator[1].terms()[0][1]
                 annihilate = sq_operator[1].terms()[0][2]
@@ -379,7 +413,7 @@ class AnsatzAlgorithm(Algorithm):
         timer2.reset()
         if(self._computer_type == 'fock'):
             self._Nm = [len(operator.jw_transform().terms()) for _, operator in self._pool_obj]
-        elif self._computer_type in ['fci', 'fqe']:
+        elif self._computer_type in ['fci', 'fqe', 'fci_gpu']:
             self._Nm = [0 for _, operator in self._pool_obj]
             print("\n ==> Warning: resource estimator needs to be implemented for fci computer type <==")
         else:
@@ -469,6 +503,8 @@ class AnsatzAlgorithm(Algorithm):
             return self.energy_feval_fci(params)
         elif(self._computer_type == 'fqe'):
             return self.energy_feval_fqe(params)
+        elif(self._computer_type == 'fci_gpu'):
+            return self.energy_feval_fci_gpu(params)
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
 
@@ -564,6 +600,47 @@ class AnsatzAlgorithm(Algorithm):
                     self._mo_teis_np, 
                     )
                 )
+        else:   
+            self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
+
+        
+        return self._curr_energy
+
+    def energy_feval_fci_gpu(self, params):
+        if not self._ref_from_hf:
+            raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
+        
+        temp_pool = qforte.SQOpPoolGPU(data_type=self.data_type)
+
+        for param, top in zip(params, self._tops):
+            temp_pool.add(param, self._pool_obj[top][1])
+
+        qc = qforte.FCIComputerGPU(
+            self._nel, 
+            self._2_spin, 
+            self._norb,
+            on_gpu=False,
+            data_type=self.data_type)
+        
+        qc.hartree_fock_cpu()
+
+        qc.to_gpu()
+
+        qc.evolve_pool_trotter_basic_gpu(
+            temp_pool,
+            antiherm=True,
+            adjoint=False)
+        
+        if(self._apply_ham_as_tensor):
+            
+            self._curr_energy = np.real(
+                qc.get_exp_val_tensor_gpu(
+                    self._zero_body_energy, 
+                    self._mo_oeis_gpu, 
+                    self._mo_teis_gpu, 
+                    self._mo_teis_einsum_gpu, 
+                    self._norb)
+            )
         else:   
             self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
 

@@ -541,6 +541,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("set", &TensorGPU::set, "idx"_a, "value"_a)
         .def("fill_from_nparray", &TensorGPU::fill_from_nparray, "array"_a, "shape"_a)
         .def("fill_from_tensor_cpu", &TensorGPU::fill_from_tensor_cpu, "other"_a, "shape"_a)
+        .def("vector_dot", &TensorGPU::vector_dot)
         .def("__repr__", &TensorGPU::str,
             py::arg("print_data") = true, 
             py::arg("print_complex") = false, 
@@ -580,7 +581,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("apply_sqop_pool_cpu", &FCIComputerGPU::apply_sqop_pool_cpu)
         .def("get_exp_val_cpu", &FCIComputerGPU::get_exp_val_cpu)
         .def("get_exp_val", &FCIComputerGPU::get_exp_val)
-        .def("get_exp_val_tensor_cpu", &FCIComputerGPU::get_exp_val_tensor_cpu)
+        .def("get_exp_val_tensor_gpu", &FCIComputerGPU::get_exp_val_tensor_gpu)
         .def("evolve_op_taylor_cpu", &FCIComputerGPU::evolve_op_taylor_cpu)
         .def("apply_sqop_evolution_gpu", &FCIComputerGPU::apply_sqop_evolution_gpu, 
             py::arg("time"),
@@ -602,8 +603,9 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("adjoint") = false
             )
         .def("set_state_cpu", &FCIComputerGPU::set_state_cpu)
-        //.def("get_state", &FCIComputerGPU::get_state)
-        //.def("get_state_deep", &FCIComputerGPU::get_state_deep)
+        .def("set_state", &FCIComputerGPU::set_state_cpu)  // alias for compatibility
+        .def("get_state", &FCIComputerGPU::get_state)
+        .def("get_state_deep", &FCIComputerGPU::get_state_deep)
         .def("populate_index_arrays_for_pool_evo", &FCIComputerGPU::populate_index_arrays_for_pool_evo)
         .def("copy_to_tensor_cpu", &FCIComputerGPU::copy_to_tensor_cpu)
         .def("copy_to_tensor_thrust_gpu", &FCIComputerGPU::copy_to_tensor_thrust_gpu)

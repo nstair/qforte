@@ -121,6 +121,8 @@ class UCCVQE(VQE, UCC):
             return self.measure_gradient_fci(params)
         elif(self._computer_type == 'fqe'):
             return self.measure_gradient_fqe(params)
+        elif(self._computer_type == 'fci_gpu'):
+            return self.measure_gradient_fci_gpu(params)
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
 
@@ -478,6 +480,8 @@ class UCCVQE(VQE, UCC):
             return self.measure_gradient3_fock()
         elif(self._computer_type == 'fci'):
             return self.measure_gradient3_fci()
+        elif(self._computer_type == 'fci_gpu'):
+            return self.measure_gradient3_fci_gpu()
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
 
@@ -589,6 +593,8 @@ class UCCVQE(VQE, UCC):
             return self.gradient_ary_feval_fci(params)
         elif(self._computer_type == 'fqe'):
             return self.gradient_ary_feval_fqe(params)
+        elif(self._computer_type == 'fci_gpu'):
+            return self.gradient_ary_feval_fci_gpu(params)
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
 
@@ -627,6 +633,214 @@ class UCCVQE(VQE, UCC):
         self._res_m_evals += len(self._tamps)
 
         return np.asarray(grads)
+
+    def gradient_ary_feval_fci_gpu(self, params):
+        grads = self.measure_gradient(params)
+
+        if(self._noise_factor > 1e-14):
+            grads = [np.random.normal(np.real(grad_m), self._noise_factor) for grad_m in grads]
+
+        self._curr_grad_norm = np.linalg.norm(grads)
+        self._res_vec_evals += 1
+        self._res_m_evals += len(self._tamps)
+
+        return np.asarray(grads)
+
+    def measure_gradient_fci_gpu(self, params=None):
+        """ Returns the disentangled (factorized) UCC gradient for FCIComputerGPU,
+        using a recursive approach.
+
+        Parameters
+        ----------
+        params : list of floats
+            The variational parameters which characterize _Uvqc.
+        """
+
+        if not self._fast:
+            raise ValueError("self._fast must be True for gradient measurement.")
+        
+        if(self._pool_type == 'sa_SD'):
+            raise ValueError('Must use single term particle-hole nbody operators for residual calculation')
+        
+        if not self._ref_from_hf:
+            raise ValueError('measure_gradient_fci_gpu only compatible with hf reference at this time.')
+
+        M = len(self._tamps)
+        grads = np.zeros(M)
+        vqc_ops = qforte.SQOpPoolGPU(data_type=self.data_type)
+
+        if params is None:
+            for tamp, top in zip(self._tamps, self._tops):
+                vqc_ops.add(tamp, self._pool_obj[top][1])
+        else:
+            for tamp, top in zip(params, self._tops):
+                vqc_ops.add(tamp, self._pool_obj[top][1])
+
+        # build | sig_N > according ADAPT-VQE analytical grad section
+        qc_psi = qforte.FCIComputerGPU(
+            self._nel, 
+            self._2_spin, 
+            self._norb,
+            on_gpu=False,
+            data_type=self.data_type) 
+        
+        qc_psi.hartree_fock_cpu()
+        qc_psi.to_gpu()
+        
+        qc_psi.evolve_pool_trotter_basic_gpu(
+            vqc_ops,
+            antiherm=True,
+            adjoint=False)
+
+        # build | psi_N > according ADAPT-VQE analytical grad section
+        qc_sig = qforte.FCIComputerGPU(
+            self._nel, 
+            self._2_spin, 
+            self._norb,
+            on_gpu=True,
+            data_type=self.data_type) 
+
+        psi_i = qc_psi.get_state_deep()
+
+        # not sure if copy is faster or reapplication of state
+        qc_sig.set_state_gpu(psi_i) 
+
+        if(self._apply_ham_as_tensor):
+            qc_sig.apply_tensor_spat_012bdy_gpu(
+                self._zero_body_energy, 
+                self._mo_oeis_gpu, 
+                self._mo_teis_gpu, 
+                self._mo_teis_einsum_gpu, 
+                self._norb)
+        else:   
+            qc_sig.apply_sqop_gpu(self._sq_ham)
+
+        mu = M-1
+
+        # find <sing_N | K_N | psi_N>
+        Kmu_prev = self._pool_obj[self._tops[mu]][1]
+
+        Kmu_prev.mult_coeffs(self._pool_obj[self._tops[mu]][0])
+
+        qc_psi.apply_sqop_gpu(Kmu_prev)
+        grads[mu] = 2.0 * np.real(
+            qc_sig.get_state().vector_dot(qc_psi.get_state())
+            )
+
+        #reset Kmu_prev |psi_i> -> |psi_i>
+        qc_psi.set_state_gpu(psi_i)
+
+        for mu in reversed(range(M-1)):
+
+            # mu => N-1 => M-2
+            # mu+1 => N => M-1
+            # Kmu => KN-1
+            # Kmu_prev => KN
+
+            if params is None:
+                tamp = self._tamps[mu+1]
+            else:
+                tamp = params[mu+1]
+
+            Kmu = self._pool_obj[self._tops[mu]][1]
+
+            Kmu.mult_coeffs(self._pool_obj[self._tops[mu]][0])
+
+            # The minus sign is dictated by the recursive algorithm used to compute the analytic gradient
+            # (see original ADAPT-VQE paper)
+            qc_psi.apply_sqop_evolution_gpu(
+                -1.0*tamp,
+                Kmu_prev,
+                antiherm=True,
+                adjoint=False)
+            
+            qc_sig.apply_sqop_evolution_gpu(
+                -1.0*tamp,
+                Kmu_prev,
+                antiherm=True,
+                adjoint=False)
+
+            psi_i = qc_psi.get_state_deep()
+
+            qc_psi.apply_sqop_gpu(Kmu)
+            grads[mu] = 2.0 * np.real(
+                qc_sig.get_state().vector_dot(qc_psi.get_state())
+                )
+
+            #reset Kmu |psi_i> -> |psi_i>
+            qc_psi.set_state_gpu(psi_i)
+            Kmu_prev = Kmu
+
+        np.testing.assert_allclose(np.imag(grads), np.zeros_like(grads), atol=1e-7)
+        
+        return grads
+
+    def measure_gradient3_fci_gpu(self):
+        """ Calculates 2 Re <Psi|H K_mu |Psi> for all K_mu in self._pool_obj.
+        For antihermitian K_mu, this is equal to <Psi|[H, K_mu]|Psi>.
+        In ADAPT-VQE, this is the 'residual gradient' used to determine
+        whether to append exp(t_mu K_mu) to the iterative ansatz.
+        (GPU version)
+        """
+
+        if not self._fast:
+            raise ValueError("self._fast must be True for gradient measurement.")
+
+        qc_psi = qforte.FCIComputerGPU(
+            self._nel, 
+            self._2_spin, 
+            self._norb,
+            on_gpu=False,
+            data_type=self.data_type) 
+
+        qc_psi.hartree_fock_cpu()
+        qc_psi.to_gpu()
+
+        # build wave function for current ADAPT iteration
+        # using self._tamps and self._tops
+        
+        vqc_ops = qforte.SQOpPoolGPU(data_type=self.data_type)
+        for tamp, top in zip(self._tamps, self._tops):
+                vqc_ops.add(tamp, self._pool_obj[top][1])
+
+
+        qc_psi.evolve_pool_trotter_basic_gpu(
+            vqc_ops,
+            antiherm=True,
+            adjoint=False)
+
+        psi_i = qc_psi.get_state_deep()
+        
+        qc_sig = qforte.FCIComputerGPU(
+            self._nel, 
+            self._2_spin, 
+            self._norb,
+            on_gpu=True,
+            data_type=self.data_type) 
+        
+        qc_sig.set_state_gpu(psi_i)
+
+        if(self._apply_ham_as_tensor):
+            qc_sig.apply_tensor_spat_012bdy_gpu(
+                self._zero_body_energy, 
+                self._mo_oeis_gpu, 
+                self._mo_teis_gpu, 
+                self._mo_teis_einsum_gpu, 
+                self._norb)
+        else:   
+            qc_sig.apply_sqop_gpu(self._sq_ham)
+
+        grads = np.zeros(len(self._pool_obj))
+        for mu, (coeff, operator) in enumerate(self._pool_obj):
+            Kmu = operator
+            Kmu.mult_coeffs(coeff)
+            qc_psi.apply_sqop_gpu(Kmu)
+            grads[mu] = 2.0 * np.real(qc_sig.get_state().vector_dot(qc_psi.get_state()))
+            qc_psi.set_state_gpu(psi_i)
+
+        np.testing.assert_allclose(np.imag(grads), np.zeros_like(grads), atol=1e-7)
+        
+        return grads
 
     def report_iteration(self, x):
 

@@ -231,6 +231,54 @@ TensorGPU::~TensorGPU()
     // Thrust vectors automatically handle cleanup
 }
 
+/// Copy constructor
+TensorGPU::TensorGPU(const TensorGPU& other)
+    : name_(other.name_),
+      data_type_(other.data_type_),
+      shape_(other.shape_),
+      strides_(other.strides_),
+      size_(other.size_),
+      initialized_(other.initialized_),
+      on_gpu_(other.on_gpu_),
+      on_complex_(other.on_complex_)
+{
+    // Deep copy all thrust vectors
+    h_data_ = other.h_data_;
+    d_data_ = other.d_data_;
+    h_re_data_ = other.h_re_data_;
+    d_re_data_ = other.d_re_data_;
+    
+    // Update memory tracking
+    total_memory__ += h_data_.size() * sizeof(std::complex<double>);
+}
+
+/// Copy assignment operator
+TensorGPU& TensorGPU::operator=(const TensorGPU& other)
+{
+    if (this != &other) {
+        // Update memory tracking (subtract old, add new)
+        total_memory__ -= h_data_.size() * sizeof(std::complex<double>);
+        
+        name_ = other.name_;
+        data_type_ = other.data_type_;
+        shape_ = other.shape_;
+        strides_ = other.strides_;
+        size_ = other.size_;
+        initialized_ = other.initialized_;
+        on_gpu_ = other.on_gpu_;
+        on_complex_ = other.on_complex_;
+        
+        // Deep copy all thrust vectors
+        h_data_ = other.h_data_;
+        d_data_ = other.d_data_;
+        h_re_data_ = other.h_re_data_;
+        d_re_data_ = other.d_re_data_;
+        
+        total_memory__ += h_data_.size() * sizeof(std::complex<double>);
+    }
+    return *this;
+}
+
 // TDDO: Get rid of temporary conversions and copy directly between host and device
 void TensorGPU::to_gpu()
 {

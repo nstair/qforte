@@ -43,6 +43,12 @@ TensorGPU(
 
 TensorGPU();
 
+// Copy constructor
+TensorGPU(const TensorGPU& other);
+
+// Copy assignment operator
+TensorGPU& operator=(const TensorGPU& other);
+
 ~TensorGPU();
 
 void to_gpu();

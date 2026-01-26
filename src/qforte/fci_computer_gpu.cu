@@ -2711,7 +2711,7 @@ std::complex<double> FCIComputerGPU::get_exp_val(const SQOperator& sqop)
     return val;
 }
 
-std::complex<double> FCIComputerGPU::get_exp_val_tensor_cpu(
+std::complex<double> FCIComputerGPU::get_exp_val_tensor_gpu(
     const std::complex<double> h0e, 
     const TensorGPU& h1e, 
     const TensorGPU& h2e, 
