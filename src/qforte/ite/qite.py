@@ -161,6 +161,7 @@ class QITE(Algorithm):
             use_cis_reference=False,
             target_root=0,
             cis_target_root=0,
+            threaded=0,
             ):
         
         # TODO(Nick): Remove BeH2 specific stuff..
@@ -183,6 +184,7 @@ class QITE(Algorithm):
         self._sparseSb = sparseSb
         self._low_memorySb = low_memorySb
         self._second_order = second_order
+        self._threaded = threaded
 
         # Selcted QITE options
         self._selected_pool = selected_pool
@@ -227,7 +229,8 @@ class QITE(Algorithm):
             if(self._use_exact_evolution):
                 self._fname = f'beta_{self._beta}_db_{self._db}_EXACT_EVOLUTION'
             else:
-                self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_folded_spectrum_{self._folded_spectrum}_e_shift_{self._e_shift}_selected_pool_{self._selected_pool}_t_{self._t_thresh}_physical_r_{self._physical_r}_dfham_{self._evolve_dfham}'
+                # self._fname = f'beta_{self._beta}_db_{self._db}_{self._computer_type}_{self._expansion_type}_second_order_{self._second_order}_folded_spectrum_{self._folded_spectrum}_e_shift_{self._e_shift}_selected_pool_{self._selected_pool}_t_{self._t_thresh}_physical_r_{self._physical_r}_dfham_{self._evolve_dfham}'
+                self._fname = f'{self._expansion_type}_selected_pool_{self._selected_pool}_t_{self._t_thresh}_dfham_{self._use_df_ham_selection}'
 
         if(self._output_path is None):
             self._output_path = ''
@@ -262,7 +265,7 @@ class QITE(Algorithm):
 
                     ham_cnot = 0
                     for term in self._sq_ham_pool.terms():
-                        ham_cnot += term[1].count_cnot_for_exponential()
+                        ham_cnot += term[1].count_cnot_for_exponential_full()
 
                     self._exp_ham_cnot = ham_cnot
                     self._n_cnot += ham_cnot
@@ -950,8 +953,11 @@ class QITE(Algorithm):
                 print(f"Warning, build sparseSb method isn't supported for FCI computer, setting option to false")
                 self._sparseSb = False
 
-            S, btot = self.build_S_b_FCI()
-            # S, btot = self.build_S_b_FCI_threaded()
+            if(self._threaded):
+                S, btot = self.build_S_b_FCI_threaded()
+
+            else:
+                S, btot = self.build_S_b_FCI()
 
         if(self._computer_type=='fock'):
             if(self._low_memorySb):
@@ -991,7 +997,7 @@ class QITE(Algorithm):
 
             qite_cnot = 0
             for term in self._sig.terms():
-                qite_cnot += term[1].count_cnot_for_exponential()
+                qite_cnot += term[1].count_cnot_for_exponential_full()
 
             self._n_cnot += qite_cnot
 
@@ -1143,7 +1149,7 @@ class QITE(Algorithm):
                     print('\n')
                     print('WARNING: ESTIMATED MEMORY USAGE EXCEEDS 8GB, SWITCHING TO LOW MEMORY MODE')
                     print('\n')
-                    self._low_memorySb = True
+                    # self._low_memorySb = True
                     self._total_memory = 5.0 * 16.0 * qc_size # 5 corresponds to total # of tensors at any given time in memory
 
 
@@ -1318,7 +1324,7 @@ class QITE(Algorithm):
 
                         for term in self._sig.terms():
                             self._total_pool.add_term(term[0], term[1])
-                            # total_pool_cnot += term[1].count_cnot_for_exponential()
+                            # total_pool_cnot += term[1].count_cnot_for_exponential_full()
 
                         # total_pool_cnot *= 2
                         # self._n_cnot += total_pool_cnot
@@ -1448,7 +1454,7 @@ class QITE(Algorithm):
 
                         # print(self._sig)
                         # for term in self._sig.terms():
-                        #     qite_cnot += term[1].count_cnot_for_exponential()
+                        #     qite_cnot += term[1].count_cnot_for_exponential_full()
 
 
                     else:
@@ -1470,7 +1476,7 @@ class QITE(Algorithm):
 
                         for term in self._sig.terms():
                             # self._total_pool.add_term(term[0], term[1])
-                            total_pool_cnot += term[1].count_cnot_for_exponential()
+                            total_pool_cnot += term[1].count_cnot_for_exponential_full()
 
                         total_pool_cnot *= 2
                         self._n_cnot += total_pool_cnot
@@ -1516,6 +1522,10 @@ class QITE(Algorithm):
 
             if(self._Ekb[kb] - self._sys.fci_energy <= self._conv_thresh):
                 print(f'qite converged for convergence threshold {self._conv_thresh} Hartree')
+                break
+            
+            if(kb>=2 and self._Ekb[kb-1] - self._Ekb[kb] <= 1.0e-10):
+                print(f'qite energy has stopped changing, qite converged')
                 break
 
         self._Ets = self._Ekb[-1]

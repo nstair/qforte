@@ -44,7 +44,8 @@ class UCCNVQE(UCCVQE):
             pool_type='SD',
             optimizer='BFGS',
             use_analytic_grad = True,
-            noise_factor = 0.0):
+            noise_factor = 0.0,
+            output_path=None):
 
         self._opt_thresh = opt_thresh
         self._opt_ftol = opt_ftol
@@ -53,6 +54,7 @@ class UCCNVQE(UCCVQE):
         self._optimizer = optimizer
         self._pool_type = pool_type
         self._noise_factor = noise_factor
+        self._output_path = output_path
 
         self._tops = []
         self._tamps = []
@@ -62,6 +64,8 @@ class UCCNVQE(UCCVQE):
         self._n_classical_params = 0
         self._n_cnot = 0
         self._n_pauli_trm_measures = 0
+        self._n_pauli_trm_measures_2 = 0
+        self._energy_evals = 0
         self._res_vec_evals = 0
         self._res_m_evals = 0
         self._k_counter = 0
@@ -177,7 +181,9 @@ class UCCNVQE(UCCVQE):
         print('Number of classical parameters used:         ', self._n_classical_params)
         print('Number of non-zero parameters used:          ', self._n_nonzero_params)
         print('Number of CNOT gates in deepest circuit:     ', self._n_cnot)
-        print('Number of Pauli term measurements:           ', self._n_pauli_trm_measures)
+        print('Number of Pauli term measurements (old):     ', self._n_pauli_trm_measures_2)
+        print('Number of Pauli term measurements (new):     ', self._n_pauli_trm_measures)
+        # print('Nl:                                          ', self._Nl)
 
         print('Number of grad vector evaluations:           ', self._res_vec_evals)
         print('Number of individual grad evaluations:       ', self._res_m_evals)
@@ -231,9 +237,9 @@ class UCCNVQE(UCCVQE):
 
             for tmu in res.x:
                 if(np.abs(tmu) > 1.0e-12):
-                    self._n_pauli_trm_measures += int(2 * self._Nl * res.njev)
+                    self._n_pauli_trm_measures_2 += int(2 * self._Nl * res.njev)
 
-            self._n_pauli_trm_measures += int(self._Nl * res.nfev)
+            self._n_pauli_trm_measures_2 += int(self._Nl * res.nfev)
 
 
         else:
@@ -245,7 +251,7 @@ class UCCNVQE(UCCVQE):
                                     callback=self.report_iteration)
 
             # account for pauli term measurement for energy evaluations
-            self._n_pauli_trm_measures += self._Nl * res.nfev
+            self._n_pauli_trm_measures_2 += self._Nl * res.nfev
 
         if(res.success):
             print('  => Minimization successful!')

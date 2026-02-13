@@ -602,8 +602,11 @@ class UCCVQE(VQE, UCC):
         self._res_vec_evals += 1
         self._res_m_evals += len(self._tamps)
 
+        if(self._use_analytic_grad):
+            self._n_pauli_trm_measures += int(2 * self._Nl * self._res_m_evals)
+
         return np.asarray(grads)
-    
+
     def gradient_ary_feval_fci(self, params):
         grads = self.measure_gradient(params)
 
@@ -613,6 +616,9 @@ class UCCVQE(VQE, UCC):
         self._curr_grad_norm = np.linalg.norm(grads)
         self._res_vec_evals += 1
         self._res_m_evals += len(self._tamps)
+
+        if(self._use_analytic_grad):
+            self._n_pauli_trm_measures += int(2 * self._Nl * self._res_m_evals)
 
         return np.asarray(grads)
 
@@ -633,21 +639,20 @@ class UCCVQE(VQE, UCC):
         self._k_counter += 1
 
         if(self._k_counter == 1):
-            print('\n    k iteration         Energy               dE           Ngvec ev      Ngm ev*         ||g||')
-            print('--------------------------------------------------------------------------------------------------')
+            print('\n    k iteration         Energy               dE           Ngvec ev      Ngm ev*         ||g||          N(measure)')
+            print('--------------------------------------------------------------------------------------------------------------')
             if (self._print_summary_file):
-                f = open("summary.dat", "w+", buffering=1)
-                f.write('\n#    k iteration         Energy               dE           Ngvec ev      Ngm ev*         ||g||')
-                f.write('\n#--------------------------------------------------------------------------------------------------')
+                f = open(f"{self._output_path}vqe_summary.dat", "w+", buffering=1)
+                f.write('\n#    k iteration         Energy               dE           Ngvec ev      Ngm ev*         ||g||          N(measure)')
+                f.write('\n#--------------------------------------------------------------------------------------------------------------')
                 f.close()
 
-        # else:
         dE = self._curr_energy - self._prev_energy
-        print(f'     {self._k_counter:7}        {self._curr_energy:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.10f}')
+        print(f'     {self._k_counter:7}        {self._curr_energy:+12.10f}      {dE:+12.10f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.10f}      {self._n_pauli_trm_measures:7}')
 
         if (self._print_summary_file):
             f = open("summary.dat", "a", buffering=1)
-            f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.12f}      {dE:+12.12f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.12f}')
+            f.write(f'\n       {self._k_counter:7}        {self._curr_energy:+12.12f}      {dE:+12.12f}      {self._res_vec_evals:4}        {self._res_m_evals:6}       {self._curr_grad_norm:+12.12f}      {self._n_pauli_trm_measures:7}')
             f.close()
 
         self._prev_energy = self._curr_energy

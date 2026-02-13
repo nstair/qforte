@@ -488,6 +488,10 @@ class AnsatzAlgorithm(Algorithm):
         Energy = self.measure_energy(Ucirc)
 
         self._curr_energy = Energy
+
+        self._energy_evals += 1
+        self._n_pauli_trm_measures += int(self._Nl * self._energy_evals)
+
         return Energy
     
     # Works for FCIComputer and for FQEComputer
@@ -528,6 +532,8 @@ class AnsatzAlgorithm(Algorithm):
         else:   
             self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
 
+        self._energy_evals += 1
+        self._n_pauli_trm_measures += int(self._Nl * self._energy_evals)
         
         return self._curr_energy
 
