@@ -125,6 +125,10 @@ void set(const std::vector<size_t>& idxs,
          const std::complex<double> val
          );
 
+void set_gpu(const std::vector<size_t>& idxs,
+             const std::complex<double> val
+             );
+
 void ndim_error(size_t) const;
 
 void fill_from_nparray(std::vector<std::complex<double>>, std::vector<size_t>);

@@ -107,6 +107,21 @@ void SQOpPoolGPU::set_coeffs_to_scaler(std::complex<double> new_coeff){
     }
 }
 
+void SQOpPoolGPU::update_evolution_coeffs(const std::vector<std::complex<double>>& new_coeffs){
+    if (!device_vecs_populated_) {
+        throw std::runtime_error("Cannot update evolution coeffs before populate_index_arrays_for_pool_evo is called");
+    }
+    if (new_coeffs.size() != outer_coeffs_.size()) {
+        throw std::invalid_argument("Coefficient count mismatch in update_evolution_coeffs");
+    }
+    
+    // Update both storage locations
+    for (size_t i = 0; i < new_coeffs.size(); ++i) {
+        terms_[i].first = new_coeffs[i];
+        outer_coeffs_[i] = new_coeffs[i];
+    }
+}
+
 const std::vector<std::pair< std::complex<double>, SQOperator>>& SQOpPoolGPU::terms() const{
     return terms_;
 }

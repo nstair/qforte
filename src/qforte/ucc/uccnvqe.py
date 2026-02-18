@@ -87,6 +87,12 @@ class UCCNVQE(UCCVQE):
         self.initialize_ansatz()
         self._timer.record("initialize_ansatz")
 
+        # Initialize GPU pool precomputation if using GPU computer
+        if self._computer_type == 'fci_gpu':
+            self._timer.reset()
+            self.initialize_gpu_pool()
+            self._timer.record("initialize_gpu_pool")
+
         if(self._verbose):
             print('\nt operators included from pool: \n', self._tops)
             print('\nInitial tamplitudes for tops: \n', self._tamps)
@@ -309,6 +315,53 @@ class UCCNVQE(UCCVQE):
         """
         self._tops = list(range(len(self._pool_obj)))
         self._tamps = [0.0] * len(self._pool_obj)
+
+    def initialize_gpu_pool(self):
+        """Initialize reusable GPU pool and computers for optimization.
+        This should be called after initialize_ansatz() and before solve().
+        Precomputes index arrays and creates persistent GPU computers to avoid:
+        1. Pool recreation overhead (major optimization via precomputation)
+        2. GPU memory allocation/deallocation overhead each iteration
+        """
+        if self._computer_type != 'fci_gpu':
+            return
+        
+        # Create reusable GPU pool with initial coefficients (zeros)
+        self._reusable_pool_gpu = qforte.SQOpPoolGPU(data_type=self.data_type)
+        
+        # Add all operators from pool with initial zero coefficients
+        for tamp, top in zip(self._tamps, self._tops):
+            self._reusable_pool_gpu.add(tamp, self._pool_obj[top][1])
+        
+        # Create reusable GPU computers for gradient evaluation
+        # qc_psi: builds evolved state
+        # qc_sig: builds H|psi> for gradient computation
+        self._reusable_qc_psi = qforte.FCIComputerGPU(
+            self._nel, 
+            self._2_spin, 
+            self._norb,
+            on_gpu=True,
+            data_type=self.data_type)
+        
+        self._reusable_qc_psi.hartree_fock_gpu()
+        
+        self._reusable_qc_sig = qforte.FCIComputerGPU(
+            self._nel, 
+            self._2_spin, 
+            self._norb,
+            on_gpu=True,
+            data_type=self.data_type)
+        
+        # Precompute index arrays for fast evolution
+        # This sets device_vecs_populated_ = true and precomputes all index mappings
+        self._reusable_qc_psi.populate_index_arrays_for_pool_evo(self._reusable_pool_gpu)
+        self._reusable_qc_sig.populate_index_arrays_for_pool_evo(self._reusable_pool_gpu)
+        
+        if self._verbose:
+            print('\n==> GPU optimization infrastructure initialized')
+            print(f'    Pool size: {len(self._tops)} operators')
+            print(f'    Index arrays precomputed for fast evolution')
+            print(f'    Reusable GPU computers created (avoids allocation overhead)')
 
     # TODO: change to get_num_pt_evals
     def get_num_ham_measurements(self):

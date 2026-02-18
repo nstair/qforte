@@ -401,6 +401,8 @@ class FCIComputerGPU {
 
     void hartree_fock_cpu();
 
+    void hartree_fock_gpu();
+
     size_t get_Na() { return nalfa_strs_; }
 
     size_t get_Nb() { return nbeta_strs_; }

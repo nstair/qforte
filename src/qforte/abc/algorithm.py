@@ -219,7 +219,7 @@ class Algorithm(ABC):
             # Initialize GPU profiling timers
             import time
             self._gpu_timers = {
-                'hartree_fock_cpu': 0.0,
+                'hartree_fock_gpu': 0.0,
                 'to_gpu': 0.0,
                 'evolve_pool_trotter_basic_gpu': 0.0,
                 'get_state_deep': 0.0,
@@ -677,50 +677,75 @@ class AnsatzAlgorithm(Algorithm):
         if not self._ref_from_hf:
             raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
         
-        temp_pool = qforte.SQOpPoolGPU(data_type=self.data_type)
-
-        for param, top in zip(params, self._tops):
-            temp_pool.add(param, self._pool_obj[top][1])
-
-        qc = qforte.FCIComputerGPU(
-            self._nel, 
-            self._2_spin, 
-            self._norb,
-            on_gpu=False,
-            data_type=self.data_type)
-        
-        t0 = self._gpu_time.time()
-        qc.hartree_fock_cpu()
-        self._gpu_timers['hartree_fock_cpu'] += self._gpu_time.time() - t0
-        # print(f"[GPU] After HF: state norm = {qc.get_state().norm():.12f}")
-
-        t0 = self._gpu_time.time()
-        qc.to_gpu()
-        self._gpu_timers['to_gpu'] += self._gpu_time.time() - t0
-
-        t0 = self._gpu_time.time()
-        qc.evolve_pool_trotter_basic_gpu(
-            temp_pool,
-            antiherm=True,
-            adjoint=False)
-        self._gpu_timers['evolve_pool_trotter_basic_gpu'] += self._gpu_time.time() - t0
-        # print(f"[GPU] After evolve_pool: state norm = {qc.get_state().norm():.12f}")
-        
-        if(self._apply_ham_as_tensor):
+        # Use reusable infrastructure if available (avoids pool recreation + GPU overhead)
+        if hasattr(self, '_reusable_pool_gpu') and hasattr(self, '_reusable_qc_psi'):
+            # Update coefficients in existing pool (fast path)
+            complex_params = [complex(p, 0.0) for p in params]
+            self._reusable_pool_gpu.update_evolution_coeffs(complex_params)
+            
+            # Reset reusable computer to HF state
+            # Avoids GPU allocation/deallocation overhead
             t0 = self._gpu_time.time()
-            self._curr_energy = np.real(
-                qc.get_exp_val_tensor_gpu(
-                    self._zero_body_energy, 
-                    self._mo_oeis_gpu, 
-                    self._mo_teis_gpu, 
-                    self._mo_teis_einsum_gpu, 
-                    self._norb)
-            )
-            self._gpu_timers['get_exp_val_tensor_gpu'] += self._gpu_time.time() - t0
-            # print(f"[GPU] Energy = {self._curr_energy:+16.12f}")
-        else:   
-            self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
-            # print(f"[GPU] Energy = {self._curr_energy:+16.12f}")
+            self._reusable_qc_psi.hartree_fock_gpu()
+            self._gpu_timers['hartree_fock_gpu'] += self._gpu_time.time() - t0
+            
+            t0 = self._gpu_time.time()
+            self._reusable_qc_psi.evolve_pool_trotter_basic_gpu(
+                self._reusable_pool_gpu,
+                antiherm=True,
+                adjoint=False)
+            self._gpu_timers['evolve_pool_trotter_basic_gpu'] += self._gpu_time.time() - t0
+            
+            if(self._apply_ham_as_tensor):
+                t0 = self._gpu_time.time()
+                self._curr_energy = np.real(
+                    self._reusable_qc_psi.get_exp_val_tensor_gpu(
+                        self._zero_body_energy, 
+                        self._mo_oeis_gpu, 
+                        self._mo_teis_gpu, 
+                        self._mo_teis_einsum_gpu, 
+                        self._norb)
+                )
+                self._gpu_timers['get_exp_val_tensor_gpu'] += self._gpu_time.time() - t0
+            else:   
+                self._curr_energy = np.real(self._reusable_qc_psi.get_exp_val(self._sq_ham))
+                
+        else:
+            # Fallback to old behavior if reusable infrastructure not initialized
+            temp_pool = qforte.SQOpPoolGPU(data_type=self.data_type)
+            for param, top in zip(params, self._tops):
+                temp_pool.add(param, self._pool_obj[top][1])
 
+            qc = qforte.FCIComputerGPU(
+                self._nel, 
+                self._2_spin, 
+                self._norb,
+                on_gpu=True,
+                data_type=self.data_type)
+            
+            t0 = self._gpu_time.time()
+            qc.hartree_fock_gpu()
+            self._gpu_timers['hartree_fock_gpu'] += self._gpu_time.time() - t0
+
+            t0 = self._gpu_time.time()
+            qc.evolve_pool_trotter_basic_gpu(
+                temp_pool,
+                antiherm=True,
+                adjoint=False)
+            self._gpu_timers['evolve_pool_trotter_basic_gpu'] += self._gpu_time.time() - t0
+            
+            if(self._apply_ham_as_tensor):
+                t0 = self._gpu_time.time()
+                self._curr_energy = np.real(
+                    qc.get_exp_val_tensor_gpu(
+                        self._zero_body_energy, 
+                        self._mo_oeis_gpu, 
+                        self._mo_teis_gpu, 
+                        self._mo_teis_einsum_gpu, 
+                        self._norb)
+                )
+                self._gpu_timers['get_exp_val_tensor_gpu'] += self._gpu_time.time() - t0
+            else:   
+                self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
         
         return self._curr_energy

@@ -50,6 +50,9 @@ class SQOpPoolGPU {
     /// sets the operator pool coefficients
     void set_coeffs(const std::vector<std::complex<double>>& new_coeffs);
 
+    /// updates the operator pool terms & outer coefficients with new_coeffs
+    void update_evolution_coeffs(const std::vector<std::complex<double>>& new_coeffs);
+
     /// sets the operator pool coefficients
     void set_coeffs_to_scaler(std::complex<double> new_coeff);
 

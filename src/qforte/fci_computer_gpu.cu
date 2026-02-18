@@ -2784,6 +2784,13 @@ void FCIComputerGPU::hartree_fock_cpu()
     C_.set({0, 0}, 1.0);
 }
 
+void FCIComputerGPU::hartree_fock_gpu()
+{
+    gpu_error();
+    C_.zero_gpu();
+    C_.set_gpu({0, 0}, 1.0);
+}
+
 void FCIComputerGPU::print_vector(const std::vector<int>& vec, const std::string& name)
 {
     std::cout << "\n" << name << ": ";

@@ -541,6 +541,25 @@ void TensorGPU::set(
     }
 }
 
+void TensorGPU::set_gpu(
+    const std::vector<size_t>& idxs,
+    const std::complex<double> val
+        )
+{
+    gpu_error();
+    ndim_error(idxs.size());
+
+    size_t vidx = (idxs.size()==1)? idxs[0] : tidx_to_vidx(idxs);
+    if (data_type_ == "complex") {
+        d_data_[vidx] = make_cuDoubleComplex(val.real(), val.imag());
+    } else if (data_type_ == "real") {
+        if (std::abs(val.imag()) > 1e-14) throw std::runtime_error("Attempt to assign complex value to real tensor.");
+        d_re_data_[vidx] = val.real();
+    } else {
+        throw std::runtime_error("Unsupported data type in set_gpu().");
+    }
+}
+
 void TensorGPU::ndim_error(size_t ndims) const
 {
     if (!(ndim() == ndims)) {

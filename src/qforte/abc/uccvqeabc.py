@@ -731,45 +731,66 @@ class UCCVQE(VQE, UCC):
 
         M = len(self._tamps)
         grads = np.zeros(M)
-        vqc_ops = qforte.SQOpPoolGPU(data_type=self.data_type)
 
-        if params is None:
-            for tamp, top in zip(self._tamps, self._tops):
-                vqc_ops.add(tamp, self._pool_obj[top][1])
+        # Use reusable infrastructure if available
+        if hasattr(self, '_reusable_pool_gpu') and hasattr(self, '_reusable_qc_psi'):
+            # Update pool coefficients
+            if params is None:
+                complex_tamps = [complex(t, 0.0) for t in self._tamps]
+                self._reusable_pool_gpu.update_evolution_coeffs(complex_tamps)
+            else:
+                complex_params = [complex(p, 0.0) for p in params]
+                self._reusable_pool_gpu.update_evolution_coeffs(complex_params)
+            
+            # Use reusable computers (avoid GPU allocation/deallocation)
+            qc_psi = self._reusable_qc_psi
+            qc_sig = self._reusable_qc_sig
+            vqc_ops = self._reusable_pool_gpu
+            
+            # Reset to HF state
+            t0 = self._gpu_time.time()
+            qc_psi.hartree_fock_gpu()
+            self._gpu_timers['hartree_fock_gpu'] += self._gpu_time.time() - t0
+            
         else:
-            for tamp, top in zip(params, self._tops):
-                vqc_ops.add(tamp, self._pool_obj[top][1])
+            # Fallback: create fresh computers and pool
+            vqc_ops = qforte.SQOpPoolGPU(data_type=self.data_type)
+            if params is None:
+                for tamp, top in zip(self._tamps, self._tops):
+                    vqc_ops.add(tamp, self._pool_obj[top][1])
+            else:
+                for tamp, top in zip(params, self._tops):
+                    vqc_ops.add(tamp, self._pool_obj[top][1])
 
-        # build | sig_N > according ADAPT-VQE analytical grad section
-        qc_psi = qforte.FCIComputerGPU(
-            self._nel, 
-            self._2_spin, 
-            self._norb,
-            on_gpu=False,
-            data_type=self.data_type) 
+            qc_psi = qforte.FCIComputerGPU(
+                self._nel, 
+                self._2_spin, 
+                self._norb,
+                on_gpu=False,
+                data_type=self.data_type)
+            
+            t0 = self._gpu_time.time()
+            qc_psi.hartree_fock_gpu()
+            self._gpu_timers['hartree_fock_gpu'] += self._gpu_time.time() - t0
+            
+            t0 = self._gpu_time.time()
+            qc_psi.to_gpu()
+            self._gpu_timers['to_gpu'] += self._gpu_time.time() - t0
+            
+            qc_sig = qforte.FCIComputerGPU(
+                self._nel, 
+                self._2_spin, 
+                self._norb,
+                on_gpu=True,
+                data_type=self.data_type)
         
-        t0 = self._gpu_time.time()
-        qc_psi.hartree_fock_cpu()
-        self._gpu_timers['hartree_fock_cpu'] += self._gpu_time.time() - t0
-        
-        t0 = self._gpu_time.time()
-        qc_psi.to_gpu()
-        self._gpu_timers['to_gpu'] += self._gpu_time.time() - t0
-        
+        # Common gradient computation logic
         t0 = self._gpu_time.time()
         qc_psi.evolve_pool_trotter_basic_gpu(
             vqc_ops,
             antiherm=True,
             adjoint=False)
         self._gpu_timers['evolve_pool_trotter_basic_gpu'] += self._gpu_time.time() - t0
-
-        # build | psi_N > according ADAPT-VQE analytical grad section
-        qc_sig = qforte.FCIComputerGPU(
-            self._nel, 
-            self._2_spin, 
-            self._norb,
-            on_gpu=True,
-            data_type=self.data_type) 
 
         # Initialize psi_i if it doesn't exist
         if not hasattr(self, 'psi_i'):
@@ -805,7 +826,6 @@ class UCCVQE(VQE, UCC):
 
         # find <sing_N | K_N | psi_N>
         Kmu_prev = self._pool_obj[self._tops[mu]][1]
-
         Kmu_prev.mult_coeffs(self._pool_obj[self._tops[mu]][0])
 
         t0 = self._gpu_time.time()
@@ -813,9 +833,7 @@ class UCCVQE(VQE, UCC):
         self._gpu_timers['apply_sqop_gpu'] += self._gpu_time.time() - t0
         
         t0 = self._gpu_time.time()
-        grads[mu] = 2.0 * np.real(
-            qc_sig.state_vector_dot_gpu(qc_psi)
-            )
+        grads[mu] = 2.0 * np.real(qc_sig.state_vector_dot_gpu(qc_psi))
         self._gpu_timers['vector_dot'] += self._gpu_time.time() - t0
         # print(f"[GPU GRAD] grads[{mu}] = {grads[mu]:.16f}")
 
@@ -837,7 +855,6 @@ class UCCVQE(VQE, UCC):
                 tamp = params[mu+1]
 
             Kmu = self._pool_obj[self._tops[mu]][1]
-
             Kmu.mult_coeffs(self._pool_obj[self._tops[mu]][0])
 
             # The minus sign is dictated by the recursive algorithm used to compute the analytic gradient
@@ -867,9 +884,7 @@ class UCCVQE(VQE, UCC):
             self._gpu_timers['apply_sqop_gpu'] += self._gpu_time.time() - t0
             
             t0 = self._gpu_time.time()
-            grads[mu] = 2.0 * np.real(
-                qc_sig.state_vector_dot_gpu(qc_psi)
-                )
+            grads[mu] = 2.0 * np.real(qc_sig.state_vector_dot_gpu(qc_psi))
             self._gpu_timers['vector_dot'] += self._gpu_time.time() - t0
             # print(f"[GPU GRAD] grads[{mu}] = {grads[mu]:.16f}")
 
@@ -898,16 +913,12 @@ class UCCVQE(VQE, UCC):
             self._nel, 
             self._2_spin, 
             self._norb,
-            on_gpu=False,
+            on_gpu=True,
             data_type=self.data_type) 
 
         t0 = self._gpu_time.time()
-        qc_psi.hartree_fock_cpu()
-        self._gpu_timers['hartree_fock_cpu'] += self._gpu_time.time() - t0
-        
-        t0 = self._gpu_time.time()
-        qc_psi.to_gpu()
-        self._gpu_timers['to_gpu'] += self._gpu_time.time() - t0
+        qc_psi.hartree_fock_gpu()
+        self._gpu_timers['hartree_fock_gpu'] += self._gpu_time.time() - t0
 
         # build wave function for current ADAPT iteration
         # using self._tamps and self._tops
