@@ -2103,21 +2103,20 @@ void FCIComputerGPU::apply_sqop_evolution_gpu(
 {
     gpu_error();
 
-    timer_.acc_begin("=>copy in Cin <- C_");
+    // timer_.acc_begin("=>copy in Cin <- C_");
 
-    TensorGPU Cin(C_.shape(), "Cin", true);
-    Cin.copy_in_gpu(C_);
+    // TensorGPU Cin(C_.shape(), "Cin", true);
+    // Cin.copy_in_gpu(C_);
 
-    timer_.acc_end("=>copy in Cin <- C_");
+    // timer_.acc_end("=>copy in Cin <- C_");
 
-    // NOTE(Nick): needs gpu treatment
-    evolve_individual_nbody_cpu(
+    evolve_individual_nbody_gpu<PrecompTuple>(
         time,
         sqop,
-        Cin,
         C_,
         antiherm,
-        adjoint); 
+        adjoint,
+        nullptr);
 }
 
 void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
@@ -2232,25 +2231,6 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
             throw std::runtime_error("Unsupported data type in v5 evolution.");
         }
     }
-    
-
-    // if(adjoint){
-    //     for (int i = pool.terms().size() - 1; i >= 0; --i) {
-    //         apply_sqop_evolution_gpu(
-    //             pool.terms()[i].first, 
-    //             pool.terms()[i].second,
-    //             antiherm,
-    //             adjoint);
-    //     }
-    // } else {
-    //     for (const auto& sqop_term : pool.terms()) {
-    //         apply_sqop_evolution_gpu(
-    //             sqop_term.first, 
-    //             sqop_term.second,
-    //             antiherm,
-    //             adjoint);
-    //         }
-    // }
 }
 
 void FCIComputerGPU::evolve_pool_trotter_gpu(
