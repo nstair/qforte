@@ -427,6 +427,8 @@ class FCIComputerGPU {
 
     const std::vector<size_t>& get_shape() const { return C_.shape(); }
 
+    bool on_gpu() { return on_gpu_; }
+
   private:
 
     bool on_gpu_;

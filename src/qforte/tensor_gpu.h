@@ -85,6 +85,8 @@ const thrust::device_vector<double>& read_d_im_data() const;
 
 void add_thrust(const TensorGPU& other);
 
+std::string data_type() const { return data_type_; }
+
 // Throw if not on GPU
 void gpu_error() const;
 
@@ -107,8 +109,6 @@ void real_error() const;
 void data_type_error(const std::string&) const;
 
 std::string name() const { return name_; }
-
-std::string data_type() const { return data_type_; }
 
 /// The number of dimensions of this Tensor, inferred from shape
 size_t ndim() const { return shape_.size(); }

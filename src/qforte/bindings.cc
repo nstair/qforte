@@ -534,11 +534,15 @@ PYBIND11_MODULE(qforte, m) {
              py::arg("name") = "T",
              py::arg("on_gpu") = false,
              py::arg("data_type") = "complex")
+        .def("on_gpu", &TensorGPU::on_gpu)
+        .def("data_type", &TensorGPU::data_type)
         .def("to_gpu", &TensorGPU::to_gpu)
         .def("to_cpu", &TensorGPU::to_cpu)
+        .def("norm", &TensorGPU::norm)
         .def("add", &TensorGPU::add, py::arg("other"))
         .def("zero", &TensorGPU::zero)
         .def("set", &TensorGPU::set, "idx"_a, "value"_a)
+        .def("copy_to_tensor", &TensorGPU::copy_to_tensor)
         .def("fill_from_nparray", &TensorGPU::fill_from_nparray, "array"_a, "shape"_a)
         .def("fill_from_tensor_cpu", &TensorGPU::fill_from_tensor_cpu, "other"_a, "shape"_a)
         .def("vector_dot", &TensorGPU::vector_dot)
@@ -555,6 +559,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("get_hf_dot", &FCIComputerGPU::get_hf_dot)
         .def("set_element", &FCIComputerGPU::set_element)
         .def("get_element", &FCIComputerGPU::get_element)
+        .def("on_gpu", &FCIComputerGPU::on_gpu)
         .def("to_gpu", &FCIComputerGPU::to_gpu)
         .def("to_cpu", &FCIComputerGPU::to_cpu)
         .def("gpu_error", &FCIComputerGPU::gpu_error)

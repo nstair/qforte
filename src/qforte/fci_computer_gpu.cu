@@ -294,20 +294,20 @@ void FCIComputerGPU::apply_tensor_spat_12bdy_gpu(
 
     timer_.acc_begin("=> same spin beta outer"); 
 
-    Cnew.fineGrainedTranspose();
+    // Cnew.fineGrainedTranspose();
 
     lm_apply_array12_same_spin_opt_gpu(
         Cnew, 
-        graph_.read_dexca_vec(), // dexca_tmp
-        nalfa_strs_,
-        nbeta_strs_, 
-        graph_.get_ndexca(),
+        graph_.read_dexcb_vec(), // dexcb_tmp - FIXED: was dexca_vec
+        nbeta_strs_,             // FIXED: swapped nalfa <-> nbeta after transpose
+        nalfa_strs_,             // FIXED: swapped nalfa <-> nbeta after transpose
+        graph_.get_ndexcb(),     // FIXED: was get_ndexca()
         h1e, 
         h2e,
         norb_,
-        true);
+        false);                  // FIXED: was true, should be false for beta
 
-    Cnew.fineGrainedTranspose();
+    // Cnew.fineGrainedTranspose();
 
     timer_.acc_end("=> same spin beta outer");
 
@@ -2730,6 +2730,7 @@ std::complex<double> FCIComputerGPU::get_exp_val_tensor_gpu(
 
     std::complex<double> val = C_.vector_dot(Cin);
 
+    /// TODO: change to move opperation not deep copy
     C_ = Cin;
     return val;
 }

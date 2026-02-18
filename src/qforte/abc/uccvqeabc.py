@@ -471,6 +471,7 @@ class UCCVQE(VQE, UCC):
         t0 = self._fqe_time.time()
         grads[mu] = 2.0 * np.real(np.vdot(qc_sig.get_state(), qc_psi.get_state()))
         self._fqe_timers['vector_dot'] += self._fqe_time.time() - t0
+        # print(f"[FQE GRAD] grads[{mu}] = {grads[mu]:.16f}")
 
         #reset Kmu_prev |psi_i> -> |psi_i>
         t0 = self._fqe_time.time()
@@ -526,6 +527,7 @@ class UCCVQE(VQE, UCC):
             t0 = self._fqe_time.time()
             grads[mu] = 2.0 * np.real(np.vdot(qc_sig.get_state(), qc_psi.get_state()))
             self._fqe_timers['vector_dot'] += self._fqe_time.time() - t0
+            # print(f"[FQE GRAD] grads[{mu}] = {grads[mu]:.16f}")
 
             #reset Kmu |psi_i> -> |psi_i>
             t0 = self._fqe_time.time()
@@ -815,6 +817,7 @@ class UCCVQE(VQE, UCC):
             qc_sig.state_vector_dot_gpu(qc_psi)
             )
         self._gpu_timers['vector_dot'] += self._gpu_time.time() - t0
+        # print(f"[GPU GRAD] grads[{mu}] = {grads[mu]:.16f}")
 
         #reset Kmu_prev |psi_i> -> |psi_i>
         t0 = self._gpu_time.time()
@@ -868,6 +871,7 @@ class UCCVQE(VQE, UCC):
                 qc_sig.state_vector_dot_gpu(qc_psi)
                 )
             self._gpu_timers['vector_dot'] += self._gpu_time.time() - t0
+            # print(f"[GPU GRAD] grads[{mu}] = {grads[mu]:.16f}")
 
             #reset Kmu |psi_i> -> |psi_i>
             t0 = self._gpu_time.time()

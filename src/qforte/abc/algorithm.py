@@ -646,11 +646,15 @@ class AnsatzAlgorithm(Algorithm):
         t0 = self._fqe_time.time()
         qc.hartree_fock()
         self._fqe_timers['hartree_fock'] += self._fqe_time.time() - t0
+        state_norm_hf = np.linalg.norm(qc.get_state())
+        # print(f"[FQE] After HF: state norm = {state_norm_hf:.12f}")
 
         qc.evolve_pool_trotter_basic(
             temp_pool,
             antiherm=True,
             adjoint=False)
+        state_norm_evolved = np.linalg.norm(qc.get_state())
+        # print(f"[FQE] After evolve_pool: state norm = {state_norm_evolved:.12f}")
         
         if(self._apply_ham_as_tensor):
             
@@ -661,8 +665,10 @@ class AnsatzAlgorithm(Algorithm):
                     self._mo_teis_np, 
                     )
                 )
+            # print(f"[FQE] Energy = {self._curr_energy:+16.12f}")
         else:   
             self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
+            # print(f"[FQE] Energy = {self._curr_energy:+16.12f}")
 
         
         return self._curr_energy
@@ -686,6 +692,7 @@ class AnsatzAlgorithm(Algorithm):
         t0 = self._gpu_time.time()
         qc.hartree_fock_cpu()
         self._gpu_timers['hartree_fock_cpu'] += self._gpu_time.time() - t0
+        # print(f"[GPU] After HF: state norm = {qc.get_state().norm():.12f}")
 
         t0 = self._gpu_time.time()
         qc.to_gpu()
@@ -697,6 +704,7 @@ class AnsatzAlgorithm(Algorithm):
             antiherm=True,
             adjoint=False)
         self._gpu_timers['evolve_pool_trotter_basic_gpu'] += self._gpu_time.time() - t0
+        # print(f"[GPU] After evolve_pool: state norm = {qc.get_state().norm():.12f}")
         
         if(self._apply_ham_as_tensor):
             t0 = self._gpu_time.time()
@@ -709,8 +717,10 @@ class AnsatzAlgorithm(Algorithm):
                     self._norb)
             )
             self._gpu_timers['get_exp_val_tensor_gpu'] += self._gpu_time.time() - t0
+            # print(f"[GPU] Energy = {self._curr_energy:+16.12f}")
         else:   
             self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
+            # print(f"[GPU] Energy = {self._curr_energy:+16.12f}")
 
         
         return self._curr_energy
