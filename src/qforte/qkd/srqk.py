@@ -17,6 +17,7 @@ from qforte.utils.trotterization import (trotterize,
                                          trotterize_w_cRz)
 
 import numpy as np
+import time
 
 class SRQK(QSD):
     """A quantum subspace diagonalization algorithm that generates the many-body
@@ -62,6 +63,10 @@ class SRQK(QSD):
 
         # Print options banner (should done for all algorithms).
         self.print_options_banner()
+
+        # If GPU then create global QC & SQOP pool for precomutation path
+        if (self._computer_type == 'fci_gpu'):
+            self.initialize_gpu_global()
 
         self.common_run()
 
@@ -111,6 +116,42 @@ class SRQK(QSD):
         print('Number of CNOT gates in deepest circuit:   ', self._n_cnot)
         print('Number of Pauli term measurements:         ', self._n_pauli_trm_measures)
 
+        if self._gpu_timers is not None:
+            print('\n\n                ==> GPU Profiling <==')
+            print('-----------------------------------------------------------')
+            sorted_timers = sorted(self._gpu_timers.items(), key=lambda x: x[1], reverse=True)
+            total_gpu_time = sum(self._gpu_timers.values())
+            print(f'Total GPU time:                              {total_gpu_time:12.6f} s')
+            print('\nGPU call breakdown (sorted by time):')
+            for name, time in sorted_timers:
+                if time > 0:
+                    percent = 100.0 * time / total_gpu_time if total_gpu_time > 0 else 0.0
+                    print(f'  {name:40s} {time:12.6f} s  ({percent:5.1f}%)')
+
+        if self._fci_timers is not None:
+            print('\n\n                ==> FCI Profiling <==')
+            print('-----------------------------------------------------------')
+            sorted_timers = sorted(self._fci_timers.items(), key=lambda x: x[1], reverse=True)
+            total_fci_time = sum(self._fci_timers.values())
+            print(f'Total FCI time:                              {total_fci_time:12.6f} s')
+            print('\nFCI call breakdown (sorted by time):')
+            for name, time in sorted_timers:
+                if time > 0:
+                    percent = 100.0 * time / total_fci_time if total_fci_time > 0 else 0.0
+                    print(f'  {name:40s} {time:12.6f} s  ({percent:5.1f}%)')
+
+        if self._fqe_timers is not None:
+            print('\n\n                ==> FQE Profiling <==')
+            print('-----------------------------------------------------------')
+            sorted_timers = sorted(self._fqe_timers.items(), key=lambda x: x[1], reverse=True)
+            total_fqe_time = sum(self._fqe_timers.values())
+            print(f'Total FQE time:                              {total_fqe_time:12.6f} s')
+            print('\nFQE call breakdown (sorted by time):')
+            for name, time in sorted_timers:
+                if time > 0:
+                    percent = 100.0 * time / total_fqe_time if total_fqe_time > 0 else 0.0
+                    print(f'  {name:40s} {time:12.6f} s  ({percent:5.1f}%)')
+
     def build_qk_mats(self):
         if (self._fast):
             return self.build_qk_mats_fast()
@@ -137,6 +178,12 @@ class SRQK(QSD):
                 raise ValueError("fqe computer SRQK only compatible with 1st and 2nd order trotter currently")
             
             return self.build_qk_mats_fast_fqe()
+        
+        elif (self._computer_type == 'fci_gpu'):
+            if(self._trotter_order not in [1, 2]):
+                raise ValueError("fci gpu computer SRQK only compatible with 1st and 2nd order trotter currently")
+            
+            return self.build_qk_mats_fast_fci_gpu()
         
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
@@ -395,6 +442,12 @@ class SRQK(QSD):
             
         QC.hartree_fock()
 
+        # Initialize FCI timers if not already done
+        if self._fci_timers is None:
+            self._fci_timers = {}
+        if self._fci_time is None:
+            self._fci_time = time
+
         if(self._diagonalize_each_step):
             print('\n\n')
 
@@ -417,6 +470,7 @@ class SRQK(QSD):
                 if(self._use_exact_evolution):
                     if(self._apply_ham_as_tensor):
                         # raise NotImplementedError("Exact evolution not implemented for FQE computer type.")
+                        t0 = self._fci_time.time()
                         QC.evolve_tensor_taylor(
                             self._zero_body_energy,
                             self._mo_oeis,
@@ -427,15 +481,23 @@ class SRQK(QSD):
                             1.0e-15,
                             30,
                             False)
+                        if 'evolve_tensor_taylor' not in self._fci_timers:
+                            self._fci_timers['evolve_tensor_taylor'] = 0.0
+                        self._fci_timers['evolve_tensor_taylor'] += self._fci_time.time() - t0
                     else:
+                        t0 = self._fci_time.time()
                         QC.evolve_op_taylor(
                             self._sq_ham,
                             self._dt,
                             1.0e-15,
                             30,
                             False)
+                        if 'evolve_op_taylor' not in self._fci_timers:
+                            self._fci_timers['evolve_op_taylor'] = 0.0
+                        self._fci_timers['evolve_op_taylor'] += self._fci_time.time() - t0
 
                 else:
+                    t0 = self._fci_time.time()
                     QC.evolve_pool_trotter(
                         hermitian_pairs,
                         self._dt,
@@ -443,22 +505,41 @@ class SRQK(QSD):
                         self._trotter_order,
                         antiherm=False,
                         adjoint=False)
+                    if 'evolve_pool_trotter' not in self._fci_timers:
+                        self._fci_timers['evolve_pool_trotter'] = 0.0
+                    self._fci_timers['evolve_pool_trotter'] += self._fci_time.time() - t0
 
+            t0 = self._fci_time.time()
             C = QC.get_state_deep()
+            if 'get_state_deep' not in self._fci_timers:
+                self._fci_timers['get_state_deep'] = 0.0
+            self._fci_timers['get_state_deep'] += self._fci_time.time() - t0
          
             self._omega_lst.append(C)
 
             if(self._apply_ham_as_tensor):
+                t0 = self._fci_time.time()
                 QC.apply_tensor_spat_012bdy(
                     self._zero_body_energy, 
                     self._mo_oeis, 
                     self._mo_teis, 
                     self._mo_teis_einsum, 
                     self._norb)
-            else:   
+                if 'apply_tensor_spat_012bdy' not in self._fci_timers:
+                    self._fci_timers['apply_tensor_spat_012bdy'] = 0.0
+                self._fci_timers['apply_tensor_spat_012bdy'] += self._fci_time.time() - t0
+            else:
+                t0 = self._fci_time.time()
                 QC.apply_sqop(self._sq_ham)
+                if 'apply_sqop' not in self._fci_timers:
+                    self._fci_timers['apply_sqop'] = 0.0
+                self._fci_timers['apply_sqop'] += self._fci_time.time() - t0
 
+            t0 = self._fci_time.time()
             Sig = QC.get_state_deep()
+            if 'get_state_deep' not in self._fci_timers:
+                self._fci_timers['get_state_deep'] = 0.0
+            self._fci_timers['get_state_deep'] += self._fci_time.time() - t0
 
             Homega_lst.append(Sig)
 
@@ -545,6 +626,12 @@ class SRQK(QSD):
             
         QC.hartree_fock()
 
+        # Initialize FQE timers if not already done
+        if self._fqe_timers is None:
+            self._fqe_timers = {}
+        if self._fqe_time is None:
+            self._fqe_time = time
+
         if(self._diagonalize_each_step):
             print('\n\n')
 
@@ -566,6 +653,7 @@ class SRQK(QSD):
                 # Compute U_m |φ>
                 if(self._use_exact_evolution):
                     # raise NotImplementedError("Exact evolution not implemented for FQE computer type.")
+                    t0 = self._fqe_time.time()
                     QC.evolve_tensor_taylor(
                         self._zero_body_energy,
                         self._mo_oeis_np,
@@ -574,8 +662,12 @@ class SRQK(QSD):
                         1.0e-15,
                         30,
                         False)
+                    if 'evolve_tensor_taylor' not in self._fqe_timers:
+                        self._fqe_timers['evolve_tensor_taylor'] = 0.0
+                    self._fqe_timers['evolve_tensor_taylor'] += self._fqe_time.time() - t0
 
                 else:
+                    t0 = self._fqe_time.time()
                     QC.evolve_pool_trotter(
                         hermitian_pairs,
                         self._dt,
@@ -583,21 +675,40 @@ class SRQK(QSD):
                         self._trotter_order,
                         antiherm=False,
                         adjoint=False)
+                    if 'evolve_pool_trotter' not in self._fqe_timers:
+                        self._fqe_timers['evolve_pool_trotter'] = 0.0
+                    self._fqe_timers['evolve_pool_trotter'] += self._fqe_time.time() - t0
 
+            t0 = self._fqe_time.time()
             C = QC.get_state_deep()
+            if 'get_state_deep' not in self._fqe_timers:
+                self._fqe_timers['get_state_deep'] = 0.0
+            self._fqe_timers['get_state_deep'] += self._fqe_time.time() - t0
          
             self._omega_lst.append(C)
 
             if(self._apply_ham_as_tensor):
+                t0 = self._fqe_time.time()
                 QC.apply_tensor_spat_012bdy(
                     self._zero_body_energy, 
                     self._mo_oeis_np, 
                     self._mo_teis_np, 
                     )
-            else:   
+                if 'apply_tensor_spat_012bdy' not in self._fqe_timers:
+                    self._fqe_timers['apply_tensor_spat_012bdy'] = 0.0
+                self._fqe_timers['apply_tensor_spat_012bdy'] += self._fqe_time.time() - t0
+            else:
+                t0 = self._fqe_time.time()
                 QC.apply_sqop(self._sq_ham)
+                if 'apply_sqop' not in self._fqe_timers:
+                    self._fqe_timers['apply_sqop'] = 0.0
+                self._fqe_timers['apply_sqop'] += self._fqe_time.time() - t0
 
+            t0 = self._fqe_time.time()
             Sig = QC.get_state_deep()
+            if 'get_state_deep' not in self._fqe_timers:
+                self._fqe_timers['get_state_deep'] = 0.0
+            self._fqe_timers['get_state_deep'] += self._fqe_time.time() - t0
 
             Homega_lst.append(Sig)
 
@@ -611,6 +722,189 @@ class SRQK(QSD):
                 h_mat[n][m] = np.conj(h_mat[m][n])
                 
                 s_mat[m][n] = np.vdot(self._omega_lst[m], self._omega_lst[n])
+                s_mat[n][m] = np.conj(s_mat[m][n])
+
+            if (self._diagonalize_each_step):
+                # TODO (cleanup): have this print to a separate file
+                k = m+1
+                evals, evecs = canonical_geig_solve(s_mat[0:k, 0:k],
+                                   h_mat[0:k, 0:k],
+                                   print_mats=False,
+                                   sort_ret_vals=True)
+
+                scond = np.linalg.cond(s_mat[0:k, 0:k])
+                self._n_classical_params = k
+                # self._n_cnot = 2 * Um.get_num_cnots()
+                self._n_cnot = 0
+                self._n_pauli_trm_measures  = k * self._Nl
+                self._n_pauli_trm_measures += k * (k-1) * self._Nl
+                self._n_pauli_trm_measures += k * (k-1)
+
+                print(f' {scond:7.2e}    {np.real(evals[self._target_root]):+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}')
+                if (self._print_summary_file):
+                    f.write(f'  {scond:7.2e}    {np.real(evals[self._target_root]):+15.9f}    {self._n_classical_params:8}        {self._n_cnot:10}        {self._n_pauli_trm_measures:12}\n')
+
+        if (self._diagonalize_each_step and self._print_summary_file):
+            f.close()
+
+        self._n_classical_params = self._nstates
+        # self._n_cnot = 2 * Um.get_num_cnots()
+        self._n_cnot = 0
+        # diagonal terms of Hbar
+        self._n_pauli_trm_measures  = self._nstates * self._Nl
+        # off-diagonal of Hbar (<X> and <Y> of Hadamard test)
+        self._n_pauli_trm_measures += self._nstates*(self._nstates-1) * self._Nl
+        # off-diagonal of S (<X> and <Y> of Hadamard test)
+        self._n_pauli_trm_measures += self._nstates*(self._nstates-1)
+
+
+        return s_mat, h_mat
+    
+    def build_qk_mats_fast_fci_gpu(self):
+        """Returns matrices S and H needed for the QK algorithm using the Trotterized
+        form of the unitary operators U_n = exp(-i n dt H)
+
+        The mathematical operations of this function are unphysical for a quantum
+        computer, but efficient for a simulator.
+
+        Returns
+        -------
+        s_mat : ndarray
+            A numpy array containing the elements S_mn = <Phi | Um^dag Un | Phi>.
+            _nstates by _nstates
+
+        h_mat : ndarray
+            A numpy array containing the elements H_mn = <Phi | Um^dag H Un | Phi>
+            _nstates by _nstates
+        """
+
+        h_mat = np.zeros((self._nstates,self._nstates), dtype=complex)
+        s_mat = np.zeros((self._nstates,self._nstates), dtype=complex)
+
+        # Store these vectors for the aid of MRSQK
+        self._omega_lst = []
+        Homega_lst = []
+
+        # Hermitian pairs already initialized
+        # QC already initialized to HF state (on gpu)
+        if (hasattr(self, '_gpu_global_initialized') and self._gpu_global_initialized):
+            QC: qforte.FCIComputerGPU = self._reusable_qc
+            hermitian_pairs: qforte.SQOpPoolGPU = self._hermitian_pairs
+        else:
+            # Fall back to old implementation if GPU not initialized for some reason
+            print("Warning: GPU not initialized, falling back to Non optimized implementation for build_qk_mats_fast_fci_gpu.")
+            QC = qforte.FCIComputerGPU(
+                self._nel, 
+                self._2_spin, 
+                self._norb,
+                on_gpu=True,
+                data_type=self.data_type)
+            
+            hermitian_pairs = qforte.SQOpPoolGPU(data_type=self.data_type)
+            hermitian_pairs.add_hermitian_pairs(1.0, self._sq_ham)
+
+        # Initialize GPU timers if not already done
+        if self._gpu_timers is None:
+            self._gpu_timers = {}
+        if self._gpu_time is None:
+            self._gpu_time = time
+
+        if(self._diagonalize_each_step):
+            print('\n\n')
+
+            print(f"{'k(S)':>7}{'E(Npar)':>19}{'N(params)':>14}{'N(CNOT)':>18}{'N(measure)':>20}")
+            print('-------------------------------------------------------------------------------')
+
+            if (self._print_summary_file):
+                f = open("summary.dat", "w+", buffering=1)
+                f.write(f"#{'k(S)':>7}{'E(Npar)':>19}{'N(params)':>14}{'N(CNOT)':>18}{'N(measure)':>20}\n")
+                f.write('#-------------------------------------------------------------------------------\n')
+
+    
+        """In reviewing this there is going to be an inherent ordering probelm. I want to apply 
+        based on hermitian paris of SQ operators but the qb hamiltonain has been 'simplified' 
+        and looses the exact correspondance to the sq hamiltonain"""
+        for m in range(self._nstates):
+
+            if(m>0):
+                # Compute U_m |φ>
+                if(self._use_exact_evolution):
+                    if(self._apply_ham_as_tensor):
+                        raise NotImplementedError("Exact evolution not implemented for FCI_GPU computer type.")
+                    else:
+                        t0 = self._gpu_time.time()
+                        QC.evolve_op_taylor_cpu(
+                            self._sq_ham,
+                            self._dt,
+                            1.0e-15,
+                            30,
+                            False)
+                        if 'evolve_op_taylor_cpu' not in self._gpu_timers:
+                            self._gpu_timers['evolve_op_taylor_cpu'] = 0.0
+                        self._gpu_timers['evolve_op_taylor_cpu'] += self._gpu_time.time() - t0
+
+                else:
+                    t0 = self._gpu_time.time()
+                    QC.evolve_pool_trotter_gpu(
+                        hermitian_pairs,
+                        self._dt,
+                        self._trotter_number,
+                        self._trotter_order,
+                        antiherm=False,
+                        adjoint=False)
+                    if 'evolve_pool_trotter_gpu' not in self._gpu_timers:
+                        self._gpu_timers['evolve_pool_trotter_gpu'] = 0.0
+                    self._gpu_timers['evolve_pool_trotter_gpu'] += self._gpu_time.time() - t0
+
+            # Get current state (stays on GPU for efficiency)
+            t0 = self._gpu_time.time()
+            C = QC.get_state_deep()
+            if 'get_state_deep' not in self._gpu_timers:
+                self._gpu_timers['get_state_deep'] = 0.0
+            self._gpu_timers['get_state_deep'] += self._gpu_time.time() - t0
+         
+            self._omega_lst.append(C)
+
+            if(self._apply_ham_as_tensor):
+                t0 = self._gpu_time.time()
+                QC.apply_tensor_spat_012bdy_gpu(
+                    self._zero_body_energy, 
+                    self._mo_oeis_gpu, 
+                    self._mo_teis_gpu, 
+                    self._mo_teis_einsum_gpu, 
+                    self._norb)
+                if 'apply_tensor_spat_012bdy_gpu' not in self._gpu_timers:
+                    self._gpu_timers['apply_tensor_spat_012bdy_gpu'] = 0.0
+                self._gpu_timers['apply_tensor_spat_012bdy_gpu'] += self._gpu_time.time() - t0
+            else:
+                t0 = self._gpu_time.time()
+                QC.apply_sqop_gpu(self._sq_ham)
+                if 'apply_sqop_gpu' not in self._gpu_timers:
+                    self._gpu_timers['apply_sqop_gpu'] = 0.0
+                self._gpu_timers['apply_sqop_gpu'] += self._gpu_time.time() - t0
+
+            # Get H|ψ> state (stays on GPU)
+            t0 = self._gpu_time.time()
+            Sig = QC.get_state_deep()
+            if 'get_state_deep' not in self._gpu_timers:
+                self._gpu_timers['get_state_deep'] = 0.0
+            self._gpu_timers['get_state_deep'] += self._gpu_time.time() - t0
+
+            Homega_lst.append(Sig)
+
+            # Restore state using GPU-to-GPU copy (critical: avoids CPU transfer)
+            # Note: C is on GPU, so we must use set_state_gpu() not set_state()
+            t0 = self._gpu_time.time()
+            QC.set_state_gpu(C)
+            if 'set_state_gpu' not in self._gpu_timers:
+                self._gpu_timers['set_state_gpu'] = 0.0
+            self._gpu_timers['set_state_gpu'] += self._gpu_time.time() - t0
+
+            # Compute S_mn = <φ| U_m^\dagger U_n |φ> and H_mn = <φ| U_m^\dagger H U_n |φ>
+            for n in range(len(self._omega_lst)):
+                h_mat[m][n] = self._omega_lst[m].vector_dot(Homega_lst[n])
+                h_mat[n][m] = np.conj(h_mat[m][n])
+                s_mat[m][n] = self._omega_lst[m].vector_dot(self._omega_lst[n])
                 s_mat[n][m] = np.conj(s_mat[m][n])
 
             if (self._diagonalize_each_step):
@@ -807,3 +1101,44 @@ class SRQK(QSD):
                 value += c * element
 
         return value
+
+    def initialize_gpu_global(self):
+        """Initialize reusable GPU pool and computers for optimization.
+        This should be called after initialize_ansatz() and before solve().
+        Precomputes index arrays and creates persistent GPU computers to avoid:
+        1. Pool recreation overhead (major optimization via precomputation)
+        2. GPU memory allocation/deallocation overhead each iteration
+        """
+
+        if self._computer_type != 'fci_gpu':
+            return
+        
+        # Create reusable GPU pool with initial coefficients (zeros)
+        self._hermitian_pairs = qforte.SQOpPoolGPU(data_type=self.data_type)
+        
+        self._hermitian_pairs.add_hermitian_pairs(1.0, self._sq_ham)
+        
+        # Create reusable GPU computers for gradient evaluation
+        # qc_psi: builds evolved state
+        # qc_sig: builds H|psi> for gradient computation
+        self._reusable_qc = qforte.FCIComputerGPU(
+            self._nel, 
+            self._2_spin, 
+            self._norb,
+            on_gpu=True,
+            data_type=self.data_type)
+        
+        self._reusable_qc.hartree_fock_gpu()
+        
+        # Precompute index arrays for fast evolution
+        # This sets device_vecs_populated_ = true and precomputes all index mappings
+        self._reusable_qc.populate_index_arrays_for_pool_evo(self._hermitian_pairs)
+
+        # Set flag to indicate GPU global initialization is done
+        self._gpu_global_initialized = True
+        
+        if self._verbose:
+            print('\n==> GPU optimization infrastructure initialized')
+            print(f'    Pool size: {len(self._tops)} operators')
+            print(f'    Index arrays precomputed for fast evolution')
+            print(f'    Reusable GPU computers created (avoids allocation overhead)')

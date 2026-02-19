@@ -2368,8 +2368,218 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
             }
         }
 
-    }  else {
-        throw std::runtime_error("Higher than 1st order trotter not yet implemented"); 
+    } else if (trotter_order == 2) {
+
+        std::complex<double> prefactor = 0.5 * evolution_time / static_cast<std::complex<double>>(trotter_steps);
+
+        if(adjoint){
+            for( int r = 0; r < trotter_steps; r++) {
+                // First pass: backward (reversed order)
+                for (int i = pool.terms().size() - 1; i >= 0; --i) {
+
+                    if (pool.device_vecs_populated()==false) {
+                        // no precomp provided
+                        if (data_type_ == "complex") {
+                            evolve_individual_nbody_gpu<PrecompTuple>(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                nullptr);
+                        } else if (data_type_ == "real") {
+                            evolve_individual_nbody_gpu<PrecompTupleReal>(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                nullptr);
+                        } else {
+                            throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        }
+                    } else {
+                        if (data_type_ == "complex") {
+                            const auto& device_spt_arys = pool.get_mu_tuple(i);
+                            evolve_individual_nbody_gpu(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                &device_spt_arys); 
+                        } else if (data_type_ == "real") {
+                            const auto& device_spt_arys = pool.get_mu_tuple_real(i);
+                            evolve_individual_nbody_gpu(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                &device_spt_arys); 
+                        } else {
+                            throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        }
+                    }
+
+                }
+
+                // Second pass: forward
+                for (int i = 0; i < pool.terms().size(); ++i) {
+
+                    if (pool.device_vecs_populated()==false) {
+                        // no precomp provided
+                        if (data_type_ == "complex") {
+                            evolve_individual_nbody_gpu<PrecompTuple>(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                nullptr);
+                        } else if (data_type_ == "real") {
+                            evolve_individual_nbody_gpu<PrecompTupleReal>(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                nullptr);
+                        } else {
+                            throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        }
+                    } else {
+                        if (data_type_ == "complex") {
+                            const auto& device_spt_arys = pool.get_mu_tuple(i);
+                            evolve_individual_nbody_gpu(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                &device_spt_arys); 
+                        } else if (data_type_ == "real") {
+                            const auto& device_spt_arys = pool.get_mu_tuple_real(i);
+                            evolve_individual_nbody_gpu(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                &device_spt_arys); 
+                        } else {
+                            throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        }
+                    }
+
+                }
+            }
+        } else {
+            for( int r = 0; r < trotter_steps; r++) {
+                // First pass: forward
+                for (int i = 0; i < pool.terms().size(); ++i) {
+
+                    if (pool.device_vecs_populated()==false) {
+                        // no precomp provided
+                        if (data_type_ == "complex") {
+                            evolve_individual_nbody_gpu<PrecompTuple>(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                nullptr);
+                        } else if (data_type_ == "real") {
+                            evolve_individual_nbody_gpu<PrecompTupleReal>(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                nullptr);
+                        } else {
+                            throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        }
+                    } else {
+                        if (data_type_ == "complex") {
+                            const auto& device_spt_arys = pool.get_mu_tuple(i);
+                            evolve_individual_nbody_gpu(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                &device_spt_arys); 
+                        } else if (data_type_ == "real") {
+                            const auto& device_spt_arys = pool.get_mu_tuple_real(i);
+                            evolve_individual_nbody_gpu(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                &device_spt_arys); 
+                        } else {
+                            throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        }
+                    }
+
+                }
+
+                // Second pass: backward (reversed order)
+                for (int i = pool.terms().size() - 1; i >= 0; --i) {
+
+                    if (pool.device_vecs_populated()==false) {
+                        // no precomp provided
+                        if (data_type_ == "complex") {
+                            evolve_individual_nbody_gpu<PrecompTuple>(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                nullptr);
+                        } else if (data_type_ == "real") {
+                            evolve_individual_nbody_gpu<PrecompTupleReal>(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                nullptr);
+                        } else {
+                            throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        }
+                    } else {
+                        if (data_type_ == "complex") {
+                            const auto& device_spt_arys = pool.get_mu_tuple(i);
+                            evolve_individual_nbody_gpu(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                &device_spt_arys); 
+                        } else if (data_type_ == "real") {
+                            const auto& device_spt_arys = pool.get_mu_tuple_real(i);
+                            evolve_individual_nbody_gpu(
+                                prefactor * pool.terms()[i].first,
+                                pool.terms()[i].second,
+                                C_,
+                                antiherm,
+                                adjoint,
+                                &device_spt_arys); 
+                        } else {
+                            throw std::runtime_error("Unsupported data type in v5 evolution.");
+                        }
+                    }
+
+                }
+            }
+        }
+
+    } else {
+        throw std::runtime_error("Higher than 2nd order trotter not yet implemented"); 
     }
 
     timer_.acc_end("evolve_pool_trotter_gpu(outer)");
