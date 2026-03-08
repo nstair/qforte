@@ -1440,7 +1440,8 @@ class CUSVComputer:
         antiherm: bool = False,
         adjoint: bool = False,
     ) -> None:
-        raise NotImplementedError("CUSVComputer.apply_sqop_evolution(): stub.")
+        # TODO: ask Nick about this
+        self.evolve_individual_sqop_term(time, 1.0, sqop, antiherm, adjoint)
 
     def evolve_pool_trotter_basic(self, pool: Any, antiherm: bool = False, adjoint: bool = False) -> None:
         self.evolve_pool_trotter(pool, 1.0, 1, 1, antiherm, adjoint)

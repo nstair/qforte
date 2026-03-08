@@ -227,6 +227,18 @@ class UCCNVQE(UCCVQE):
                     percent = 100.0 * time / total_fqe_time if total_fqe_time > 0 else 0.0
                     print(f'  {name:40s} {time:12.6f} s  ({percent:5.1f}%)')
 
+        if self._cusv_timers is not None:
+            print('\n\n                ==> CUSV Profiling <==')
+            print('-----------------------------------------------------------')
+            sorted_timers = sorted(self._cusv_timers.items(), key=lambda x: x[1], reverse=True)
+            total_cusv_time = sum(self._cusv_timers.values())
+            print(f'Total CUSV time:                             {total_cusv_time:12.6f} s')
+            print('\nCUSV call breakdown (sorted by time):')
+            for name, time in sorted_timers:
+                if time > 0:
+                    percent = 100.0 * time / total_cusv_time if total_cusv_time > 0 else 0.0
+                    print(f'  {name:40s} {time:12.6f} s  ({percent:5.1f}%)')
+
         print("\n\n")
         print(self._timer)
 

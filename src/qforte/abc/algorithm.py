@@ -239,14 +239,15 @@ class Algorithm(ABC):
 
         if (computer_type == 'cusv'):
             if (apply_ham_as_tensor):
-                self._mo_oeis_np = system.mo_oeis_np 
-                self._mo_teis_np = system.mo_teis_np
+                # no tensor opperations for cusv, so throw error here
+                raise ValueError("CUSV computer type does not support apply_ham_as_tensor=True.")
                 
             # Initialize CUSV profiling timers
             import time
             self._cusv_timers = {
                 'hartree_fock': 0.0,
                 'evolve_pool_trotter_basic': 0.0,
+                'get_exp_val_opt': 0.0,
                 'get_state_deep': 0.0,
                 'set_state': 0.0,
                 'apply_tensor_spat_012bdy': 0.0,
@@ -287,6 +288,9 @@ class Algorithm(ABC):
 
         elif(computer_type=='fci_gpu'):
             self._computer_type = 'fci_gpu'
+
+        elif(computer_type=='cusv'):
+            self._computer_type = 'cusv'
         
         else:
             raise ValueError(f"Computer type must be fci or fock.")
@@ -491,7 +495,7 @@ class AnsatzAlgorithm(Algorithm):
         timer2.reset()
         if(self._computer_type == 'fock'):
             self._Nm = [len(operator.jw_transform().terms()) for _, operator in self._pool_obj]
-        elif self._computer_type in ['fci', 'fqe', 'fci_gpu']:
+        elif self._computer_type in ['fci', 'fqe', 'fci_gpu', 'cusv']:
             self._Nm = [0 for _, operator in self._pool_obj]
             print("\n ==> Warning: resource estimator needs to be implemented for fci computer type <==")
         else:
@@ -803,21 +807,8 @@ class AnsatzAlgorithm(Algorithm):
             adjoint=False)
         self._cusv_timers['evolve_pool_trotter_basic'] += self._cusv_time.time() - t0
         
-        if(self._apply_ham_as_tensor):
-            
-            t0 = self._cusv_time.time()
-            self._curr_energy = np.real(
-                qc.get_exp_val_tensor(
-                    self._zero_body_energy, 
-                    self._mo_oeis_np, 
-                    self._mo_teis_np, 
-                    )
-                )
-            self._cusv_timers['get_exp_val_tensor'] += self._cusv_time.time() - t0
-
-        else:   
-            t0 = self._cusv_time.time()
-            self._curr_energy = np.real(qc.get_exp_val_opt(self._sq_ham))
-            self._cusv_timers['get_exp_val_opt'] += self._cusv_time.time() - t0
+        t0 = self._cusv_time.time()
+        self._curr_energy = np.real(qc.get_exp_val_opt(self._sq_ham))
+        self._cusv_timers['get_exp_val_opt'] += self._cusv_time.time() - t0
 
         return self._curr_energy

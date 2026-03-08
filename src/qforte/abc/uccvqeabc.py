@@ -604,24 +604,14 @@ class UCCVQE(VQE, UCC):
         qc_sig.set_state(psi_i)
         self._cusv_timers['set_state'] += self._cusv_time.time() - t0
 
-        if(self._apply_ham_as_tensor):
-            t0 = self._cusv_time.time()
-            qc_sig.apply_tensor_spat_012bdy(
-                self._zero_body_energy, 
-                self._mo_oeis_np, 
-                self._mo_teis_np, 
-                )
-            self._cusv_timers['apply_tensor_spat_012bdy'] += self._cusv_time.time() - t0
-        else:
-            t0 = self._cusv_time.time()
-            qc_sig.apply_sqop(self._sq_ham)
-            self._cusv_timers['apply_sqop'] += self._cusv_time.time() - t0
+        t0 = self._cusv_time.time()
+        qc_sig.apply_sqop(self._sq_ham)
+        self._cusv_timers['apply_sqop'] += self._cusv_time.time() - t0
 
         mu = M-1
 
         # find <sing_N | K_N | psi_N>
         Kmu_prev = self._pool_obj[self._tops[mu]][1]
-
         Kmu_prev.mult_coeffs(self._pool_obj[self._tops[mu]][0])
 
         t0 = self._cusv_time.time()

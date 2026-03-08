@@ -55,31 +55,31 @@ alg_fci.run(
 timer.record("run alg fci")
 
 timer.reset()
-alg_fqe = qf.UCCNVQE(
+alg_cusv = qf.UCCNVQE(
     mol,
-    apply_ham_as_tensor=True,
-    computer_type = 'fqe',
+    apply_ham_as_tensor=False,
+    computer_type = 'cusv',
     verbose=False)
-timer.record("alg setup fqe")
+timer.record("alg setup cusv")
 
 Eo_fci_comp = alg_fci.get_gs_energy()
 
 
 timer.reset()
-alg_fqe.run(
+alg_cusv.run(
     opt_thresh=1.0e-4, 
     pool_type='SD',
     opt_maxiter=20,
     )
-timer.record("run alg fqe")
+timer.record("run alg cusv")
 
-Eo_fqe_comp = alg_fqe.get_gs_energy()
+Eo_cusv_comp = alg_cusv.get_gs_energy()
 
 print("\n Check Final Energy \n")
 print("===========================")
 print(f' Efci_comp:  {Eo_fci_comp:+12.10f}')
-print(f' Efqe_comp:  {Eo_fqe_comp:+12.10f}')
-print(f' E diff:     {Eo_fci_comp - Eo_fqe_comp:+12.10f}')
+print(f' Ecusv_comp:  {Eo_cusv_comp:+12.10f}')
+print(f' E diff:     {Eo_fci_comp - Eo_cusv_comp:+12.10f}')
 
 
 # print(f' Efci:    {mol.fci_energy:+12.10f}')
