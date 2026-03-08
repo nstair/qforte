@@ -610,7 +610,10 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("adjoint") = false
             )
         .def("state_vector_dot_gpu", &FCIComputerGPU::state_vector_dot_gpu)
+        .def("dot_sqop_gpu", &FCIComputerGPU::dot_sqop_gpu)
         .def("set_state_cpu", &FCIComputerGPU::set_state_cpu)
+        .def("set_state_from_other_cpu", &FCIComputerGPU::set_state_from_other_cpu)
+        .def("set_state_from_other_gpu", &FCIComputerGPU::set_state_from_other_gpu)
         .def("set_state", &FCIComputerGPU::set_state_cpu)  // alias for compatibility
         .def("get_state", &FCIComputerGPU::get_state)
         .def("get_state_deep", &FCIComputerGPU::get_state_deep)

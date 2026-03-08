@@ -317,6 +317,15 @@ class FCIComputerGPU {
       TensorGPU& Cin,
       TensorGPU& Cout);
 
+    /// Fused apply+dot: accumulates conj(sigma[target])*coeff*parity*psi[source] into
+    /// the device scalar d_accum.  Neither psi nor sigma is ever modified.
+    /// d_accum must already be zeroed on the device before the first call for a given sqop.
+    void dot_individual_sqop_term_gpu(
+      const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
+      const TensorGPU& psi,
+      const TensorGPU& sigma,
+      cuDoubleComplex* d_accum);
+
     void apply_sqop_gpu(const SQOperator& sqop);
 
     void apply_diagonal_of_sqop_cpu(
@@ -353,6 +362,12 @@ class FCIComputerGPU {
     }
 
     std::complex<double> state_vector_dot_gpu(FCIComputerGPU& other) const;
+
+    /// Compute <sigma | sqop | this> without modifying this->C_.
+    /// All computation is performed on a temporary GPU buffer, so the current
+    /// state vector is not overwritten and there is no need for an external
+    /// psi_i save/restore cycle.
+    std::complex<double> dot_sqop_gpu(FCIComputerGPU& sigma, const SQOperator& sqop);
 
     /// return a tensor of the coeficients
     TensorGPU get_state() const { return C_; }
@@ -394,6 +409,10 @@ class FCIComputerGPU {
     void set_state_cpu(const TensorGPU& other_state);
 
     void set_state_gpu(const TensorGPU& other_state);
+
+    void set_state_from_other_cpu(const FCIComputerGPU& other);
+
+    void set_state_from_other_gpu(const FCIComputerGPU& other);
 
     void set_state_from_tensor_cpu(const Tensor& other_state);
 

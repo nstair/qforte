@@ -149,6 +149,118 @@ void apply_individual_nbody1_accumulate_wrapper(
 }
 
 // ==============================================
+// Fused apply+dot kernel and wrapper (Complex)
+// Computes <sigma | K | psi> as a scalar reduction into d_accum.
+// Neither d_psi nor d_sigma is ever modified.
+// ==============================================
+
+/// Per-thread contribution: conj(sigma[target]) * coeff * parity_a * parity_b * psi[source]
+/// Shared-memory block reduction followed by one atomicAdd per block to d_accum.
+__global__ void dot_individual_nbody1_kernel(
+    cuDoubleComplex coeff,
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb,
+    int nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    cuDoubleComplex* d_accum)
+{
+    // Shared memory: first half = real parts, second half = imaginary parts.
+    // Allocated as 2 * blockDim.x * blockDim.y doubles by the host.
+    extern __shared__ double sh[];
+    int block_threads = blockDim.x * blockDim.y;
+    double* sh_real = sh;
+    double* sh_imag = sh + block_threads;
+
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;  // alpha-mapping index
+    int idy = blockIdx.y * blockDim.y + threadIdx.y;  // beta-mapping index
+    int tid = threadIdx.y * blockDim.x + threadIdx.x;
+
+    double acc_re = 0.0, acc_im = 0.0;
+
+    if (idx < targeta_size && idy < targetb_size) {
+        // term = coeff * parity_a[idx] * parity_b[idy] * psi[source_a*nb + source_b]
+        cuDoubleComplex pref = cuCmul(coeff, d_paritya[idx]);
+        cuDoubleComplex term = cuCmul(pref, d_parityb[idy]);
+        term = cuCmul(term, d_psi[d_sourcea[idx] * nbeta_strs_ + d_sourceb[idy]]);
+
+        // contribution = conj(sigma[target_a*nb + target_b]) * term
+        int target_idx = d_targeta[idx] * nbeta_strs_ + d_targetb[idy];
+        cuDoubleComplex val = cuCmul(cuConj(d_sigma[target_idx]), term);
+        acc_re = val.x;
+        acc_im = val.y;
+    }
+
+    sh_real[tid] = acc_re;
+    sh_imag[tid] = acc_im;
+    __syncthreads();
+
+    // Parallel reduction within the block.
+    for (int s = block_threads / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            sh_real[tid] += sh_real[tid + s];
+            sh_imag[tid] += sh_imag[tid + s];
+        }
+        __syncthreads();
+    }
+
+    // One atomic write per block into the global accumulator.
+    if (tid == 0) {
+        atomicAdd_double(&d_accum->x, sh_real[0]);
+        atomicAdd_double(&d_accum->y, sh_imag[0]);
+    }
+}
+
+extern "C" void dot_individual_nbody1_wrapper(
+    cuDoubleComplex coeff,
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb,
+    int nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    cuDoubleComplex* d_accum)
+{
+    dim3 blockSize(16, 16);  // 256 threads per block
+    dim3 gridSize(
+        (targeta_size + blockSize.x - 1) / blockSize.x,
+        (targetb_size + blockSize.y - 1) / blockSize.y);
+
+    // Two arrays of 256 doubles (real + imag) in shared memory.
+    size_t sharedMemSize = 2 * blockSize.x * blockSize.y * sizeof(double);
+
+    dot_individual_nbody1_kernel<<<gridSize, blockSize, sharedMemSize>>>(
+        coeff, d_psi, d_sigma,
+        d_sourcea, d_targeta, d_paritya,
+        d_sourceb, d_targetb, d_parityb,
+        nbeta_strs_, targeta_size, targetb_size, d_accum);
+
+    // Kernels across SQOp terms are queued in the default stream and execute
+    // in-order; one cudaDeviceSynchronize in the caller (dot_sqop_gpu) suffices.
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_individual_nbody1_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_individual_nbody1_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ==============================================
 // Scale elements kernel and wrapper (Complex)
 // ==============================================
 

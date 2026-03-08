@@ -41,6 +41,43 @@ extern "C" void apply_individual_nbody1_accumulate_wrapper(
     int tensor_size);
 
 // ==============================================
+// Fused apply+dot kernel and wrapper (Complex)
+// Computes <sigma | K | psi> as a scalar reduction.
+// Neither d_psi nor d_sigma is modified.
+// d_accum must be a device pointer to a zeroed cuDoubleComplex.
+// ==============================================
+
+__global__ void dot_individual_nbody1_kernel(
+    cuDoubleComplex coeff,
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb,
+    int nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    cuDoubleComplex* d_accum);
+
+extern "C" void dot_individual_nbody1_wrapper(
+    cuDoubleComplex coeff,
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb,
+    int nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    cuDoubleComplex* d_accum);
+
+// ==============================================
 // Scale elements kernel and wrapper (Complex)
 // ==============================================
 

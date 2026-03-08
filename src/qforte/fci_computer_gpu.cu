@@ -2936,6 +2936,99 @@ std::complex<double> FCIComputerGPU::state_vector_dot_gpu(FCIComputerGPU& other)
     return C_.vector_dot(other.C_);
 }
 
+void FCIComputerGPU::dot_individual_sqop_term_gpu(
+    const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
+    const TensorGPU& psi,
+    const TensorGPU& sigma,
+    cuDoubleComplex* d_accum)
+{
+    // Identical alpha/beta index splitting as apply_individual_sqop_term_gpu.
+    std::vector<int> crea, anna, creb, annb;
+
+    for (size_t i = 0; i < std::get<1>(term).size(); i++) {
+        if (std::get<1>(term)[i] % 2 == 0)
+            crea.push_back(static_cast<int>(std::floor(std::get<1>(term)[i] / 2)));
+        else
+            creb.push_back(static_cast<int>(std::floor(std::get<1>(term)[i] / 2)));
+    }
+    for (size_t i = 0; i < std::get<2>(term).size(); i++) {
+        if (std::get<2>(term)[i] % 2 == 0)
+            anna.push_back(static_cast<int>(std::floor(std::get<2>(term)[i] / 2)));
+        else
+            annb.push_back(static_cast<int>(std::floor(std::get<2>(term)[i] / 2)));
+    }
+
+    if (std::get<1>(term).size() != std::get<2>(term).size())
+        throw std::invalid_argument("Each term must have same number of annihilators and creators");
+
+    std::vector<size_t> ops1(std::get<1>(term));
+    std::vector<size_t> ops2(std::get<2>(term));
+    ops1.insert(ops1.end(), ops2.begin(), ops2.end());
+    int nswaps = parity_sort(ops1);
+
+    std::complex<double> coeff = std::pow(-1, nswaps) * std::get<0>(term);
+
+    // Build alpha-spin mapping into the existing member buffers.
+    int counta = 0, countb = 0;
+    graph_.make_mapping_each_otf_gpu_complex(
+        true, crea, anna, &counta,
+        sourcea_gpu_, targeta_gpu_, paritya_gpu_);
+    if (counta == 0) return;
+
+    graph_.make_mapping_each_otf_gpu_complex(
+        false, creb, annb, &countb,
+        sourceb_gpu_, targetb_gpu_, parityb_gpu_);
+    if (countb == 0) return;
+
+    cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
+
+    // Launch the fused dot kernel — no output tensor, accumulates into d_accum.
+    dot_individual_nbody1_wrapper(
+        cu_coeff,
+        thrust::raw_pointer_cast(psi.read_d_data().data()),
+        thrust::raw_pointer_cast(sigma.read_d_data().data()),
+        thrust::raw_pointer_cast(sourcea_gpu_.data()),
+        thrust::raw_pointer_cast(targeta_gpu_.data()),
+        thrust::raw_pointer_cast(paritya_gpu_.data()),
+        thrust::raw_pointer_cast(sourceb_gpu_.data()),
+        thrust::raw_pointer_cast(targetb_gpu_.data()),
+        thrust::raw_pointer_cast(parityb_gpu_.data()),
+        nbeta_strs_,
+        counta,
+        countb,
+        d_accum);
+}
+
+/// Compute <sigma | sqop | (*this)> without modifying either state vector.
+/// A single device scalar is allocated (zeroed) once; all SQOp terms accumulate
+/// into it via the fused dot kernel.  One sync at the end brings the result back.
+std::complex<double> FCIComputerGPU::dot_sqop_gpu(FCIComputerGPU& sigma, const SQOperator& sqop)
+{
+    gpu_error();
+    sigma.gpu_error();
+
+    // Single device accumulator, zeroed once for the entire sqop sum.
+    thrust::device_vector<cuDoubleComplex> d_accum_vec(1, make_cuDoubleComplex(0.0, 0.0));
+    cuDoubleComplex* d_accum = thrust::raw_pointer_cast(d_accum_vec.data());
+
+    for (const auto& term : sqop.terms()) {
+        if (std::abs(std::get<0>(term)) > compute_threshold_) {
+            // C_ is the ket; sigma.C_ is the bra.  Neither is touched.
+            dot_individual_sqop_term_gpu(term, C_, sigma.C_, d_accum);
+        }
+    }
+
+    // Final sync is a no-op (wrapper already synced), kept for safety.
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_sqop_gpu sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+
+    cuDoubleComplex res = d_accum_vec[0];
+    return std::complex<double>(res.x, res.y);
+}
+
 void FCIComputerGPU::copy_state_into(TensorGPU& tensor) const {
     tensor.shape_error(C_.shape());
     gpu_error();
@@ -2973,6 +3066,20 @@ void FCIComputerGPU::set_state_gpu(const TensorGPU& other_state)
     gpu_error();
     other_state.gpu_error();
     C_.copy_in_gpu(other_state);
+}
+
+void FCIComputerGPU::set_state_from_other_cpu(const FCIComputerGPU& other)
+{
+    cpu_error();
+    other.cpu_error();
+    C_.copy_in(other.C_);
+}
+
+void FCIComputerGPU::set_state_from_other_gpu(const FCIComputerGPU& other)
+{
+    gpu_error();
+    other.gpu_error();
+    C_.copy_in_gpu(other.C_);
 }
 
 void FCIComputerGPU::set_state_from_tensor_cpu(const Tensor& other_state)

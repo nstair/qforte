@@ -95,3 +95,36 @@ print(f' E diff:     {Eo_fci_comp - Eo_fqe_comp:+12.10f}')
 
 print("\n Total Script Time \n")
 print(timer)
+
+# timings pre fused dot_sqop
+
+#                 ==> GPU Profiling <==
+# -----------------------------------------------------------
+# Total GPU time:                                 37.229837 s
+
+# GPU call breakdown (sorted by time):
+#   apply_sqop_gpu                              12.962960 s  ( 34.8%)
+#   get_state_deep                              11.663313 s  ( 31.3%)
+#   apply_sqop_evolution_gpu                     4.716158 s  ( 12.7%)
+#   get_exp_val_tensor_gpu                       2.684057 s  (  7.2%)
+#   apply_tensor_spat_012bdy_gpu                 2.458341 s  (  6.6%)
+#   vector_dot                                   1.270026 s  (  3.4%)
+#   evolve_pool_trotter_basic_gpu                0.813873 s  (  2.2%)
+#   set_state_gpu                                0.659007 s  (  1.8%)
+#   hartree_fock_gpu                             0.002102 s  (  0.0%)
+
+
+# timings post fused dot_sqop
+
+#                 ==> GPU Profiling <==
+# -----------------------------------------------------------
+# Total GPU time:                                 13.699297 s
+
+# GPU call breakdown (sorted by time):
+#   apply_sqop_evolution_gpu                     3.894527 s  ( 28.4%)
+#   dot_sqop_gpu                                 3.695037 s  ( 27.0%)
+#   get_exp_val_tensor_gpu                       2.862963 s  ( 20.9%)
+#   apply_tensor_spat_012bdy_gpu                 2.457315 s  ( 17.9%)
+#   evolve_pool_trotter_basic_gpu                0.786814 s  (  5.7%)
+#   hartree_fock_gpu                             0.001999 s  (  0.0%)
+#   set_state_from_other_gpu                     0.000641 s  (  0.0%)

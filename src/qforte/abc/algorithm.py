@@ -221,11 +221,13 @@ class Algorithm(ABC):
             self._gpu_timers = {
                 'hartree_fock_gpu': 0.0,
                 'to_gpu': 0.0,
+                'set_state_from_other_gpu': 0.0,
                 'evolve_pool_trotter_basic_gpu': 0.0,
                 'get_state_deep': 0.0,
                 'set_state_gpu': 0.0,
                 'apply_tensor_spat_012bdy_gpu': 0.0,
                 'apply_sqop_gpu': 0.0,
+                'dot_sqop_gpu': 0.0,
                 'apply_sqop_evolution_gpu': 0.0,
                 'get_exp_val_tensor_gpu': 0.0,
                 'vector_dot': 0.0
@@ -234,7 +236,29 @@ class Algorithm(ABC):
         else:
             self._gpu_timers = None
             self._gpu_time = None
+
+        if (computer_type == 'cusv'):
+            if (apply_ham_as_tensor):
+                self._mo_oeis_np = system.mo_oeis_np 
+                self._mo_teis_np = system.mo_teis_np
                 
+            # Initialize CUSV profiling timers
+            import time
+            self._cusv_timers = {
+                'hartree_fock': 0.0,
+                'evolve_pool_trotter_basic': 0.0,
+                'get_state_deep': 0.0,
+                'set_state': 0.0,
+                'apply_tensor_spat_012bdy': 0.0,
+                'apply_sqop': 0.0,
+                'apply_sqop_evolution': 0.0,
+                'get_exp_val_tensor': 0.0,
+                'vector_dot': 0.0
+            }
+            self._cusv_time = time
+        else:
+            self._cusv_timers = None
+            self._cusv_time = None
 
         if len(self._qb_ham.terms()) > 0 and self._qb_ham.num_qubits() != self._nqb:
             raise ValueError(f"The reference has {self._nqb} qubits, but the Hamiltonian has {self._qb_ham.num_qubits()}. This is inconsistent.")
@@ -559,6 +583,8 @@ class AnsatzAlgorithm(Algorithm):
             return self.energy_feval_fqe(params)
         elif(self._computer_type == 'fci_gpu'):
             return self.energy_feval_fci_gpu(params)
+        elif(self._computer_type == 'cusv'):
+            return self.energy_feval_cusv(params)
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
 
@@ -646,14 +672,14 @@ class AnsatzAlgorithm(Algorithm):
         t0 = self._fqe_time.time()
         qc.hartree_fock()
         self._fqe_timers['hartree_fock'] += self._fqe_time.time() - t0
-        state_norm_hf = np.linalg.norm(qc.get_state())
+        # state_norm_hf = np.linalg.norm(qc.get_state())
         # print(f"[FQE] After HF: state norm = {state_norm_hf:.12f}")
 
         qc.evolve_pool_trotter_basic(
             temp_pool,
             antiherm=True,
             adjoint=False)
-        state_norm_evolved = np.linalg.norm(qc.get_state())
+        # state_norm_evolved = np.linalg.norm(qc.get_state())
         # print(f"[FQE] After evolve_pool: state norm = {state_norm_evolved:.12f}")
         
         if(self._apply_ham_as_tensor):
@@ -748,4 +774,50 @@ class AnsatzAlgorithm(Algorithm):
             else:   
                 self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
         
+
+        return self._curr_energy
+    
+    def energy_feval_cusv(self, params):
+        if not self._ref_from_hf:
+            raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
+        
+        temp_pool = qforte.SQOpPool()
+
+        # NICK: Write a 'updatte_coeffs' type fucntion for the op-pool.
+        for param, top in zip(params, self._tops):
+            temp_pool.add(param, self._pool_obj[top][1])
+        
+        qc = qforte.CUSVComputer(
+            self._nel, 
+            self._2_spin, 
+            self._norb)
+        
+        t0 = self._cusv_time.time()
+        qc.hartree_fock()
+        self._cusv_timers['hartree_fock'] += self._cusv_time.time() - t0
+
+        t0 = self._cusv_time.time()
+        qc.evolve_pool_trotter_basic(
+            temp_pool,
+            antiherm=True,
+            adjoint=False)
+        self._cusv_timers['evolve_pool_trotter_basic'] += self._cusv_time.time() - t0
+        
+        if(self._apply_ham_as_tensor):
+            
+            t0 = self._cusv_time.time()
+            self._curr_energy = np.real(
+                qc.get_exp_val_tensor(
+                    self._zero_body_energy, 
+                    self._mo_oeis_np, 
+                    self._mo_teis_np, 
+                    )
+                )
+            self._cusv_timers['get_exp_val_tensor'] += self._cusv_time.time() - t0
+
+        else:   
+            t0 = self._cusv_time.time()
+            self._curr_energy = np.real(qc.get_exp_val_opt(self._sq_ham))
+            self._cusv_timers['get_exp_val_opt'] += self._cusv_time.time() - t0
+
         return self._curr_energy
