@@ -19,8 +19,8 @@ geom = [
     ('H', (0., 0.,12.0)),
     ('H', (0., 0.,13.0)),
     ('H', (0., 0.,14.0)),
-    ('H', (0., 0.,15.0)),
-    ('H', (0., 0.,16.0)),
+    # ('H', (0., 0.,15.0)),
+    # ('H', (0., 0.,16.0)),
     # ('H', (0., 0.,17.0)),
     # ('H', (0., 0.,18.0)),
     ]
@@ -56,12 +56,15 @@ print(f" nel:       {nel}")
 # fci_comp1 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 # fci_comp2 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 
+data_type = "real"
+# data_type = "complex"
+
 fci_comp_thrust = qf.FCIComputerGPU(
     nel=nel, 
     sz=sz, 
     norb=norb,
     on_gpu=False,
-    data_type="real")
+    data_type=data_type)
 
 # reference = 'random'
 reference = 'hf'
@@ -99,10 +102,10 @@ sqham = mol.sq_hamiltonian
 
 timer.reset()
 
-sd_gpu = qf.SQOpPoolGPU(data_type="real")
+sd_gpu = qf.SQOpPoolGPU(data_type=data_type)
 sd_gpu.set_orb_spaces(ref)
-# sd_gpu.fill_pool("SD")
-sd_gpu.fill_pool_kUpCCGSD(1)
+sd_gpu.fill_pool("SD")
+# sd_gpu.fill_pool_kUpCCGSD(2)
 
 
 fci_comp_thrust.populate_index_arrays_for_pool_evo(sd_gpu)

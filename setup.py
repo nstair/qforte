@@ -87,7 +87,10 @@ class CMakeBuild(build_ext):
                       '-DPYTHON_EXECUTABLE=' + sys.executable] #  + ext.cmake_args # Last bit is crucial here
 
         # Check for CUDA support (defaults to OFF, can be enabled via environment variable)
-        enable_cuda = os.environ.get('ENABLE_CUDA', '0').lower() not in ('0', 'false', 'no', 'off')
+        cuda_env_value = os.environ.get('ENABLE_CUDA', '0')
+        print(f"DEBUG: ENABLE_CUDA environment variable = '{cuda_env_value}'")
+        enable_cuda = cuda_env_value.lower() not in ('0', 'false', 'no', 'off')
+        print(f"DEBUG: enable_cuda evaluated to {enable_cuda}")
         if enable_cuda:
             print("Building with CUDA support enabled")
             cmake_args.append('-DENABLE_CUDA=ON')
