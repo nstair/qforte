@@ -56,12 +56,15 @@ print(f" nel:       {nel}")
 fci_comp1 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 # fci_comp2 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 
+data_type = "real"
+# data_type = "complex"
+
 fci_comp_thrust = qf.FCIComputerGPU(
     nel=nel, 
     sz=sz, 
     norb=norb,
     on_gpu=False,
-    data_type="real")
+    data_type=data_type)
 
 # reference = 'random'
 reference = 'hf'
@@ -99,7 +102,7 @@ sd_pool.fill_pool("SD")
 
 timer.reset()
 
-sd_gpu = qf.SQOpPoolGPU(data_type="real")
+sd_gpu = qf.SQOpPoolGPU(data_type=data_type)
 sd_gpu.set_orb_spaces(ref)
 sd_gpu.fill_pool("SD")
 # sd_gpu.fill_pool_kUpCCGSD(1)

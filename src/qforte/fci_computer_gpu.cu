@@ -1445,20 +1445,33 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
             if (crea.size() == 0 && creb.size() > 0) {
                 timer_.acc_begin("===>hard nbody given kernel - col case");
 
-                inplace_givens_update_real_tiled_wrapper(
-                    32,
+                // inplace_givens_update_real_tiled_wrapper(
+                //     32,
+                //     thrust::raw_pointer_cast(Cout.d_re_data().data()),
+                //     thrust::raw_pointer_cast(std::get<2>(*precomp).data()), // sourcea1 (dag)
+                //     thrust::raw_pointer_cast(std::get<3>(*precomp).data()), // targeta1
+                //     thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // paritya1
+                //     thrust::raw_pointer_cast(std::get<7>(*precomp).data()), // paritya2
+                //     thrust::raw_pointer_cast(std::get<4>(*precomp).data()),  // sourceb1 (dag)
+                //     thrust::raw_pointer_cast(std::get<5>(*precomp).data()), // targetb1
+                //     thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // parityb1
+                //     thrust::raw_pointer_cast(std::get<9>(*precomp).data()), // parityb2
+                //     std::get<2>(*precomp).size(), // nalpha
+                //     std::get<4>(*precomp).size(), // nb
+                //     nbeta_strs_,
+                //     factor.real(),
+                //     acc_coeff1.real(),
+                //     acc_coeff2.real());
+
+                inplace_givens_update_real_cols_wrapper(
                     thrust::raw_pointer_cast(Cout.d_re_data().data()),
-                    thrust::raw_pointer_cast(std::get<2>(*precomp).data()), // sourcea1 (dag)
-                    thrust::raw_pointer_cast(std::get<3>(*precomp).data()), // targeta1
-                    thrust::raw_pointer_cast(std::get<6>(*precomp).data()), // paritya1
-                    thrust::raw_pointer_cast(std::get<7>(*precomp).data()), // paritya2
-                    thrust::raw_pointer_cast(std::get<4>(*precomp).data()),  // sourceb1 (dag)
-                    thrust::raw_pointer_cast(std::get<5>(*precomp).data()), // targetb1
-                    thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // parityb1
-                    thrust::raw_pointer_cast(std::get<9>(*precomp).data()), // parityb2
-                    std::get<2>(*precomp).size(), // nalpha
-                    std::get<4>(*precomp).size(), // nb
-                    nbeta_strs_,
+                    thrust::raw_pointer_cast(std::get<4>(*precomp).data()),  // const int* sourceb1 (dag)
+                    thrust::raw_pointer_cast(std::get<5>(*precomp).data()),  // const int* targetb1
+                    thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // const double* parityb1
+                    thrust::raw_pointer_cast(std::get<9>(*precomp).data()),  // const double* parityb2
+                    std::get<4>(*precomp).size(),                            // nb
+                    static_cast<long long>(nalfa_strs_),
+                    static_cast<long long>(nbeta_strs_),
                     factor.real(),
                     acc_coeff1.real(),
                     acc_coeff2.real());

@@ -229,6 +229,33 @@ extern "C" void inplace_givens_update_real_rows_wrapper(
     double acc_coeff1,
     double acc_coeff2);
 
+template <int ROWS_PER_THREAD>
+__global__ void inplace_givens_update_cols_kernel_real(
+    double* __restrict__ d_Cout,
+    const int* __restrict__ sourceb1,      // [nb]
+    const int* __restrict__ targetb1,      // [nb]
+    const double* __restrict__ parityb1,   // [nb]  (g† leg, col)
+    const double* __restrict__ parityb2,   // [nb]  (g  leg, col)
+    int nb,
+    long long nalpha_strs_,                // number of rows
+    long long nbeta_strs_,                 // number of columns
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
+extern "C" void inplace_givens_update_real_cols_wrapper(
+    double* d_Cout,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nb,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
 __global__ void inplace_givens_update_real_tiled(
     double* __restrict__ d_Cout,
     const int* __restrict__ sourcea1,

@@ -777,6 +777,129 @@ extern "C" void inplace_givens_update_real_rows_wrapper(
     }
 }
 
+template <int ROWS_PER_THREAD>
+__global__ void inplace_givens_update_cols_kernel_real(
+    double* __restrict__ d_Cout,
+    const int* __restrict__ sourceb1,      // [nb]
+    const int* __restrict__ targetb1,      // [nb]
+    const double* __restrict__ parityb1,   // [nb]
+    const double* __restrict__ parityb2,   // [nb]
+    int nb,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2)
+{
+    const int ib = blockIdx.y;   // beta-pair index
+    if (ib >= nb) return;
+
+    // Pair-scoped data: one read per block
+    __shared__ int s_sb1, s_tb1;
+    __shared__ double s_pb1, s_pb2;
+
+    if (threadIdx.x == 0) {
+        s_sb1 = sourceb1[ib];
+        s_tb1 = targetb1[ib];
+        s_pb1 = parityb1[ib];
+        s_pb2 = parityb2[ib];
+    }
+    __syncthreads();
+
+    const int sb1 = s_sb1;
+    const int tb1 = s_tb1;
+
+    const double a_col = acc_coeff2 * s_pb2;
+    const double b_col = acc_coeff1 * s_pb1;
+
+    // Tile rows across grid.x, and give each thread multiple rows
+    long long row0 =
+        static_cast<long long>(blockIdx.x) * (blockDim.x * ROWS_PER_THREAD)
+        + threadIdx.x;
+
+    const long long grid_stride =
+        static_cast<long long>(gridDim.x) * (blockDim.x * ROWS_PER_THREAD);
+
+    for (long long row = row0; row < nalpha_strs_; row += grid_stride) {
+
+        #pragma unroll
+        for (int k = 0; k < ROWS_PER_THREAD; ++k) {
+            const long long r = row + static_cast<long long>(k) * blockDim.x;
+            if (r < nalpha_strs_) {
+                const long long base  = r * nbeta_strs_;
+                const long long idx_u = base + sb1;
+                const long long idx_v = base + tb1;
+
+                const double u0 = d_Cout[idx_u];
+                const double v0 = d_Cout[idx_v];
+                
+                d_Cout[idx_u] = factor * u0 + a_col * v0;
+                d_Cout[idx_v] = factor * v0 + b_col * u0;
+            }
+        }
+    }
+}
+
+extern "C" void inplace_givens_update_real_cols_wrapper(
+    double* d_Cout,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nb,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2)
+{
+    if (nb == 0 || nalpha_strs_ == 0 || nbeta_strs_ == 0) return;
+
+    // Good default for a latency-bound strided kernel.
+    constexpr int threads = 256;
+    constexpr int rows_per_thread = 4;
+
+    const long long rows_per_block =
+        static_cast<long long>(threads) * rows_per_thread;
+
+    long long grid_x_ll =
+        (nalpha_strs_ + rows_per_block - 1) / rows_per_block;
+
+    // Clamp to CUDA's 1D grid-x limit for ordinary launches.
+    int grid_x = static_cast<int>(std::min<long long>(grid_x_ll, 65535));
+
+    dim3 block(threads);
+    dim3 grid(grid_x, nb);
+
+    inplace_givens_update_cols_kernel_real<rows_per_thread><<<grid, block>>>(
+        d_Cout,
+        sourceb1,
+        targetb1,
+        parityb1,
+        parityb2,
+        nb,
+        nalpha_strs_,
+        nbeta_strs_,
+        factor,
+        acc_coeff1,
+        acc_coeff2);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Failed to launch inplace_givens_update_cols_kernel_real ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("inplace_givens_update_cols_kernel_real launch failed");
+    }
+
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "inplace_givens_update_cols_kernel_real execution failed ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("inplace_givens_update_cols_kernel_real execution failed");
+    }
+}
+
+
 template<int BX>  // number of column-pairs handled per block (e.g., 32 or 64)
 __global__ void inplace_givens_update_real_tiled(
     double* __restrict__ d_Cout,
