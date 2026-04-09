@@ -682,7 +682,7 @@ extern "C" void inplace_givens_update_complex_tiled_wrapper(
 // ==============================================
 
 /// One block processes one (sa1, ta1) pair; threads iterate j across nbeta_strs_.
-/// pa1, pa2 are row-scoped real parities/scalings (often ±1).
+/// pa1, pa2 are row-scoped real parities (±1).
 __global__ void inplace_givens_update_rows_kernel_real(
     double* __restrict__ d_Cout,
     const int* __restrict__ sourcea1,      // [na]
@@ -1104,6 +1104,164 @@ extern "C" void inplace_givens_update_real_tiled_wrapper(
                 factor, acc_coeff1, acc_coeff2);
             break;
     }
+}
+
+// ==============================================
+// Beta-only row-major tiled Givens kernel (Real)
+//
+// Memory layout rationale
+// -----------------------
+// d_Cout is row-major: element (row, col) lives at row * nbeta_strs_ + col.
+//
+// OLD column kernel: one block owns one beta pair; threads vary over rows.
+//   Lane l touches row_base + l*nbeta_strs_ + sb1  → stride = nbeta_strs_ across lanes.
+//   On a row-major matrix this is the worst possible access pattern for coalescing.
+//
+// THIS kernel: threadIdx.x selects a beta column-pair; threadIdx.y selects a row.
+//   All threads in a warp share the same row and touch adjacent columns:
+//     base = row * nbeta_strs_;
+//     lane l accesses base + sourceb1[ib0 + l]
+//   When the sourceb1 array is sorted, neighbouring lanes access nearly-contiguous
+//   columns → close to unit-stride, coalesced global loads/stores.
+//
+// Launch shape: block(BX, AY), grid((nb+BX-1)/BX, (na+AY-1)/AY)
+//   BX = 32  → one warp in x (ideal for row-major coalescing)
+//   AY = 8   → 256 threads per block (good occupancy target)
+//   Grid produces ceil(nb/32) * ceil(na/8) blocks, which is much more than
+//   the column kernel's nb * ceil(na/1024) blocks when nb is small.
+// ==============================================
+
+template<int BX, int AY>
+__global__ void inplace_givens_update_beta_only_rowmajor_real(
+    double* __restrict__ d_Cout,
+    const int* __restrict__ sourceb1,   // [nb]
+    const int* __restrict__ targetb1,   // [nb]
+    const double* __restrict__ parityb1, // [nb]  g† parity
+    const double* __restrict__ parityb2, // [nb]  g  parity
+    int nb,
+    int nalpha_strs_,
+    int nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2)
+{
+    static_assert(BX % 32 == 0, "BX must be a warp multiple for coalescing");
+
+    const int tx  = threadIdx.x;          // beta-pair lane within block
+    const int ty  = threadIdx.y;          // row lane within block
+
+    const int ib  = blockIdx.x * BX + tx; // global beta-pair index
+    const int row = blockIdx.y * AY + ty; // global alpha-row index
+
+    // ---- Shared memory: BX beta-pair metadata --------------------------------
+    // Only row ty==0 loads; all rows reuse it.  One __syncthreads() is enough.
+    __shared__ int    s_sb1[BX], s_tb1[BX];
+    __shared__ double s_a[BX],   s_b[BX];  // pre-scaled parity products
+
+    if (ty == 0) {
+        if (ib < nb) {
+            s_sb1[tx] = sourceb1[ib];
+            s_tb1[tx] = targetb1[ib];
+            // absorbed scalars: avoids two multiplies per thread in the hot path
+            s_a[tx]   = acc_coeff2 * parityb2[ib];  // coefficient on v0 → u
+            s_b[tx]   = acc_coeff1 * parityb1[ib];  // coefficient on u0 → v
+        } else {
+            // Out-of-range lane — init to harmless sentinel (will be guarded below)
+            s_sb1[tx] = 0;
+            s_tb1[tx] = 0;
+            s_a[tx]   = 0.0;
+            s_b[tx]   = 0.0;
+        }
+    }
+    __syncthreads();
+
+    // ---- Hot path: row-local read-modify-write -------------------------------
+    // All active threads in a warp share the same `row`, so
+    //   base + s_sb1[tx]  for consecutive tx values  → adjacent column accesses.
+    // When sourceb1 is sorted this collapses to one or two 32-byte cache lines.
+    if (row < nalpha_strs_ && ib < nb) {
+        const long long base = (long long)row * nbeta_strs_;
+
+        const double u0 = d_Cout[base + s_sb1[tx]];
+        const double v0 = d_Cout[base + s_tb1[tx]];
+
+        d_Cout[base + s_sb1[tx]] = fma(s_a[tx], v0, factor * u0);
+        d_Cout[base + s_tb1[tx]] = fma(s_b[tx], u0, factor * v0);
+    }
+}
+
+// Internal template launcher
+template<int BX, int AY>
+static void launch_inplace_givens_update_beta_only_rowmajor_real(
+    double* d_Cout,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nb,
+    int nalpha_strs_,
+    int nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2)
+{
+    if (nb == 0 || nalpha_strs_ == 0 || nbeta_strs_ == 0) return;
+
+    // grid.y can be at most 65535 for ordinary launches; each block covers AY rows.
+    // With AY=8, this supports up to 65535*8 = 524280 rows (sufficient for FCI).
+    const int grid_x = (nb           + BX - 1) / BX;
+    const int grid_y = (nalpha_strs_ + AY - 1) / AY;
+
+    dim3 block(BX, AY);                  // BX * AY threads, e.g. 32*8 = 256
+    dim3 grid(grid_x, grid_y);
+
+    inplace_givens_update_beta_only_rowmajor_real<BX, AY><<<grid, block>>>(
+        d_Cout,
+        sourceb1, targetb1, parityb1, parityb2,
+        nb, nalpha_strs_, nbeta_strs_,
+        factor, acc_coeff1, acc_coeff2);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Failed to launch inplace_givens_update_beta_only_rowmajor_real<"
+                  << BX << "," << AY << "> (" << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("inplace_givens_update_beta_only_rowmajor_real launch failed");
+    }
+
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "inplace_givens_update_beta_only_rowmajor_real<"
+                  << BX << "," << AY << "> execution failed ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("inplace_givens_update_beta_only_rowmajor_real execution failed");
+    }
+}
+
+// Extern "C" wrapper: BX=32, AY=8 (256 threads/block) is the default tuned shape.
+// If nb >> 32 and the GPU has enough SMs, BX=64 may give better occupancy.
+extern "C" void inplace_givens_update_real_beta_only_rowmajor_wrapper(
+    double* d_Cout,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nb,
+    int nalpha_strs_,
+    int nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2)
+{
+    if (nb == 0 || nalpha_strs_ == 0 || nbeta_strs_ == 0) return;
+
+    // BX=32 → one full warp per row-tile: optimal coalescing for row-major data.
+    // BX=64 can help when nb is large enough that two warps per block are busy,
+    // but risks register spill on some architectures.  Default to 32.
+    launch_inplace_givens_update_beta_only_rowmajor_real<32, 8>(
+        d_Cout,
+        sourceb1, targetb1, parityb1, parityb2,
+        nb, nalpha_strs_, nbeta_strs_,
+        factor, acc_coeff1, acc_coeff2);
 }
 
 // ==============================================

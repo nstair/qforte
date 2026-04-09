@@ -1443,7 +1443,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
 
             // condition here for all row or all col cases
             if (crea.size() == 0 && creb.size() > 0) {
-                timer_.acc_begin("===>hard nbody given kernel - col case");
+                timer_.acc_begin("===>hard nbody given kernel - beta-only rowmajor");
 
                 // inplace_givens_update_real_tiled_wrapper(
                 //     32,
@@ -1463,20 +1463,35 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
                 //     acc_coeff1.real(),
                 //     acc_coeff2.real());
 
-                inplace_givens_update_real_cols_wrapper(
+                // Beta-only path: no alpha excitations, only beta (column) pairs.
+                //
+                // We use the row-major tiled beta-only kernel instead of the old
+                // column-strided kernel.  In the old kernel each warp stepped down
+                // column sb1 with stride nbeta_strs_, which is non-coalesced for a
+                // row-major matrix.  The new kernel maps threadIdx.x across beta
+                // pairs and threadIdx.y across rows; all threads in a warp stay in
+                // the same row, so their accesses to d_Cout[row*nbeta_strs_ + sb1[tx]]
+                // are nearly contiguous when sourceb1 is sorted → coalesced.
+                //
+                // Launch shape: block(32, 8) = 256 threads; grid tiles both axes,
+                // giving ~ceil(nb/32)*ceil(na/8) blocks vs. the old nb*ceil(na/1024).
+                // For small nb this is a significant increase in block count and
+                // hence better SM occupancy / latency hiding.
+
+                inplace_givens_update_real_beta_only_rowmajor_wrapper(
                     thrust::raw_pointer_cast(Cout.d_re_data().data()),
-                    thrust::raw_pointer_cast(std::get<4>(*precomp).data()),  // const int* sourceb1 (dag)
+                    thrust::raw_pointer_cast(std::get<4>(*precomp).data()),  // const int* sourceb1
                     thrust::raw_pointer_cast(std::get<5>(*precomp).data()),  // const int* targetb1
                     thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // const double* parityb1
                     thrust::raw_pointer_cast(std::get<9>(*precomp).data()),  // const double* parityb2
-                    std::get<4>(*precomp).size(),                            // nb
-                    static_cast<long long>(nalfa_strs_),
-                    static_cast<long long>(nbeta_strs_),
+                    static_cast<int>(std::get<4>(*precomp).size()),          // nb
+                    static_cast<int>(nalfa_strs_),                           // nalpha_strs_
+                    static_cast<int>(nbeta_strs_),                           // nbeta_strs_
                     factor.real(),
                     acc_coeff1.real(),
                     acc_coeff2.real());
 
-                timer_.acc_end("===>hard nbody given kernel - col case");
+                timer_.acc_end("===>hard nbody given kernel - beta-only rowmajor");
                 timer_.acc_end("===>hard nbody given kernel");
                 return;
             } else if (creb.size() == 0 && crea.size() > 0) {

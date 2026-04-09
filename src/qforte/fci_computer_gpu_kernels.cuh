@@ -256,6 +256,55 @@ extern "C" void inplace_givens_update_real_cols_wrapper(
     double acc_coeff1,
     double acc_coeff2);
 
+// ==============================================
+// Beta-only row-major tiled Givens kernel (Real)
+// Keeps warps row-local: threadIdx.x walks beta pairs, threadIdx.y walks rows.
+// This gives coalesced (unit-stride) loads/stores within each warp and produces
+// more blocks than the column kernel when nb is small.
+// ==============================================
+
+template<int BX, int AY>
+__global__ void inplace_givens_update_beta_only_rowmajor_real(
+    double* __restrict__ d_Cout,
+    const int* __restrict__ sourceb1,      // [nb]  beta source indices
+    const int* __restrict__ targetb1,      // [nb]  beta target indices
+    const double* __restrict__ parityb1,   // [nb]  parity for source row (g† leg)
+    const double* __restrict__ parityb2,   // [nb]  parity for target row (g  leg)
+    int nb,                                // number of beta pairs
+    int nalpha_strs_,                      // number of alpha strings (rows)
+    int nbeta_strs_,                       // leading dimension (columns)
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
+// Internal template launcher for beta-only row-major kernel
+template<int BX, int AY>
+static void launch_inplace_givens_update_beta_only_rowmajor_real(
+    double* d_Cout,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nb,
+    int nalpha_strs_,
+    int nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
+extern "C" void inplace_givens_update_real_beta_only_rowmajor_wrapper(
+    double* d_Cout,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nb,
+    int nalpha_strs_,
+    int nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
 __global__ void inplace_givens_update_real_tiled(
     double* __restrict__ d_Cout,
     const int* __restrict__ sourcea1,
