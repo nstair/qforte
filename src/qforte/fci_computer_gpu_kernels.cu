@@ -1436,6 +1436,10 @@ extern "C" void lm_apply_array12_same_spin_spmm_csr_coalesced_wrapper(
     int nnz_unique = (int)(end_pair.first - d_keys_uni.begin());
     if (nnz_unique <= 0) return;
 
+    // Free raw COO data — no longer needed after reduce
+    d_keys_raw.clear(); d_keys_raw.shrink_to_fit();
+    d_vals_raw.clear(); d_vals_raw.shrink_to_fit();
+
     d_keys_uni.resize(nnz_unique);
     d_vals_uni.resize(nnz_unique);
 
@@ -1461,6 +1465,9 @@ extern "C" void lm_apply_array12_same_spin_spmm_csr_coalesced_wrapper(
         CHECK_CUDA(cudaGetLastError());
         CHECK_CUDA(cudaDeviceSynchronize());
     }
+
+    // Free unique keys — columns already extracted into d_col_ind
+    d_keys_uni.clear(); d_keys_uni.shrink_to_fit();
 
     // CSR row_ptr: exclusive_scan(row_counts) + last element = nnz_unique
     thrust::device_vector<int> d_row_ptr(states1 + 1);
@@ -1718,6 +1725,10 @@ extern "C" void lm_apply_array12_same_spin_spmm_csr_coalesced_wrapper_real(
     int nnz_unique = (int)(end_pair.first - d_keys_uni.begin());
     if (nnz_unique <= 0) return;
 
+    // Free raw COO data — no longer needed after reduce
+    d_keys_raw.clear(); d_keys_raw.shrink_to_fit();
+    d_vals_raw.clear(); d_vals_raw.shrink_to_fit();
+
     d_keys_uni.resize(nnz_unique);
     d_vals_uni.resize(nnz_unique);
 
@@ -1743,6 +1754,9 @@ extern "C" void lm_apply_array12_same_spin_spmm_csr_coalesced_wrapper_real(
         CHECK_CUDA(cudaGetLastError());
         CHECK_CUDA(cudaDeviceSynchronize());
     }
+
+    // Free unique keys — columns already extracted into d_col_ind
+    d_keys_uni.clear(); d_keys_uni.shrink_to_fit();
 
     // CSR row_ptr: exclusive_scan(row_counts) + last element = nnz_unique
     thrust::device_vector<int> d_row_ptr(states1 + 1);
@@ -2001,6 +2015,10 @@ extern "C" void lm_apply_array12_same_spin_spmm_csr_coalesced_wrapper_mixed(
     int nnz_unique = (int)(end_pair.first - d_keys_uni.begin());
     if (nnz_unique <= 0) return;
 
+    // Free raw COO data — no longer needed after reduce
+    d_keys_raw.clear(); d_keys_raw.shrink_to_fit();
+    d_vals_raw.clear(); d_vals_raw.shrink_to_fit();
+
     d_keys_uni.resize(nnz_unique);
     d_vals_uni.resize(nnz_unique);
 
@@ -2026,6 +2044,9 @@ extern "C" void lm_apply_array12_same_spin_spmm_csr_coalesced_wrapper_mixed(
         CHECK_CUDA(cudaGetLastError());
         CHECK_CUDA(cudaDeviceSynchronize());
     }
+
+    // Free unique keys — columns already extracted into d_col_ind
+    d_keys_uni.clear(); d_keys_uni.shrink_to_fit();
 
     // CSR row_ptr: exclusive_scan(row_counts) + last element = nnz_unique
     thrust::device_vector<int> d_row_ptr(states1 + 1);

@@ -330,7 +330,8 @@ void FCIComputerGPU::apply_tensor_spat_12bdy_gpu(
 
 /// apply TensorGPUs represending 1-body and 2-body spatial-orbital indexed operator
 /// as well as a constant to the current state 
-/// TODO: changing to be GPU implementation
+/// Computes: C_ = h0e * C_ + sigma_12bdy(C_)
+/// Memory-optimized: uses 2 state vectors (C_ + Cnew) instead of 3 (C_ + Cold + Cnew)
 void FCIComputerGPU::apply_tensor_spat_012bdy_gpu(
     const std::complex<double> h0e,
     const TensorGPU& h1e, 
@@ -340,17 +341,61 @@ void FCIComputerGPU::apply_tensor_spat_012bdy_gpu(
 {
     gpu_error();
 
-    TensorGPU Cold({nalfa_strs_, nbeta_strs_}, "Cold", true, data_type_);
-    Cold.copy_in_gpu(C_);
+    if(h1e.size() != (norb) * (norb)){
+        throw std::invalid_argument("Expecting h1e to be nmo x nmo for apply_tensor_spat_012bdy_gpu");
+    }
 
-    apply_tensor_spat_12bdy_gpu(
-        h1e,
+    if(h2e.size() != (norb) * (norb) * (norb) * (norb) ){
+        throw std::invalid_argument("Expecting h2e to be nso x nso x nso x nso for apply_tensor_spat_012bdy_gpu");
+    }
+
+    // Accumulate sigma = H_12bdy * C_ into Cnew while C_ remains untouched
+    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew", true, data_type_);
+    Cnew.zero_gpu();
+
+    timer_.acc_begin("=> same spin alpha outer");
+    lm_apply_array12_same_spin_opt_gpu(
+        Cnew, 
+        graph_.read_dexca_vec(),
+        nalfa_strs_,
+        nbeta_strs_, 
+        graph_.get_ndexca(),
+        h1e, 
         h2e,
-        h2e_einsum,
-        norb);
+        norb_,
+        true);
+    timer_.acc_end("=> same spin alpha outer");
 
-    C_.zaxpy(
-        Cold,
+    timer_.acc_begin("=> same spin beta outer");
+    lm_apply_array12_same_spin_opt_gpu(
+        Cnew, 
+        graph_.read_dexcb_vec(),
+        nbeta_strs_,
+        nalfa_strs_,
+        graph_.get_ndexcb(),
+        h1e, 
+        h2e,
+        norb_,
+        false);
+    timer_.acc_end("=> same spin beta outer");
+
+    timer_.acc_begin("=> diff spin outer");
+    lm_apply_array12_diff_spin_opt_gpu(
+        Cnew,
+        graph_.read_dexca_vec(),
+        graph_.read_dexcb_vec(),
+        nalfa_strs_,
+        nbeta_strs_, 
+        graph_.get_ndexca(),
+        graph_.get_ndexca(),
+        h2e_einsum, 
+        norb_); 
+    timer_.acc_end("=> diff spin outer");
+
+    // C_ = 1.0 * Cnew + h0e * C_  (no Cold copy needed)
+    C_.zaxpby(
+        Cnew,
+        1.0,
         h0e,
         1,
         1    
