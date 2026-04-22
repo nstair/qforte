@@ -40,6 +40,7 @@ set(BLA_VENDOR "Generic")             # bypass FindBLAS vendor picks
 # set(CMAKE_PREFIX_PATH "/home/nstair/anaconda3/envs/cuqf_8_25_25_v2")
 # set(CMAKE_PREFIX_PATH "/home/zach_gonzales/anaconda3/envs/qforte")
 set(CMAKE_PREFIX_PATH "/home/nstair/anaconda3/envs/qf-cusv1")
+# set(CMAKE_PREFIX_PATH "/home/zvgonzal/miniconda3/envs/qforte")
 
 set(BLAS_LIBRARIES "${CMAKE_PREFIX_PATH}/lib")
 set(CBLAS_INCLUDE_DIR "${CMAKE_PREFIX_PATH}/include")         # need
@@ -97,6 +98,7 @@ if(ENABLE_CUDA)
       "${SOURCE_DIR}/sq_op_pool_gpu.cu"
       "${SOURCE_DIR}/cublas_math.cu"
       "${SOURCE_DIR}/tensor_gpu_kernels.cu"
+      "${SOURCE_DIR}/qforte_globals.cu"
   )
 else()
   set(CUDA_SOURCES "")
