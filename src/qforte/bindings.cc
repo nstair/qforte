@@ -39,6 +39,7 @@
 #include "fci_computer_gpu.h"
 #include "fci_graph_gpu.h"
 #include "sq_op_pool_gpu.h"
+#include "qforte_globals.h"
 #endif
 
 namespace py = pybind11;
@@ -524,6 +525,12 @@ PYBIND11_MODULE(qforte, m) {
         .def("__str__", &local_timer::str_table);
 
 #ifdef QFORTE_CUDA_ENABLED
+    // Global gpu_only flag
+    m.def("set_gpu_only", &qforte_globals::set_gpu_only, py::arg("val"),
+          "Set the global gpu_only flag. When True, new TensorGPU objects skip host allocation.");
+    m.def("get_gpu_only", &qforte_globals::get_gpu_only,
+          "Get the current global gpu_only flag.");
+
     py::class_<TensorGPU>(m, "TensorGPU")
         .def(py::init<>())
         .def(py::init<const std::vector<size_t>&, const std::string&, bool>(),
@@ -535,6 +542,14 @@ PYBIND11_MODULE(qforte, m) {
              py::arg("name") = "T",
              py::arg("on_gpu") = false,
              py::arg("data_type") = "complex")
+        .def(py::init<const std::vector<size_t>&, const std::string&, bool, const std::string&, bool>(),
+             py::arg("shape"),
+             py::arg("name") = "T",
+             py::arg("on_gpu") = false,
+             py::arg("data_type") = "complex",
+             py::arg("gpu_only") = false)
+        .def("gpu_only", &TensorGPU::gpu_only)
+        .def("gpu_only_error", &TensorGPU::gpu_only_error)
         .def("on_gpu", &TensorGPU::on_gpu)
         .def("data_type", &TensorGPU::data_type)
         .def("to_gpu", &TensorGPU::to_gpu)

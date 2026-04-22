@@ -157,12 +157,14 @@ TensorGPU::TensorGPU(
     const std::vector<size_t>& shape,
     const std::string& name,
     const bool on_gpu,
-    const std::string& data_type
+    const std::string& data_type,
+    const bool gpu_only
     ) :
     shape_(shape),
     name_(name),
     on_gpu_(on_gpu),
-    data_type_(data_type)
+    data_type_(data_type),
+    gpu_only_(gpu_only || qforte_globals::get_gpu_only())
 {
     
     strides_.resize(shape_.size());
@@ -172,10 +174,16 @@ TensorGPU::TensorGPU(
         size_ *= shape_[i];
     }
     
+    // Force on_gpu_ = true when gpu_only
+    if (gpu_only_) {
+        on_gpu_ = true;
+    }
 
     if (data_type_ == "real"){
 
-        h_re_data_.resize(size_, 0.0);
+        if (!gpu_only_) {
+            h_re_data_.resize(size_, 0.0);
+        }
         d_re_data_.resize(size_, 0.0);
 
         on_complex_ = false;
@@ -183,7 +191,9 @@ TensorGPU::TensorGPU(
     } else if (data_type_ == "complex"){
         
         // was the origional option...
-        h_data_.resize(size_, std::complex<double>(0.0, 0.0));
+        if (!gpu_only_) {
+            h_data_.resize(size_, std::complex<double>(0.0, 0.0));
+        }
         d_data_.resize(size_, make_cuDoubleComplex(0.0, 0.0));
 
         // If complex, on_complex_ is true ALWYAYS
@@ -201,22 +211,24 @@ TensorGPU::TensorGPU(
 
 TensorGPU::TensorGPU()
 {
+    gpu_only_ = qforte_globals::get_gpu_only();
     shape_.assign(1, 1);
     strides_.resize(1);
     size_ = 1L;
     
-    // Initialize host vector
-    h_data_.resize(size_, std::complex<double>(0.0, 0.0));
+    if (!gpu_only_) {
+        // Initialize host vector
+        h_data_.resize(size_, std::complex<double>(0.0, 0.0));
+        // Initialize real vectors, trivial overhaed for now...
+        h_re_data_.resize(size_, 0.0);
+    }
     
     // Initialize device vector
     d_data_.resize(size_, make_cuDoubleComplex(0.0, 0.0));
-
-    // Initialize real vectors, trivial overhaed for now...
-    h_re_data_.resize(size_, 0.0);
     d_re_data_.resize(size_, 0.0);
     
     total_memory__ += h_data_.size() * sizeof(std::complex<double>);
-    on_gpu_ = false;
+    on_gpu_ = gpu_only_ ? true : false;
     on_complex_ = true;
     initialized_ = true;
     name_ = "T";
@@ -241,12 +253,15 @@ TensorGPU::TensorGPU(const TensorGPU& other)
       size_(other.size_),
       initialized_(other.initialized_),
       on_gpu_(other.on_gpu_),
-      on_complex_(other.on_complex_)
+      on_complex_(other.on_complex_),
+      gpu_only_(other.gpu_only_)
 {
-    // Deep copy all thrust vectors
-    h_data_ = other.h_data_;
+    // Deep copy thrust vectors (skip host if gpu_only)
+    if (!gpu_only_) {
+        h_data_ = other.h_data_;
+        h_re_data_ = other.h_re_data_;
+    }
     d_data_ = other.d_data_;
-    h_re_data_ = other.h_re_data_;
     d_re_data_ = other.d_re_data_;
     
     // Update memory tracking
@@ -268,11 +283,20 @@ TensorGPU& TensorGPU::operator=(const TensorGPU& other)
         initialized_ = other.initialized_;
         on_gpu_ = other.on_gpu_;
         on_complex_ = other.on_complex_;
+        gpu_only_ = other.gpu_only_;
         
-        // Deep copy all thrust vectors
-        h_data_ = other.h_data_;
+        // Deep copy thrust vectors (skip host if gpu_only)
+        if (!gpu_only_) {
+            h_data_ = other.h_data_;
+            h_re_data_ = other.h_re_data_;
+        } else {
+            // Clear host vectors if transitioning to gpu_only
+            h_data_.clear();
+            h_data_.shrink_to_fit();
+            h_re_data_.clear();
+            h_re_data_.shrink_to_fit();
+        }
         d_data_ = other.d_data_;
-        h_re_data_ = other.h_re_data_;
         d_re_data_ = other.d_re_data_;
         
         total_memory__ += h_data_.size() * sizeof(std::complex<double>);
@@ -284,6 +308,7 @@ TensorGPU& TensorGPU::operator=(const TensorGPU& other)
 void TensorGPU::to_gpu()
 {
     cpu_error();
+    gpu_only_error();
     if (initialized_ == 0) {
         std::cerr << "Tensor not initialized" << std::endl;
         return;
@@ -314,6 +339,7 @@ void TensorGPU::to_gpu()
 void TensorGPU::to_cpu()
 {
     gpu_error();
+    gpu_only_error();
     if (initialized_ == 0) {
         std::cerr << "Tensor not initialized" << std::endl;
         return;
@@ -406,6 +432,12 @@ void TensorGPU::gpu_error() const {
 void TensorGPU::cpu_error() const {
     if (on_gpu_) {
         throw std::runtime_error("Tensor is on GPU but CPU operation was requested.");
+    }
+}
+
+void TensorGPU::gpu_only_error() const {
+    if (gpu_only_) {
+        throw std::runtime_error("Tensor is in gpu_only mode — no host data is available.");
     }
 }
 
@@ -659,8 +691,16 @@ void TensorGPU::fill_from_np(std::vector<std::complex<double>> arr, std::vector<
 void TensorGPU::zero_with_shape(
     const std::vector<size_t>& shape, 
     bool on_gpu, 
-    const std::string& data_type)
+    const std::string& data_type,
+    bool gpu_only)
 {
+    gpu_only_ = gpu_only || qforte_globals::get_gpu_only();
+    
+    // Force on_gpu_ = true when gpu_only
+    if (gpu_only_) {
+        on_gpu = true;
+    }
+
     std::vector<size_t> strides;
     strides.resize(shape.size());
     size_t size = 1L;
@@ -677,7 +717,9 @@ void TensorGPU::zero_with_shape(
 
     if(data_type_ == "real"){
 
-        h_re_data_.resize(size_, 0.0);
+        if (!gpu_only_) {
+            h_re_data_.resize(size_, 0.0);
+        }
         d_re_data_.resize(size_, 0.0);
 
         on_complex_ = false;
@@ -685,7 +727,9 @@ void TensorGPU::zero_with_shape(
     } else if (data_type_ == "complex"){
         
         // was the origional option...
-        h_data_.resize(size_, std::complex<double>(0.0, 0.0));
+        if (!gpu_only_) {
+            h_data_.resize(size_, std::complex<double>(0.0, 0.0));
+        }
         d_data_.resize(size_, make_cuDoubleComplex(0.0, 0.0));
 
         on_complex_ = true;
@@ -693,10 +737,6 @@ void TensorGPU::zero_with_shape(
     } else {
         throw std::runtime_error("Invalid data_type specified for TensorGPU. Must be 'complex' or 'real'.");
     }
-    
-    // Resize and zero the vectors
-    // h_data_.resize(size_, std::complex<double>(0.0, 0.0));
-    // d_data_.resize(size_, make_cuDoubleComplex(0.0, 0.0));
     
     initialized_ = true;
     
@@ -1300,6 +1340,20 @@ std::string TensorGPU::str(
     )
 {
     bool reset=false; 
+    if (gpu_only_) {
+        // Cannot print data for gpu_only tensors — print metadata only
+        std::ostringstream oss;
+        oss << "TensorGPU (gpu_only): " << name_ << "\n";
+        oss << "  Ndim  = " << ndim() << "\n";
+        oss << "  Size  = " << size() << "\n";
+        oss << "  Shape = (";
+        for(size_t dim = 0; dim < ndim(); ++dim) {
+            oss << shape_[dim]; if (dim<ndim()-1) oss << ",";
+        }
+        oss << ")\n";
+        oss << "  [gpu_only mode — host data not available]\n";
+        return oss.str();
+    }
     if (on_gpu_) {
         reset=true;
         to_cpu();

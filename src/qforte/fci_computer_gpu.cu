@@ -22,6 +22,7 @@
 
 #include "fci_computer_gpu.h"
 #include "fci_graph_gpu.h"
+#include "qforte_globals.h"
 
 #include "cublas_math.cuh"
 #include "fci_computer_gpu_kernels.cuh"
@@ -276,7 +277,7 @@ void FCIComputerGPU::apply_tensor_spat_12bdy_gpu(
         throw std::invalid_argument("Expecting h2e to be nso x nso x nso x nso for apply_tensor_spat_12bdy_gpu");
     }
 
-    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew", true, data_type_);
+    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew", true, data_type_, true);
     Cnew.zero_gpu();
 
     timer_.acc_begin("=> same spin alpha outer");
@@ -350,7 +351,7 @@ void FCIComputerGPU::apply_tensor_spat_012bdy_gpu(
     }
 
     // Accumulate sigma = H_12bdy * C_ into Cnew while C_ remains untouched
-    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew", true, data_type_);
+    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew", true, data_type_, true);
     Cnew.zero_gpu();
 
     timer_.acc_begin("=> same spin alpha outer");
@@ -2849,7 +2850,7 @@ void FCIComputerGPU::apply_individual_sqop_term_gpu(
 void FCIComputerGPU::apply_sqop_gpu(const SQOperator& sqop)
 {
     C_.gpu_error();
-    TensorGPU Cin(C_.shape(), "Cin", true);
+    TensorGPU Cin(C_.shape(), "Cin", true, C_.data_type(), true);
     Cin.copy_in_gpu(C_);
 
     local_timer my_timer = local_timer();
@@ -2952,7 +2953,8 @@ std::complex<double> FCIComputerGPU::get_exp_val(const SQOperator& sqop)
         {nalfa_strs_, nbeta_strs_}, 
         "Cin", 
         true,
-        data_type_
+        data_type_,
+        true
     );
 
     Cin.copy_in_gpu(C_);
@@ -2981,7 +2983,9 @@ std::complex<double> FCIComputerGPU::get_exp_val_tensor_gpu(
     TensorGPU& h2e_einsum, 
     size_t norb)
 {
-    TensorGPU Cin = C_;
+    // Save C_ into a gpu_only temporary to avoid host memory overhead
+    TensorGPU Cin({nalfa_strs_, nbeta_strs_}, "Cin", true, data_type_, true);
+    Cin.copy_in_gpu(C_);
 
     apply_tensor_spat_012bdy_gpu(
         h0e,
@@ -2994,7 +2998,7 @@ std::complex<double> FCIComputerGPU::get_exp_val_tensor_gpu(
     std::complex<double> val = C_.vector_dot(Cin);
 
     /// TODO: change to move opperation not deep copy
-    C_ = Cin;
+    C_.copy_in_gpu(Cin);
     return val;
 }
 
