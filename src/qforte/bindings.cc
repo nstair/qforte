@@ -570,7 +570,9 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("header_format") = "%12zu");
 
     py::class_<FCIComputerGPU>(m, "FCIComputerGPU")
-        .def(py::init<int, int, int, bool, std::string>(), "nel"_a, "sz"_a, "norb"_a, "on_gpu"_a, "data_type"_a, "Make a FCIComputerGPU with nel, sz, and norb")
+        .def(py::init<int, int, int, bool, std::string, bool>(),
+             "nel"_a, "sz"_a, "norb"_a, "on_gpu"_a = false, "data_type"_a = "complex", "gpu_only"_a = false,
+             "Make a FCIComputerGPU with nel, sz, and norb")
         .def("hartree_fock_cpu", &FCIComputerGPU::hartree_fock_cpu)
         .def("hartree_fock_gpu", &FCIComputerGPU::hartree_fock_gpu)
         .def("get_hf_dot", &FCIComputerGPU::get_hf_dot)

@@ -63,7 +63,8 @@ class FCIComputerGPU {
       int sz, 
       int norb, 
       bool on_gpu = false, 
-      const std::string& data_type = "complex"
+      const std::string& data_type = "complex",
+      bool gpu_only = false
       );
 
     /// destructor: properly cleanup GPU resources
@@ -453,6 +454,7 @@ class FCIComputerGPU {
   private:
 
     bool on_gpu_;
+    bool gpu_only_ = false;
 
     bool on_complex_; // true if data is complex, false if data is on real Tensor
     std::string data_type_ = "complex"; 

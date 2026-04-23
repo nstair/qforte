@@ -27,12 +27,13 @@
 #include "cublas_math.cuh"
 #include "fci_computer_gpu_kernels.cuh"
 
-FCIComputerGPU::FCIComputerGPU(int nel, int sz, int norb, bool on_gpu, const std::string& data_type) : 
+FCIComputerGPU::FCIComputerGPU(int nel, int sz, int norb, bool on_gpu, const std::string& data_type, bool gpu_only) : 
     nel_(nel), 
     sz_(sz),
     norb_(norb),
     on_gpu_(on_gpu),
-    data_type_(data_type){
+    data_type_(data_type),
+    gpu_only_(gpu_only){
 
     if (nel_ < 0) {
         throw std::invalid_argument("Cannot have negative electrons");
@@ -70,7 +71,8 @@ FCIComputerGPU::FCIComputerGPU(int nel, int sz, int norb, bool on_gpu, const std
     C_.zero_with_shape(
         {nalfa_strs_, nbeta_strs_}, 
         on_gpu_,
-        data_type_);
+        data_type_,
+        gpu_only_);
 
     C_.set_name("FCI Computer");
 
