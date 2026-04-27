@@ -161,7 +161,7 @@ sd_pool.fill_pool("GSD")
 
 
 print_text = False
-save_figs = False
+save_figs = True
 
 
 sqop_trgts = [6, 11]

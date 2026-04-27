@@ -111,6 +111,59 @@ class SQOpPool {
     /// the list of sq operators in the pool
     std::vector<std::pair<std::complex<double>, SQOperator>> terms_;
 
+    /// ===> Below are Objects used only for Trotterized Time Evolution or dUCC <===
+
+    bool device_vecs_populated_ = false;
+
+    /// the list of just the outer coefficients h_mu in h_mu( c_mu g_mu - c_mu g_mu^) (or similar hermitain case)
+    /// often just a list of ones in time evolution
+    std::vector<std::complex<double>> outer_coeffs_;
+
+    /// the list of just the inner coefficients c_mu in h_mu( c_mu g_mu - c_mu g_mu^) (or similar hermitain case)
+    /// c_mu assumed to be the same for both terms
+    std::vector<std::complex<double>> inner_coeffs_;
+
+
+    /// ===> For Scale inplace
+
+    /// P Q and T type?
+    std::vector<std::vector<int>> terms_scale_indsa_dag_gpu_; 
+    std::vector<std::vector<int>> Pa_; // (new notation)
+
+    //note: not used in easy case (only P Q type)
+    std::vector<std::vector<int>> terms_scale_indsa_undag_gpu_; 
+    std::vector<std::vector<int>> Qa_; 
+
+    /// P Q and T type?
+    std::vector<std::vector<int>> terms_scale_indsb_dag_gpu_;
+    std::vector<std::vector<int>> Pb_; 
+
+    //note: not used in easy case (only P Q type)
+    std::vector<std::vector<int>> terms_scale_indsb_undag_gpu_; 
+    std::vector<std::vector<int>> Qb_; 
+
+    /// the list of alfa/beta parities for FCIComputerGPU (complex)
+    std::vector<std::vector<std::complex<double>>> terms_paritya_dag_gpu_;
+    std::vector<std::vector<std::complex<double>>> terms_paritya_undag_gpu_;
+    std::vector<std::vector<std::complex<double>>> terms_parityb_dag_gpu_;
+    std::vector<std::vector<std::complex<double>>> terms_parityb_undag_gpu_;
+
+    /// the list of alfa/beta parities in real form
+    // std::vector<thrust::device_vector<double>> terms_paritya_dag_re_gpu_;
+    // std::vector<thrust::device_vector<double>> terms_paritya_undag_re_gpu_;
+    // std::vector<thrust::device_vector<double>> terms_parityb_dag_re_gpu_;
+    // std::vector<thrust::device_vector<double>> terms_parityb_undag_re_gpu_;
+
+    // /// How to store parity data for kernels using this pool: "complex" or "real"
+    // std::string data_type_ = "complex";
+
+    // /// ensure data_type_ is valid
+    // void validate_data_type_() const {
+    //     if (data_type_ != "complex" && data_type_ != "real") {
+    //         throw std::invalid_argument("SQOpPoolGPU: unsupported data_type. Must be one of {complex, real}.");
+    //     }
+    // }
+
 };
 
 #endif // _sq_op_pool_h_

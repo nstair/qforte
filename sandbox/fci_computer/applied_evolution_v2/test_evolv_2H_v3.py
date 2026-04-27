@@ -15,9 +15,14 @@ geom = [
     ('H', (0., 0., 8.0)),
     ('H', (0., 0., 9.0)), 
     ('H', (0., 0.,10.0)),
-    # ('H', (0., 0.,11.0)), 
-    # ('H', (0., 0.,12.0))
+    ('H', (0., 0.,11.0)), 
+    ('H', (0., 0.,12.0))
     ]
+
+# geom = [
+#     ('N', (0., 0., 1.0)), 
+#     ('N', (0., 0., 2.0)),
+#     ]
 
 # Get the molecule object that now contains both the fermionic and qubit Hamiltonians.
 # mol = qf.system_factory(
@@ -89,7 +94,7 @@ time = 0.1
 r = 1
 order = 1
 
-N = 4
+N = 2
 
 print(f"\n ===> Run parameters <=== \n")
 print(f"dt:    {time}")
@@ -106,7 +111,7 @@ for i in range(N):
 
     ty.reset()
 
-    fci_comp1.evolve_pool_trotter(
+    fci_comp1.evolve_pool_trotter_not_inplace(
         hermitian_pairs,
         time,
         r,
@@ -118,7 +123,7 @@ for i in range(N):
 
     ty.reset()
 
-    fci_comp2.evolve_pool_trotter_v2(
+    fci_comp2.evolve_pool_trotter(
         hermitian_pairs,
         time,
         r,
@@ -127,6 +132,20 @@ for i in range(N):
         adjoint=False)
 
     ty.record(f" Trotter step V2 {(i+1)} ")
+
+    # Test the new protocol with precomputed metadata
+
+    # ty.reset()
+
+    # fci_comp2.evolve_pool_trotter_v3(
+    #     hermitian_pairs,
+    #     time,
+    #     r,
+    #     order,
+    #     antiherm=False,
+    #     adjoint=False)
+
+    # ty.record(f" Trotter step V3 {(i+1)} ")
 
 
     # print(fci_comp1.str(print_complex=False))

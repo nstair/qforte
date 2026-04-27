@@ -19,6 +19,7 @@
 // #include "fci_computer_gpu.h"
 
 #include "fci_computer.h"
+#include "rr_fci_computer.h"
 #include "fci_graph.h"
 #include "qubit_operator.h"
 #include "sq_operator.h"
@@ -379,6 +380,74 @@ PYBIND11_MODULE(qforte, m) {
         .def("__repr__", &FCIComputer::str, 
             py::arg("print_data") = true, 
             py::arg("print_complex") = false);
+
+    py::class_<RRFCIComputer>(m, "RRFCIComputer")
+        .def(py::init<int, int, int, int>(),
+             "nel"_a,
+             "sz"_a,
+             "norb"_a,
+             "rank"_a,
+             "Make a RRFCIComputer with nel, sz, norb, and initial reduced rank")
+
+        .def("set_element", &RRFCIComputer::set_element)
+        .def("add_to_element", &RRFCIComputer::add_to_element)
+
+        .def("set_p_element", &RRFCIComputer::set_p_element)
+        .def("set_q_element", &RRFCIComputer::set_q_element)
+
+        .def("get_p_element", &RRFCIComputer::get_p_element)
+        .def("get_q_element", &RRFCIComputer::get_q_element)
+
+        .def("apply_tensor_spat_12bdy", &RRFCIComputer::apply_tensor_spat_12bdy)
+        .def("apply_tensor_spat_012bdy", &RRFCIComputer::apply_tensor_spat_012bdy)
+
+        .def("rr_apply_array12_same_spin_opt_P", &RRFCIComputer::rr_apply_array12_same_spin_opt_P)
+        .def("rr_apply_array12_same_spin_opt_Q", &RRFCIComputer::rr_apply_array12_same_spin_opt_Q)
+        .def("rr_apply_array12_diff_spin_opt_P", &RRFCIComputer::rr_apply_array12_diff_spin_opt_P)
+        .def("rr_apply_array12_diff_spin_opt_Q", &RRFCIComputer::rr_apply_array12_diff_spin_opt_Q)
+
+        .def("apply_array_1bdy_vector", &RRFCIComputer::apply_array_1bdy_vector)
+        .def("lm_apply_array12_same_spin_opt_vector", &RRFCIComputer::lm_apply_array12_same_spin_opt_vector)
+        .def("build_transition_vector", &RRFCIComputer::build_transition_vector)
+        .def("build_effective_one_body_from_transition", &RRFCIComputer::build_effective_one_body_from_transition)
+        .def("build_overlap_projections", &RRFCIComputer::build_overlap_projections)
+
+        .def("get_P_row", &RRFCIComputer::get_P_row)
+        .def("get_Q_row", &RRFCIComputer::get_Q_row)
+        .def("set_P_row", &RRFCIComputer::set_P_row)
+        .def("set_Q_row", &RRFCIComputer::set_Q_row)
+
+        .def("axpy_into_row", &RRFCIComputer::axpy_into_row)
+        .def("dot_vec", &RRFCIComputer::dot_vec)
+
+        .def("get_nel", &RRFCIComputer::get_nel)
+        .def("get_nalfa_el", &RRFCIComputer::get_nalfa_el)
+        .def("get_nbeta_el", &RRFCIComputer::get_nbeta_el)
+        .def("get_nalfa_strs", &RRFCIComputer::get_nalfa_strs)
+        .def("get_nbeta_strs", &RRFCIComputer::get_nbeta_strs)
+        .def("get_sz", &RRFCIComputer::get_sz)
+        .def("get_norb", &RRFCIComputer::get_norb)
+        .def("get_rank", &RRFCIComputer::get_rank)
+
+        .def("P", py::overload_cast<>(&RRFCIComputer::P), py::return_value_policy::reference_internal)
+        .def("Q", py::overload_cast<>(&RRFCIComputer::Q), py::return_value_policy::reference_internal)
+        .def("SigmaP", py::overload_cast<>(&RRFCIComputer::SigmaP), py::return_value_policy::reference_internal)
+        .def("SigmaQ", py::overload_cast<>(&RRFCIComputer::SigmaQ), py::return_value_policy::reference_internal)
+        .def("get_graph", &RRFCIComputer::get_graph)
+        .def("get_timings", &RRFCIComputer::get_timings)
+        .def("get_acc_timer", &RRFCIComputer::get_acc_timer)
+        .def("set_rank", &RRFCIComputer::set_rank)
+        .def("set_P", &RRFCIComputer::set_P)
+        .def("set_Q", &RRFCIComputer::set_Q)
+        .def("zero", &RRFCIComputer::zero)
+        .def("clear_sigmas", &RRFCIComputer::clear_sigmas)
+        .def("clear_timings", &RRFCIComputer::clear_timings)
+
+        .def("hartree_fock", &RRFCIComputer::hartree_fock)
+        .def("get_hf_dot", &RRFCIComputer::get_hf_dot)
+        .def("get_overlap", &RRFCIComputer::get_overlap)
+        .def("get_exp_val_tensor", &RRFCIComputer::get_exp_val_tensor)
+        .def("reconstruct_C", &RRFCIComputer::reconstruct_C);
 
     py::class_<FCIGraph>(m, "FCIGraph")
         .def(py::init<int, int, int>(), "nalfa"_a, "nbeta"_a, "norb"_a, "Make a FCIGraph")

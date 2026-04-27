@@ -80,5 +80,18 @@
         "valarray": "cpp",
         "variant": "cpp",
         "algorithm": "cpp"
+    },
+    "workbench.colorCustomizations": {
+        "activityBar.background": "#182E4D",
+        "titleBar.activeBackground": "#21406B",
+        "titleBar.activeForeground": "#F8FAFD",
+        "titleBar.inactiveBackground": "#182E4D",
+        "titleBar.inactiveForeground": "#F8FAFD",
+        "statusBar.background": "#182E4D",
+        "statusBar.foreground": "#F8FAFD",
+        "statusBar.debuggingBackground": "#182E4D",
+        "statusBar.debuggingForeground": "#F8FAFD",
+        "statusBar.noFolderBackground": "#182E4D",
+        "statusBar.noFolderForeground": "#F8FAFD"
     }
 }
