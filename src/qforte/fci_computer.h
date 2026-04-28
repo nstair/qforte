@@ -86,6 +86,19 @@ class FCIComputer {
       const Tensor& h2e_einsum, 
       size_t norb);
 
+    void apply_tensor_spat_12bdy_debug_elementwise(
+      const Tensor& h1e,
+      const Tensor& h2e,
+      const Tensor& h2e_einsum,
+      size_t norb);
+
+    void apply_tensor_spat_012bdy_debug_elementwise(
+      const std::complex<double> h0e,
+      const Tensor& h1e,
+      const Tensor& h2e,
+      const Tensor& h2e_einsum,
+      size_t norb);
+
     void lm_apply_array1(
       const Tensor& out,
       const std::vector<int> dexc,
@@ -674,6 +687,100 @@ class FCIComputer {
     void do_on_cpu();
 
   private:
+
+    /// Debug/reference edge used by the elementwise spatial Hamiltonian path.
+    ///
+    /// The flattened dexc tables are interpreted as source-oriented rows:
+    ///     source --(pair_shift, parity)--> target
+    /// This helper struct is used in reverse/incoming lists, where a fixed
+    /// target stores every source that can contribute to it.
+    struct DebugExcitationEdge {
+      int source;
+      int pair_shift;
+      int parity;
+    };
+
+    /// Debug/reference sparse row entry for one-spin same-spin operators.
+    ///
+    /// A row entry represents:
+    ///     S_spin[output_string, source] += value
+    /// where S_spin lives only on the alpha or beta string space.
+    struct DebugSparseRowEntry {
+      int source;
+      std::complex<double> value;
+    };
+
+    /// Build target-oriented incoming lists from a source-oriented dexc table.
+    ///
+    /// For every source row and every local excitation triple in that row, this
+    /// stores:
+    ///     incoming[target].push_back({source, pair_shift, parity})
+    ///
+    /// This helper is intentionally simple because it mirrors the data layout
+    /// expected by the future output-element CUDA sigma-build kernel.
+    std::vector<std::vector<DebugExcitationEdge>>
+    build_incoming_excitation_lists_debug(
+      const std::vector<int>& dexc,
+      int nstates,
+      int ndexc) const;
+
+    /// Build the alpha same-spin operator on the alpha-string space only.
+    ///
+    /// This replaces the older output-element same-spin debug approach with a
+    /// two-phase same-spin workflow: first build S_alpha[a_out, a_src], then
+    /// apply S_alpha to the full CI tensor.  This better mirrors the intended
+    /// optimal GPU same-spin design.
+    std::vector<std::vector<DebugSparseRowEntry>>
+    build_alpha_same_spin_operator_debug(
+      const std::vector<std::vector<DebugExcitationEdge>>& alpha_incoming,
+      const std::vector<int>& dexc_alpha,
+      int ndexc_alpha,
+      const Tensor& h1e,
+      const Tensor& h2e) const;
+
+    /// Build the beta same-spin operator on the beta-string space only.
+    ///
+    /// This is written natively in beta indexing, rather than reusing the alpha
+    /// operator through a transpose-like trick.
+    std::vector<std::vector<DebugSparseRowEntry>>
+    build_beta_same_spin_operator_debug(
+      const std::vector<std::vector<DebugExcitationEdge>>& beta_incoming,
+      const std::vector<int>& dexc_beta,
+      int ndexc_beta,
+      const Tensor& h1e,
+      const Tensor& h2e) const;
+
+    /// Apply S_alpha * Cold and accumulate into Cnew.
+    ///
+    /// Future CUDA intent: the prebuilt alpha same-spin operator is applied
+    /// over beta-contiguous slices of Cold, avoiding reconstruction of
+    /// same-spin couplings inside every output scalar.
+    void apply_alpha_same_spin_operator_debug(
+      Tensor& Cnew,
+      const Tensor& Cold,
+      const std::vector<std::vector<DebugSparseRowEntry>>& alpha_same_spin_rows) const;
+
+    /// Apply Cold * S_beta^T and accumulate into Cnew.
+    ///
+    /// Future CUDA intent: the prebuilt beta same-spin operator is applied
+    /// natively over alpha slices of Cold, without using a transpose trick.
+    void apply_beta_same_spin_operator_debug(
+      Tensor& Cnew,
+      const Tensor& Cold,
+      const std::vector<std::vector<DebugSparseRowEntry>>& beta_same_spin_rows) const;
+
+    /// Apply the mixed-spin debug/reference contribution to Cnew.
+    ///
+    /// This loops over all output elements and keeps the same minimal-arithmetic
+    /// nested incoming-alpha / incoming-beta walk as the original debug path.
+    /// Future CUDA intent: one mixed-spin kernel whose output owner accumulates
+    /// locally and writes/adds one contribution for its output element or tile.
+    void apply_diff_spin_debug_elementwise(
+      Tensor& Cnew,
+      const Tensor& Cold,
+      const std::vector<std::vector<DebugExcitationEdge>>& alpha_incoming,
+      const std::vector<std::vector<DebugExcitationEdge>>& beta_incoming,
+      const Tensor& h2e_einsum) const;
 
     bool use_gpu_operations_ = false;
 

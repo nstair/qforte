@@ -474,6 +474,467 @@ void FCIComputer::apply_tensor_spat_012bdy(
     );
 }
 
+void FCIComputer::apply_tensor_spat_12bdy_debug_elementwise(
+    const Tensor& h1e,
+    const Tensor& h2e,
+    const Tensor& h2e_einsum,
+    size_t norb)
+{
+    if(h1e.size() != (norb) * (norb)){
+        throw std::invalid_argument("Expecting h1e to be nmo x nmo for apply_tensor_spat_12bdy_debug_elementwise");
+    }
+
+    if(h2e.size() != (norb) * (norb) * (norb) * (norb) ){
+        throw std::invalid_argument("Expecting h2e to be nmo x nmo x nmo x nmo for apply_tensor_spat_12bdy_debug_elementwise");
+    }
+
+    if(h2e_einsum.size() != (norb) * (norb) * (norb) * (norb) ){
+        throw std::invalid_argument("Expecting h2e_einsum to be pair x pair for apply_tensor_spat_12bdy_debug_elementwise");
+    }
+
+    // Snapshot the input coefficients.  Every contribution below reads only
+    // from Cold and accumulates into Cnew, matching the optimized public call
+    // structure while staying deliberately explicit for debugging.
+    Tensor Cold = C_;
+    Tensor Cnew({nalfa_strs_, nbeta_strs_}, "Cnew_debug_elementwise");
+    Cnew.zero();
+
+    const std::vector<int>& alpha_dexc = graph_.read_dexca_vec();
+    const std::vector<int>& beta_dexc = graph_.read_dexcb_vec();
+    const int alpha_states = static_cast<int>(nalfa_strs_);
+    const int beta_states = static_cast<int>(nbeta_strs_);
+    const int nadexc = graph_.get_ndexca();
+    const int nbdexc = graph_.get_ndexcb();
+
+    // Keep both views of the excitation data:
+    //
+    //   1. alpha_dexc / beta_dexc:
+    //        the original source-oriented rows, used when the same-spin
+    //        algebra needs outgoing row scans from the intermediate string
+    //        a_mid or b_mid.
+    //
+    //   2. alpha_incoming / beta_incoming:
+    //        target-oriented reverse lists, used by the output-element owner
+    //        to find all source strings that feed the current output string.
+    const std::vector<std::vector<DebugExcitationEdge>> alpha_incoming =
+        build_incoming_excitation_lists_debug(alpha_dexc, alpha_states, nadexc);
+    const std::vector<std::vector<DebugExcitationEdge>> beta_incoming =
+        build_incoming_excitation_lists_debug(beta_dexc, beta_states, nbdexc);
+
+    // Same-spin debug/reference path:
+    //
+    // The older debug same-spin version reconstructed same-spin couplings while
+    // owning one output element.  That was excellent for correctness bring-up,
+    // but the likely optimal GPU same-spin workflow is different:
+    //
+    //   1. build explicit one-spin operators S_alpha and S_beta once,
+    //   2. apply S_alpha * Cold and Cold * S_beta^T to the CI tensor.
+    //
+    // This CPU debug/reference path now mirrors that future GPU workflow.  The
+    // mixed-spin contribution remains element-by-element below because that is
+    // still the intended GPU debug/bring-up logic for mixed spin.
+    const std::vector<std::vector<DebugSparseRowEntry>> alpha_same_spin_rows =
+        build_alpha_same_spin_operator_debug(
+            alpha_incoming,
+            alpha_dexc,
+            nadexc,
+            h1e,
+            h2e);
+
+    const std::vector<std::vector<DebugSparseRowEntry>> beta_same_spin_rows =
+        build_beta_same_spin_operator_debug(
+            beta_incoming,
+            beta_dexc,
+            nbdexc,
+            h1e,
+            h2e);
+
+    // Match the optimized apply_tensor_spat_12bdy call structure: each helper
+    // owns a whole contribution class and loops over all affected output
+    // elements internally.  This is still intentionally clarity-first debug
+    // code; the helper boundaries are chosen to mirror future CUDA kernels.
+    apply_alpha_same_spin_operator_debug(
+        Cnew,
+        Cold,
+        alpha_same_spin_rows);
+
+    apply_beta_same_spin_operator_debug(
+        Cnew,
+        Cold,
+        beta_same_spin_rows);
+
+    apply_diff_spin_debug_elementwise(
+        Cnew,
+        Cold,
+        alpha_incoming,
+        beta_incoming,
+        h2e_einsum);
+
+    C_ = Cnew;
+}
+
+void FCIComputer::apply_tensor_spat_012bdy_debug_elementwise(
+    const std::complex<double> h0e,
+    const Tensor& h1e,
+    const Tensor& h2e,
+    const Tensor& h2e_einsum,
+    size_t norb)
+{
+    Tensor Ctemp = C_;
+
+    apply_tensor_spat_12bdy_debug_elementwise(
+        h1e,
+        h2e,
+        h2e_einsum,
+        norb);
+
+    C_.zaxpy(
+        Ctemp,
+        h0e,
+        1,
+        1
+    );
+}
+
+std::vector<std::vector<FCIComputer::DebugExcitationEdge>>
+FCIComputer::build_incoming_excitation_lists_debug(
+    const std::vector<int>& dexc,
+    int nstates,
+    int ndexc) const
+{
+    if (nstates < 0) {
+        throw std::invalid_argument("Cannot build debug incoming excitation lists with negative nstates");
+    }
+    if (ndexc < 0) {
+        throw std::invalid_argument("Cannot build debug incoming excitation lists with negative ndexc");
+    }
+
+    const size_t expected_size =
+        static_cast<size_t>(nstates) * static_cast<size_t>(ndexc) * 3;
+    if (dexc.size() != expected_size) {
+        throw std::invalid_argument("Unexpected dexc size in build_incoming_excitation_lists_debug");
+    }
+
+    // The debug CUDA-outline convention is source-oriented input rows:
+    //
+    //     dexc[3 * (source * ndexc + t) + 0] = target
+    //     dexc[3 * (source * ndexc + t) + 1] = pair_shift
+    //     dexc[3 * (source * ndexc + t) + 2] = parity
+    //
+    // For output-element accumulation it is more natural to ask the reverse
+    // question: for this target/output string, which source strings can feed
+    // it?  This loop builds exactly that target-oriented incoming list.
+    std::vector<std::vector<DebugExcitationEdge>> incoming(
+        static_cast<size_t>(nstates));
+
+    for (int source = 0; source < nstates; ++source) {
+        for (int t = 0; t < ndexc; ++t) {
+            const int base = 3 * (source * ndexc + t);
+            const int target = dexc[base + 0];
+            const int pair_shift = dexc[base + 1];
+            const int parity = dexc[base + 2];
+
+            if (target < 0 || target >= nstates) {
+                throw std::invalid_argument("Invalid target index in debug dexc table");
+            }
+
+            incoming[static_cast<size_t>(target)].push_back(
+                {source, pair_shift, parity});
+        }
+    }
+
+    return incoming;
+}
+
+std::vector<std::vector<FCIComputer::DebugSparseRowEntry>>
+FCIComputer::build_alpha_same_spin_operator_debug(
+    const std::vector<std::vector<DebugExcitationEdge>>& alpha_incoming,
+    const std::vector<int>& dexc_alpha,
+    int ndexc_alpha,
+    const Tensor& h1e,
+    const Tensor& h2e) const
+{
+    const int alpha_states = static_cast<int>(nalfa_strs_);
+    const int norbs2 = static_cast<int>(norb_ * norb_);
+    const std::vector<std::complex<double>>& h1e_data = h1e.read_data();
+    const std::vector<std::complex<double>>& h2e_data = h2e.read_data();
+
+    std::vector<std::vector<DebugSparseRowEntry>> alpha_same_spin_rows(
+        static_cast<size_t>(alpha_states));
+
+    // Build S_alpha on the alpha-string space only:
+    //
+    //     S_alpha[a_out, a_src]
+    //
+    // The older debug same-spin code reconstructed these couplings inside each
+    // output CI scalar.  This operator-build phase is the new debug reference
+    // for the likely optimal GPU same-spin workflow: build the one-spin
+    // operator once, then apply it to beta-contiguous CI slices.
+    for (int a_out = 0; a_out < alpha_states; ++a_out) {
+        std::map<int, std::complex<double>> row_accum;
+
+        for (const DebugExcitationEdge& e1 :
+             alpha_incoming[static_cast<size_t>(a_out)]) {
+
+            // e1 is an incoming alpha edge into the final output alpha string:
+            //
+            //     a_mid --(ij, p1)--> a_out
+            //
+            // Source / intermediate / output roles:
+            //     a_out = final output alpha index, i.e. row of S_alpha
+            //     a_mid = intermediate alpha source from incoming edge to a_out
+            //     a_src = source-column index in S_alpha
+            const int a_mid = e1.source;
+            const int ij = e1.pair_shift;
+            const int p1 = e1.parity;
+
+            // One-body piece:
+            //
+            //     S_alpha[a_out, a_mid] += p1 * h1e[ij]
+            row_accum[a_mid] += static_cast<double>(p1)
+                * h1e_data[static_cast<size_t>(ij)];
+
+            // Two-body alpha same-spin piece.  Scan the original
+            // source-oriented dexc row for the intermediate/source string
+            // a_mid, preserving the exact algebra used by
+            // lm_apply_array12_same_spin_opt.
+            //
+            // Algebraically this contributes:
+            //
+            //     S_alpha[a_out, a_src] += p1 * p2 * h2e[ij, kl]
+            //
+            // where the row scan provides the stored target field named a_src
+            // here because it is the source-column used later in
+            // Cold[a_src, b].
+            for (int t2 = 0; t2 < ndexc_alpha; ++t2) {
+                const int base2 = 3 * (a_mid * ndexc_alpha + t2);
+                const int a_src = dexc_alpha[base2 + 0];
+                const int kl = dexc_alpha[base2 + 1];
+                const int p2 = dexc_alpha[base2 + 2];
+
+                row_accum[a_src] += static_cast<double>(p1 * p2)
+                    * h2e_data[static_cast<size_t>(ij * norbs2 + kl)];
+            }
+        }
+
+        std::vector<DebugSparseRowEntry>& row =
+            alpha_same_spin_rows[static_cast<size_t>(a_out)];
+        row.reserve(row_accum.size());
+        for (const auto& entry : row_accum) {
+            row.push_back({entry.first, entry.second});
+        }
+    }
+
+    return alpha_same_spin_rows;
+}
+
+std::vector<std::vector<FCIComputer::DebugSparseRowEntry>>
+FCIComputer::build_beta_same_spin_operator_debug(
+    const std::vector<std::vector<DebugExcitationEdge>>& beta_incoming,
+    const std::vector<int>& dexc_beta,
+    int ndexc_beta,
+    const Tensor& h1e,
+    const Tensor& h2e) const
+{
+    const int beta_states = static_cast<int>(nbeta_strs_);
+    const int norbs2 = static_cast<int>(norb_ * norb_);
+    const std::vector<std::complex<double>>& h1e_data = h1e.read_data();
+    const std::vector<std::complex<double>>& h2e_data = h2e.read_data();
+
+    std::vector<std::vector<DebugSparseRowEntry>> beta_same_spin_rows(
+        static_cast<size_t>(beta_states));
+
+    // Build S_beta on the beta-string space only:
+    //
+    //     S_beta[b_out, b_src]
+    //
+    // This is intentionally native beta indexing, not a transposed alpha
+    // reuse, so the future beta GPU path can follow the same data flow.
+    for (int b_out = 0; b_out < beta_states; ++b_out) {
+        std::map<int, std::complex<double>> row_accum;
+
+        for (const DebugExcitationEdge& f1 :
+             beta_incoming[static_cast<size_t>(b_out)]) {
+
+            // f1 is an incoming beta edge into the final output beta string:
+            //
+            //     b_mid --(ij, q1)--> b_out
+            //
+            // Source / intermediate / output roles:
+            //     b_out = final output beta index, i.e. row of S_beta
+            //     b_mid = intermediate beta source from incoming edge to b_out
+            //     b_src = source-column index in S_beta
+            const int b_mid = f1.source;
+            const int ij = f1.pair_shift;
+            const int q1 = f1.parity;
+
+            // One-body piece:
+            //
+            //     S_beta[b_out, b_mid] += q1 * h1e[ij]
+            row_accum[b_mid] += static_cast<double>(q1)
+                * h1e_data[static_cast<size_t>(ij)];
+
+            // Two-body beta same-spin piece.  Scan the original
+            // source-oriented dexc row for the intermediate/source string
+            // b_mid, preserving the exact algebra used by
+            // lm_apply_array12_same_spin_opt.
+            //
+            // Algebraically this contributes:
+            //
+            //     S_beta[b_out, b_src] += q1 * q2 * h2e[ij, kl]
+            //
+            // where the row scan provides the stored target field named b_src
+            // here because it is the source-column used later in
+            // Cold[a, b_src].
+            for (int t2 = 0; t2 < ndexc_beta; ++t2) {
+                const int base2 = 3 * (b_mid * ndexc_beta + t2);
+                const int b_src = dexc_beta[base2 + 0];
+                const int kl = dexc_beta[base2 + 1];
+                const int q2 = dexc_beta[base2 + 2];
+
+                row_accum[b_src] += static_cast<double>(q1 * q2)
+                    * h2e_data[static_cast<size_t>(ij * norbs2 + kl)];
+            }
+        }
+
+        std::vector<DebugSparseRowEntry>& row =
+            beta_same_spin_rows[static_cast<size_t>(b_out)];
+        row.reserve(row_accum.size());
+        for (const auto& entry : row_accum) {
+            row.push_back({entry.first, entry.second});
+        }
+    }
+
+    return beta_same_spin_rows;
+}
+
+void FCIComputer::apply_alpha_same_spin_operator_debug(
+    Tensor& Cnew,
+    const Tensor& Cold,
+    const std::vector<std::vector<DebugSparseRowEntry>>& alpha_same_spin_rows) const
+{
+    const int alpha_states = static_cast<int>(nalfa_strs_);
+    const int beta_states = static_cast<int>(nbeta_strs_);
+    std::vector<std::complex<double>>& Cnew_data = Cnew.data();
+    const std::vector<std::complex<double>>& Cold_data = Cold.read_data();
+
+    // Apply the prebuilt one-spin alpha operator to the full CI tensor:
+    //
+    //     Cnew[a_out, b] += S_alpha[a_out, a_src] * Cold[a_src, b]
+    //
+    // Future CUDA mapping: S_alpha rows are reused while applying over
+    // beta-contiguous slices of Cold.  No same-spin coupling reconstruction is
+    // needed inside the per-output application loop.
+    for (int a_out = 0; a_out < alpha_states; ++a_out) {
+        for (const DebugSparseRowEntry& entry :
+             alpha_same_spin_rows[static_cast<size_t>(a_out)]) {
+            const int a_src = entry.source;
+            const std::complex<double> value = entry.value;
+
+            for (int b = 0; b < beta_states; ++b) {
+                Cnew_data[static_cast<size_t>(a_out * beta_states + b)] +=
+                    value * Cold_data[static_cast<size_t>(a_src * beta_states + b)];
+            }
+        }
+    }
+}
+
+void FCIComputer::apply_beta_same_spin_operator_debug(
+    Tensor& Cnew,
+    const Tensor& Cold,
+    const std::vector<std::vector<DebugSparseRowEntry>>& beta_same_spin_rows) const
+{
+    const int alpha_states = static_cast<int>(nalfa_strs_);
+    const int beta_states = static_cast<int>(nbeta_strs_);
+    std::vector<std::complex<double>>& Cnew_data = Cnew.data();
+    const std::vector<std::complex<double>>& Cold_data = Cold.read_data();
+
+    // Apply the prebuilt one-spin beta operator to the full CI tensor:
+    //
+    //     Cnew[a, b_out] += S_beta[b_out, b_src] * Cold[a, b_src]
+    //
+    // This is equivalent to Cold * S_beta^T but is written natively in beta
+    // indexing, with no transpose trick.  Future CUDA mapping: S_beta rows are
+    // reused while applying over alpha slices of Cold.
+    for (int b_out = 0; b_out < beta_states; ++b_out) {
+        for (const DebugSparseRowEntry& entry :
+             beta_same_spin_rows[static_cast<size_t>(b_out)]) {
+            const int b_src = entry.source;
+            const std::complex<double> value = entry.value;
+
+            for (int a = 0; a < alpha_states; ++a) {
+                Cnew_data[static_cast<size_t>(a * beta_states + b_out)] +=
+                    value * Cold_data[static_cast<size_t>(a * beta_states + b_src)];
+            }
+        }
+    }
+}
+
+void FCIComputer::apply_diff_spin_debug_elementwise(
+    Tensor& Cnew,
+    const Tensor& Cold,
+    const std::vector<std::vector<DebugExcitationEdge>>& alpha_incoming,
+    const std::vector<std::vector<DebugExcitationEdge>>& beta_incoming,
+    const Tensor& h2e_einsum) const
+{
+    const int alpha_states = static_cast<int>(nalfa_strs_);
+    const int beta_states = static_cast<int>(nbeta_strs_);
+    const int norbs2 = static_cast<int>(norb_ * norb_);
+    std::vector<std::complex<double>>& Cnew_data = Cnew.data();
+    const std::vector<std::complex<double>>& Cold_data = Cold.read_data();
+    const std::vector<std::complex<double>>& h2e_einsum_data =
+        h2e_einsum.read_data();
+
+    // This helper applies ONLY the mixed-spin contribution over the full
+    // output tensor.  It is intentionally the debug/reference analogue of the
+    // optimized "diff spin apply" call.
+    //
+    // Future CUDA mapping: keep this minimal-arithmetic nested walk, where one
+    // output-element owner pairs incoming alpha and incoming beta edges,
+    // accumulates locally, and writes/adds one contribution to output.
+    //
+    // The math/algorithm is intentionally unchanged from the original debug
+    // elementwise implementation:
+    //
+    //     sum_ea sum_eb pa * pb
+    //         * h2e_einsum[pair(ea), pair(eb)]
+    //         * Cold[source(ea), source(eb)]
+    for (int a_out = 0; a_out < alpha_states; ++a_out) {
+        for (int b_out = 0; b_out < beta_states; ++b_out) {
+            std::complex<double> diff_spin = 0.0;
+
+            for (const DebugExcitationEdge& ea :
+                 alpha_incoming[static_cast<size_t>(a_out)]) {
+                const int a_src = ea.source;
+                const int ij = ea.pair_shift;
+                const int pa = ea.parity;
+
+                for (const DebugExcitationEdge& eb :
+                     beta_incoming[static_cast<size_t>(b_out)]) {
+                    const int b_src = eb.source;
+                    const int kl = eb.pair_shift;
+                    const int pb = eb.parity;
+
+                    // Incoming edge meanings for this coupled Hamiltonian
+                    // nonzero:
+                    //
+                    //     a_src --(ij, pa)--> a_out
+                    //     b_src --(kl, pb)--> b_out
+                    //
+                    // Accumulate one mixed-spin nonzero against
+                    // Cold[a_src, b_src].
+                    diff_spin += static_cast<double>(pa * pb)
+                        * h2e_einsum_data[static_cast<size_t>(ij * norbs2 + kl)]
+                        * Cold_data[static_cast<size_t>(a_src * beta_states + b_src)];
+                }
+            }
+
+            Cnew_data[static_cast<size_t>(a_out * beta_states + b_out)] +=
+                diff_spin;
+        }
+    }
+}
+
 // NICK: VERY VERY Slow, will want even a better c++ implementation!
 // Try with einsum once working or perhaps someting like the above...?
 std::pair<Tensor, Tensor> FCIComputer::calculate_dvec_spin_with_coeff() {
@@ -2989,6 +3450,3 @@ void FCIComputer::print_vector_uint(const std::vector<uint64_t>& vec, const std:
     }
     std::cout << std::endl;
 }
-
-
-
