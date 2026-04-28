@@ -439,3 +439,56 @@ extern "C" void lm_apply_array12_diff_spin_wrapper_mixed(
     int nadexc,
     int nbdexc,
     int norbs);
+
+// ===============================================
+// Diff Spin Implementation v2
+// Target/output-element-owned mixed-spin path.
+// ===============================================
+
+extern "C" void lm_apply_array12_diff_spin_v2_tiled_wrapper(
+    cuDoubleComplex* d_out,
+    const cuDoubleComplex* d_C,
+    const long long* d_alpha_offsets,
+    const int* d_alpha_sources,
+    const int* d_alpha_pairs,
+    const int* d_alpha_parities,
+    const long long* d_beta_offsets,
+    const int* d_beta_sources,
+    const int* d_beta_pairs,
+    const int* d_beta_parities,
+    const cuDoubleComplex* d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs);
+
+extern "C" void lm_apply_array12_diff_spin_v2_tiled_wrapper_real(
+    double* d_out,
+    const double* d_C,
+    const long long* d_alpha_offsets,
+    const int* d_alpha_sources,
+    const int* d_alpha_pairs,
+    const int* d_alpha_parities,
+    const long long* d_beta_offsets,
+    const int* d_beta_sources,
+    const int* d_beta_pairs,
+    const int* d_beta_parities,
+    const double* d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs);
+
+extern "C" void lm_apply_array12_diff_spin_v2_tiled_wrapper_mixed(
+    cuDoubleComplex* d_out,
+    const cuDoubleComplex* d_C,
+    const long long* d_alpha_offsets,
+    const int* d_alpha_sources,
+    const int* d_alpha_pairs,
+    const int* d_alpha_parities,
+    const long long* d_beta_offsets,
+    const int* d_beta_sources,
+    const int* d_beta_pairs,
+    const int* d_beta_parities,
+    const double* d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs);

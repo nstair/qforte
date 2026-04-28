@@ -70,7 +70,7 @@ def create_psi_mol(**kwargs):
     kwargs.setdefault('run_fci', False)
 
     # Setup psi4 calculation(s)
-    # psi4.set_num_threads(2)
+    psi4.set_num_threads(4)
     psi4.set_memory('2 GB')
     psi4.core.set_output_file(kwargs['filename']+'.out', False)
 

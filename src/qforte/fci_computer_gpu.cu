@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <cmath>
 #include <iterator>
+#include <limits>
 
 #include "qubit_basis.h"
 #include "circuit.h"
@@ -27,8 +28,92 @@
 #include "cublas_math.cuh"
 #include "fci_computer_gpu_kernels.cuh"
 
-FCIComputerGPU::FCIComputerGPU(int nel, int sz, int norb, bool on_gpu, const std::string& data_type, bool gpu_only) : 
-    nel_(nel), 
+namespace {
+
+struct IncomingExcitationTablesGPUV2 {
+    thrust::device_vector<long long> offsets;
+    thrust::device_vector<int> sources;
+    thrust::device_vector<int> pairs;
+    thrust::device_vector<int> parities;
+};
+
+IncomingExcitationTablesGPUV2 build_incoming_excitation_tables_gpu_v2(
+    const std::vector<int>& dexc,
+    const int nstates,
+    const int ndexc,
+    const char* label)
+{
+    if (nstates < 0) {
+        throw std::invalid_argument(std::string(label) + " nstates is negative");
+    }
+    if (ndexc < 0) {
+        throw std::invalid_argument(std::string(label) + " ndexc is negative");
+    }
+
+    const size_t expected_size =
+        static_cast<size_t>(nstates) * static_cast<size_t>(ndexc) * 3;
+    if (dexc.size() != expected_size) {
+        throw std::invalid_argument(std::string(label) + " dexc table has unexpected size");
+    }
+
+    std::vector<long long> h_counts(static_cast<size_t>(nstates), 0);
+    for (int source = 0; source < nstates; ++source) {
+        for (int edge = 0; edge < ndexc; ++edge) {
+            const int base = 3 * (source * ndexc + edge);
+            const int target = dexc[base + 0];
+            if (target < 0 || target >= nstates) {
+                throw std::invalid_argument(std::string(label) + " dexc target is out of range");
+            }
+            ++h_counts[static_cast<size_t>(target)];
+        }
+    }
+
+    std::vector<long long> h_offsets(static_cast<size_t>(nstates) + 1, 0);
+    for (int state = 0; state < nstates; ++state) {
+        h_offsets[static_cast<size_t>(state) + 1] =
+            h_offsets[static_cast<size_t>(state)] + h_counts[static_cast<size_t>(state)];
+    }
+
+    const long long total_edges_ll = h_offsets.back();
+    if (total_edges_ll < 0 ||
+        static_cast<unsigned long long>(total_edges_ll)
+            > static_cast<unsigned long long>(std::numeric_limits<size_t>::max())) {
+        throw std::overflow_error(std::string(label) + " incoming table is too large");
+    }
+    const size_t total_edges = static_cast<size_t>(total_edges_ll);
+
+    std::vector<int> h_sources(total_edges);
+    std::vector<int> h_pairs(total_edges);
+    std::vector<int> h_parities(total_edges);
+    std::vector<long long> h_cursors = h_offsets;
+
+    for (int source = 0; source < nstates; ++source) {
+        for (int edge = 0; edge < ndexc; ++edge) {
+            const int base = 3 * (source * ndexc + edge);
+            const int target = dexc[base + 0];
+            const int pair = dexc[base + 1];
+            const int parity = dexc[base + 2];
+
+            const size_t pos = static_cast<size_t>(
+                h_cursors[static_cast<size_t>(target)]++);
+            h_sources[pos] = source;
+            h_pairs[pos] = pair;
+            h_parities[pos] = parity;
+        }
+    }
+
+    IncomingExcitationTablesGPUV2 tables;
+    tables.offsets = h_offsets;
+    tables.sources = h_sources;
+    tables.pairs = h_pairs;
+    tables.parities = h_parities;
+    return tables;
+}
+
+} // namespace
+
+FCIComputerGPU::FCIComputerGPU(int nel, int sz, int norb, bool on_gpu, const std::string& data_type, bool gpu_only) :
+    nel_(nel),
     sz_(sz),
     norb_(norb),
     on_gpu_(on_gpu),
@@ -69,7 +154,7 @@ FCIComputerGPU::FCIComputerGPU(int nel, int sz, int norb, bool on_gpu, const std
     }
 
     C_.zero_with_shape(
-        {nalfa_strs_, nbeta_strs_}, 
+        {nalfa_strs_, nbeta_strs_},
         on_gpu_,
         data_type_,
         gpu_only_);
@@ -108,52 +193,52 @@ FCIComputerGPU::FCIComputerGPU(int nel, int sz, int norb, bool on_gpu, const std
 /// Destructor: properly cleanup GPU resources
 FCIComputerGPU::~FCIComputerGPU() {
     try {
-        
+
         sourcea_gpu_.clear();
         sourcea_gpu_.shrink_to_fit();
-        
+
         targeta_gpu_.clear();
         targeta_gpu_.shrink_to_fit();
-        
+
         paritya_gpu_.clear();
         paritya_gpu_.shrink_to_fit();
-        
+
         paritya_gpu_real_.clear();
         paritya_gpu_real_.shrink_to_fit();
-        
+
         sourcea_undag_gpu_.clear();
         sourcea_undag_gpu_.shrink_to_fit();
-        
+
         targeta_undag_gpu_.clear();
         targeta_undag_gpu_.shrink_to_fit();
-        
+
         paritya_undag_gpu_.clear();
         paritya_undag_gpu_.shrink_to_fit();
-        
+
         paritya_undag_gpu_real_.clear();
         paritya_undag_gpu_real_.shrink_to_fit();
-        
+
         sourceb_gpu_.clear();
         sourceb_gpu_.shrink_to_fit();
-        
+
         targetb_gpu_.clear();
         targetb_gpu_.shrink_to_fit();
-        
+
         parityb_gpu_.clear();
         parityb_gpu_.shrink_to_fit();
-        
+
         parityb_gpu_real_.clear();
         parityb_gpu_real_.shrink_to_fit();
-        
+
         sourceb_undag_gpu_.clear();
         sourceb_undag_gpu_.shrink_to_fit();
-        
+
         targetb_undag_gpu_.clear();
         targetb_undag_gpu_.shrink_to_fit();
-        
+
         parityb_undag_gpu_.clear();
         parityb_undag_gpu_.shrink_to_fit();
-        
+
         parityb_undag_gpu_real_.clear();
         parityb_undag_gpu_real_.shrink_to_fit();
 
@@ -213,10 +298,10 @@ void FCIComputerGPU::to_cpu()
     on_gpu_ = 0;
 }
 
-/// apply a TensorOperator to the current state 
+/// apply a TensorOperator to the current state
 // void apply_tensor_operator(const TensorOperator& top);
 
-/// apply a Tensor represending a 1-body spin-orbital indexed operator to the current state 
+/// apply a Tensor represending a 1-body spin-orbital indexed operator to the current state
 void FCIComputerGPU::apply_tensor_spin_1bdy(const TensorGPU& h1e, size_t norb) {
 
     if(h1e.size() != (norb * 2) * (norb * 2)){
@@ -227,14 +312,14 @@ void FCIComputerGPU::apply_tensor_spin_1bdy(const TensorGPU& h1e, size_t norb) {
 
     TensorGPU h1e_blk1 = h1e.slice(
         {
-            std::make_pair(0, norb_), 
+            std::make_pair(0, norb_),
             std::make_pair(0, norb_)
             }
         );
 
     TensorGPU h1e_blk2 = h1e.slice(
         {
-            std::make_pair(norb_, 2*norb_), 
+            std::make_pair(norb_, 2*norb_),
             std::make_pair(norb_, 2*norb_)
             }
         );
@@ -262,11 +347,11 @@ void FCIComputerGPU::apply_tensor_spin_1bdy(const TensorGPU& h1e, size_t norb) {
     C_ = Cnew;
 }
 
-/// apply TensorGPUs represending 1-body and 2-body spatial-orbital indexed operator to the current state 
+/// apply TensorGPUs represending 1-body and 2-body spatial-orbital indexed operator to the current state
 void FCIComputerGPU::apply_tensor_spat_12bdy_gpu(
-    const TensorGPU& h1e, 
-    const TensorGPU& h2e, 
-    TensorGPU& h2e_einsum, 
+    const TensorGPU& h1e,
+    const TensorGPU& h2e,
+    TensorGPU& h2e_einsum,
     size_t norb) {
 
     gpu_error();
@@ -284,28 +369,28 @@ void FCIComputerGPU::apply_tensor_spat_12bdy_gpu(
 
     timer_.acc_begin("=> same spin alpha outer");
     lm_apply_array12_same_spin_opt_gpu(
-        Cnew, 
+        Cnew,
         graph_.read_dexca_vec(), // dexca_tmp
         nalfa_strs_,
-        nbeta_strs_, 
+        nbeta_strs_,
         graph_.get_ndexca(),
-        h1e, 
+        h1e,
         h2e,
         norb_,
         true);
     timer_.acc_end("=> same spin alpha outer");
 
-    timer_.acc_begin("=> same spin beta outer"); 
+    timer_.acc_begin("=> same spin beta outer");
 
     // Cnew.fineGrainedTranspose();
 
     lm_apply_array12_same_spin_opt_gpu(
-        Cnew, 
+        Cnew,
         graph_.read_dexcb_vec(), // dexcb_tmp - FIXED: was dexca_vec
         nbeta_strs_,             // FIXED: swapped nalfa <-> nbeta after transpose
         nalfa_strs_,             // FIXED: swapped nalfa <-> nbeta after transpose
         graph_.get_ndexcb(),     // FIXED: was get_ndexca()
-        h1e, 
+        h1e,
         h2e,
         norb_,
         false);                  // FIXED: was true, should be false for beta
@@ -320,11 +405,11 @@ void FCIComputerGPU::apply_tensor_spat_12bdy_gpu(
         graph_.read_dexca_vec(),
         graph_.read_dexcb_vec(),
         nalfa_strs_,
-        nbeta_strs_, 
+        nbeta_strs_,
         graph_.get_ndexca(),
         graph_.get_ndexca(),
-        h2e_einsum, 
-        norb_); 
+        h2e_einsum,
+        norb_);
 
     timer_.acc_end("=> diff spin outer");
 
@@ -332,15 +417,15 @@ void FCIComputerGPU::apply_tensor_spat_12bdy_gpu(
 }
 
 /// apply TensorGPUs represending 1-body and 2-body spatial-orbital indexed operator
-/// as well as a constant to the current state 
+/// as well as a constant to the current state
 /// Computes: C_ = h0e * C_ + sigma_12bdy(C_)
 /// Memory-optimized: uses 2 state vectors (C_ + Cnew) instead of 3 (C_ + Cold + Cnew)
 void FCIComputerGPU::apply_tensor_spat_012bdy_gpu(
     const std::complex<double> h0e,
-    const TensorGPU& h1e, 
-    const TensorGPU& h2e, 
-    TensorGPU& h2e_einsum, 
-    size_t norb) 
+    const TensorGPU& h1e,
+    const TensorGPU& h2e,
+    TensorGPU& h2e_einsum,
+    size_t norb)
 {
     gpu_error();
 
@@ -358,12 +443,12 @@ void FCIComputerGPU::apply_tensor_spat_012bdy_gpu(
 
     timer_.acc_begin("=> same spin alpha outer");
     lm_apply_array12_same_spin_opt_gpu(
-        Cnew, 
+        Cnew,
         graph_.read_dexca_vec(),
         nalfa_strs_,
-        nbeta_strs_, 
+        nbeta_strs_,
         graph_.get_ndexca(),
-        h1e, 
+        h1e,
         h2e,
         norb_,
         true);
@@ -371,12 +456,12 @@ void FCIComputerGPU::apply_tensor_spat_012bdy_gpu(
 
     timer_.acc_begin("=> same spin beta outer");
     lm_apply_array12_same_spin_opt_gpu(
-        Cnew, 
+        Cnew,
         graph_.read_dexcb_vec(),
         nbeta_strs_,
         nalfa_strs_,
         graph_.get_ndexcb(),
-        h1e, 
+        h1e,
         h2e,
         norb_,
         false);
@@ -388,11 +473,11 @@ void FCIComputerGPU::apply_tensor_spat_012bdy_gpu(
         graph_.read_dexca_vec(),
         graph_.read_dexcb_vec(),
         nalfa_strs_,
-        nbeta_strs_, 
+        nbeta_strs_,
         graph_.get_ndexca(),
         graph_.get_ndexca(),
-        h2e_einsum, 
-        norb_); 
+        h2e_einsum,
+        norb_);
     timer_.acc_end("=> diff spin outer");
 
     // C_ = 1.0 * Cnew + h0e * C_  (no Cold copy needed)
@@ -401,7 +486,156 @@ void FCIComputerGPU::apply_tensor_spat_012bdy_gpu(
         1.0,
         h0e,
         1,
-        1    
+        1
+    );
+}
+
+void FCIComputerGPU::apply_tensor_spat_12bdy_gpu_v2(
+    const TensorGPU& h1e,
+    const TensorGPU& h2e,
+    TensorGPU& h2e_einsum,
+    size_t norb)
+{
+    gpu_error();
+
+    if(h1e.size() != (norb) * (norb)){
+        throw std::invalid_argument("Expecting h1e to be nmo x nmo for apply_tensor_spat_12bdy_gpu_v2");
+    }
+
+    if(h2e.size() != (norb) * (norb) * (norb) * (norb) ){
+        throw std::invalid_argument("Expecting h2e to be nso x nso x nso x nso for apply_tensor_spat_12bdy_gpu_v2");
+    }
+
+    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew_v2", true, data_type_, true);
+    Cnew.zero_gpu();
+
+    timer_.acc_begin("=> same spin alpha outer");
+    lm_apply_array12_same_spin_opt_gpu(
+        Cnew,
+        graph_.read_dexca_vec(),
+        nalfa_strs_,
+        nbeta_strs_,
+        graph_.get_ndexca(),
+        h1e,
+        h2e,
+        norb_,
+        true);
+    timer_.acc_end("=> same spin alpha outer");
+
+    timer_.acc_begin("=> same spin beta outer transposed");
+    C_.fineGrainedTranspose();
+    Cnew.fineGrainedTranspose();
+
+    // Experimental v2 beta same-spin path: after transposing the CI tensors,
+    // beta strings are laid out as contiguous rows.  Reuse the same row-major
+    // same-spin SpMM path as alpha by passing the beta excitation table with
+    // is_alpha=true.  Both tensors are transposed back before mixed-spin.
+    lm_apply_array12_same_spin_opt_gpu(
+        Cnew,
+        graph_.read_dexcb_vec(),
+        nbeta_strs_,
+        nalfa_strs_,
+        graph_.get_ndexcb(),
+        h1e,
+        h2e,
+        norb_,
+        true);
+
+    C_.fineGrainedTranspose();
+    Cnew.fineGrainedTranspose();
+    timer_.acc_end("=> same spin beta outer transposed");
+
+    timer_.acc_begin("=> diff spin outer v2 tiled");
+    lm_apply_array12_diff_spin_opt_gpu_v2_tiled(
+        Cnew,
+        graph_.read_dexca_vec(),
+        graph_.read_dexcb_vec(),
+        nalfa_strs_,
+        nbeta_strs_,
+        graph_.get_ndexca(),
+        graph_.get_ndexcb(),
+        h2e_einsum,
+        norb_);
+    timer_.acc_end("=> diff spin outer v2 tiled");
+
+    C_ = Cnew;
+}
+
+void FCIComputerGPU::apply_tensor_spat_012bdy_gpu_v2(
+    const std::complex<double> h0e,
+    const TensorGPU& h1e,
+    const TensorGPU& h2e,
+    TensorGPU& h2e_einsum,
+    size_t norb)
+{
+    gpu_error();
+
+    if(h1e.size() != (norb) * (norb)){
+        throw std::invalid_argument("Expecting h1e to be nmo x nmo for apply_tensor_spat_012bdy_gpu_v2");
+    }
+
+    if(h2e.size() != (norb) * (norb) * (norb) * (norb) ){
+        throw std::invalid_argument("Expecting h2e to be nso x nso x nso x nso for apply_tensor_spat_012bdy_gpu_v2");
+    }
+
+    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew_v2", true, data_type_, true);
+    Cnew.zero_gpu();
+
+    timer_.acc_begin("=> same spin alpha outer");
+    lm_apply_array12_same_spin_opt_gpu(
+        Cnew,
+        graph_.read_dexca_vec(),
+        nalfa_strs_,
+        nbeta_strs_,
+        graph_.get_ndexca(),
+        h1e,
+        h2e,
+        norb_,
+        true);
+    timer_.acc_end("=> same spin alpha outer");
+
+    timer_.acc_begin("=> same spin beta outer transposed");
+    C_.fineGrainedTranspose();
+    Cnew.fineGrainedTranspose();
+
+    // Experimental v2 beta same-spin path: after transposing the CI tensors,
+    // beta strings are laid out as contiguous rows.  Reuse the same row-major
+    // same-spin SpMM path as alpha by passing the beta excitation table with
+    // is_alpha=true.  Both tensors are transposed back before mixed-spin.
+    lm_apply_array12_same_spin_opt_gpu(
+        Cnew,
+        graph_.read_dexcb_vec(),
+        nbeta_strs_,
+        nalfa_strs_,
+        graph_.get_ndexcb(),
+        h1e,
+        h2e,
+        norb_,
+        true);
+
+    C_.fineGrainedTranspose();
+    Cnew.fineGrainedTranspose();
+    timer_.acc_end("=> same spin beta outer transposed");
+
+    timer_.acc_begin("=> diff spin outer v2 tiled");
+    lm_apply_array12_diff_spin_opt_gpu_v2_tiled(
+        Cnew,
+        graph_.read_dexca_vec(),
+        graph_.read_dexcb_vec(),
+        nalfa_strs_,
+        nbeta_strs_,
+        graph_.get_ndexca(),
+        graph_.get_ndexcb(),
+        h2e_einsum,
+        norb_);
+    timer_.acc_end("=> diff spin outer v2 tiled");
+
+    C_.zaxpby(
+        Cnew,
+        1.0,
+        h0e,
+        1,
+        1
     );
 }
 
@@ -426,8 +660,8 @@ void FCIComputerGPU::apply_tensor_operator(const TensorOperator& top)
 /// TODO: this is commented out in FCIComputerGPU, so skipping
 /*
 void FCIComputerGPU::apply_tensor_spin_12bdy(
-    const TensorGPU& h1e, 
-    const TensorGPU& h2e, 
+    const TensorGPU& h1e,
+    const TensorGPU& h2e,
     size_t norb)
 {
     // Implementation would be similar to FCIComputerGPU but using TensorGPU
@@ -654,6 +888,104 @@ void FCIComputerGPU::lm_apply_array12_diff_spin_opt_gpu(
     }
 }
 
+void FCIComputerGPU::lm_apply_array12_diff_spin_opt_gpu_v2_tiled(
+    TensorGPU& out,
+    const std::vector<int>& adexc,
+    const std::vector<int>& bdexc,
+    const int alpha_states,
+    const int beta_states,
+    const int nadexc,
+    const int nbdexc,
+    TensorGPU& h2e,
+    const int norbs)
+{
+    gpu_error();
+
+    timer_.acc_begin("==> diff spin v2 incoming transfer");
+    IncomingExcitationTablesGPUV2 alpha_incoming =
+        build_incoming_excitation_tables_gpu_v2(
+            adexc,
+            alpha_states,
+            nadexc,
+            "alpha");
+    IncomingExcitationTablesGPUV2 beta_incoming =
+        build_incoming_excitation_tables_gpu_v2(
+            bdexc,
+            beta_states,
+            nbdexc,
+            "beta");
+    timer_.acc_end("==> diff spin v2 incoming transfer");
+
+    const long long alpha_states_ll = static_cast<long long>(alpha_states);
+    const long long beta_states_ll = static_cast<long long>(beta_states);
+
+    timer_.acc_begin("==> diff spin v2 tiled kernel");
+    if (data_type_ == "real") {
+        double* d_out_real = thrust::raw_pointer_cast(out.d_re_data().data());
+        const double* d_C_real = thrust::raw_pointer_cast(C_.read_d_re_data().data());
+        const double* d_h2e_real = thrust::raw_pointer_cast(h2e.read_d_re_data().data());
+
+        lm_apply_array12_diff_spin_v2_tiled_wrapper_real(
+            d_out_real,
+            d_C_real,
+            thrust::raw_pointer_cast(alpha_incoming.offsets.data()),
+            thrust::raw_pointer_cast(alpha_incoming.sources.data()),
+            thrust::raw_pointer_cast(alpha_incoming.pairs.data()),
+            thrust::raw_pointer_cast(alpha_incoming.parities.data()),
+            thrust::raw_pointer_cast(beta_incoming.offsets.data()),
+            thrust::raw_pointer_cast(beta_incoming.sources.data()),
+            thrust::raw_pointer_cast(beta_incoming.pairs.data()),
+            thrust::raw_pointer_cast(beta_incoming.parities.data()),
+            d_h2e_real,
+            alpha_states_ll,
+            beta_states_ll,
+            norbs);
+    } else if (data_type_ == "complex" && h2e.data_type() == "real") {
+        cuDoubleComplex* d_out = thrust::raw_pointer_cast(out.d_data().data());
+        const cuDoubleComplex* d_C = thrust::raw_pointer_cast(C_.read_d_data().data());
+        const double* d_h2e = thrust::raw_pointer_cast(h2e.read_d_re_data().data());
+
+        lm_apply_array12_diff_spin_v2_tiled_wrapper_mixed(
+            d_out,
+            d_C,
+            thrust::raw_pointer_cast(alpha_incoming.offsets.data()),
+            thrust::raw_pointer_cast(alpha_incoming.sources.data()),
+            thrust::raw_pointer_cast(alpha_incoming.pairs.data()),
+            thrust::raw_pointer_cast(alpha_incoming.parities.data()),
+            thrust::raw_pointer_cast(beta_incoming.offsets.data()),
+            thrust::raw_pointer_cast(beta_incoming.sources.data()),
+            thrust::raw_pointer_cast(beta_incoming.pairs.data()),
+            thrust::raw_pointer_cast(beta_incoming.parities.data()),
+            d_h2e,
+            alpha_states_ll,
+            beta_states_ll,
+            norbs);
+    } else if (data_type_ == "complex" && h2e.data_type() == "complex") {
+        cuDoubleComplex* d_out = thrust::raw_pointer_cast(out.d_data().data());
+        const cuDoubleComplex* d_C = thrust::raw_pointer_cast(C_.read_d_data().data());
+        const cuDoubleComplex* d_h2e = thrust::raw_pointer_cast(h2e.read_d_data().data());
+
+        lm_apply_array12_diff_spin_v2_tiled_wrapper(
+            d_out,
+            d_C,
+            thrust::raw_pointer_cast(alpha_incoming.offsets.data()),
+            thrust::raw_pointer_cast(alpha_incoming.sources.data()),
+            thrust::raw_pointer_cast(alpha_incoming.pairs.data()),
+            thrust::raw_pointer_cast(alpha_incoming.parities.data()),
+            thrust::raw_pointer_cast(beta_incoming.offsets.data()),
+            thrust::raw_pointer_cast(beta_incoming.sources.data()),
+            thrust::raw_pointer_cast(beta_incoming.pairs.data()),
+            thrust::raw_pointer_cast(beta_incoming.parities.data()),
+            d_h2e,
+            alpha_states_ll,
+            beta_states_ll,
+            norbs);
+    } else {
+        throw std::runtime_error("Unsupported data type combination in lm_apply_array12_diff_spin_opt_gpu_v2_tiled");
+    }
+    timer_.acc_end("==> diff spin v2 tiled kernel");
+}
+
 /// TODO: Not implemented in GPU so skipping
 /*
 std::pair<TensorGPU, TensorGPU> FCIComputerGPU::calculate_dvec_spin_with_coeff()
@@ -684,7 +1016,7 @@ TensorGPU FCIComputerGPU::calculate_coeff_spin_with_dvec_cpu(std::pair<TensorGPU
                     size_t d_vidxa = k * dvec.first.strides()[3] + target * dvec.first.strides()[2] + j * dvec.first.strides()[1] + i * dvec.first.strides()[0];
                     Cnew.data()[c_vidxa] += parity * dvec.first.data()[d_vidxa];
                 }
-                
+
             }
             for (const auto& mapping : beta_mappings) {
                 size_t source = std::get<0>(mapping);
@@ -803,9 +1135,9 @@ void FCIComputerGPU::apply_cos_inplace_cpu(
     timer_.acc_begin("===>hard: apply cos kernal");
     scale_elements_wrapper_complex(
         thrust::raw_pointer_cast(Cout.d_data().data()),
-        thrust::raw_pointer_cast(d_first.data()), 
+        thrust::raw_pointer_cast(d_first.data()),
         d_first.size(),
-        thrust::raw_pointer_cast(d_second.data()), 
+        thrust::raw_pointer_cast(d_second.data()),
         d_second.size(),
         nbeta_strs_,
         factor_gpu);
@@ -863,9 +1195,9 @@ void FCIComputerGPU::evolve_individual_nbody_easy_cpu(
 
         scale_elements_wrapper_complex(
             thrust::raw_pointer_cast(Cout.d_data().data()),
-            thrust::raw_pointer_cast(std::get<2>(*precomp).data()), 
+            thrust::raw_pointer_cast(std::get<2>(*precomp).data()),
             std::get<2>(*precomp).size(),
-            thrust::raw_pointer_cast(std::get<4>(*precomp).data()), 
+            thrust::raw_pointer_cast(std::get<4>(*precomp).data()),
             std::get<4>(*precomp).size(),
             nbeta_strs_,
             factor_gpu);
@@ -879,16 +1211,16 @@ void FCIComputerGPU::evolve_individual_nbody_easy_cpu(
 
         thrust::device_vector<int> d_first(maps.first.begin(), maps.first.end());
         thrust::device_vector<int> d_second(maps.second.begin(), maps.second.end());
-        
+
         timer_.acc_end("==>easy: setup");
 
         timer_.acc_begin("==>easy: scale elements kernel");
 
         scale_elements_wrapper_complex(
             thrust::raw_pointer_cast(Cout.d_data().data()),
-            thrust::raw_pointer_cast(d_first.data()), 
+            thrust::raw_pointer_cast(d_first.data()),
             d_first.size(),
-            thrust::raw_pointer_cast(d_second.data()), 
+            thrust::raw_pointer_cast(d_second.data()),
             d_second.size(),
             nbeta_strs_,
             factor_gpu);
@@ -935,7 +1267,7 @@ void FCIComputerGPU::evolve_individual_nbody_easy_gpu(
     // std::cout << "\n  ====> factor_gpu <==== (" << factor_gpu.x << ", " << factor_gpu.y << ")" << std::endl;
 
     /// Optionally skip the on-the-fly device a/b-target idx formation
-    
+
     if(precomp){
         auto runtime_matches_compiletime = [&] {
             if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
@@ -954,18 +1286,18 @@ void FCIComputerGPU::evolve_individual_nbody_easy_gpu(
 
         if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
             // Complex path
-            auto const& first  = std::get<2>(*precomp); 
+            auto const& first  = std::get<2>(*precomp);
             auto const& second = std::get<4>(*precomp);
 
             // Copy device vectors to host for printing
             thrust::host_vector<int> first_host = first;
             thrust::host_vector<int> second_host = second;
-            
+
             // std::cout << "\n  ====> first (size=" << first_host.size() << ") <====" << std::endl;
             // for (size_t i = 0; i < first_host.size(); ++i) {
             //     std::cout << "  [" << i << "] = " << first_host[i] << std::endl;
             // }
-            
+
             // std::cout << "\n  ====> second (size=" << second_host.size() << ") <====" << std::endl;
             // for (size_t i = 0; i < second_host.size(); ++i) {
             //     std::cout << "  [" << i << "] = " << second_host[i] << std::endl;
@@ -993,7 +1325,7 @@ void FCIComputerGPU::evolve_individual_nbody_easy_gpu(
                 second.size(),
                 nbeta_strs_,
                 factor_gpu.x); // Only real component for real data
-                
+
         } else {
             throw std::runtime_error("evolve_individual_nbody_easy_gpu: Unsupported Precomp type.");
         }
@@ -1009,22 +1341,22 @@ void FCIComputerGPU::evolve_individual_nbody_easy_gpu(
 
             thrust::device_vector<int> d_first(maps.first.begin(), maps.first.end());
             thrust::device_vector<int> d_second(maps.second.begin(), maps.second.end());
-                
+
             timer_.acc_end("==>easy: setup");
 
             timer_.acc_begin("==>easy: scale elements kernel");
 
             scale_elements_wrapper_complex(
                 thrust::raw_pointer_cast(Cout.d_data().data()),
-                thrust::raw_pointer_cast(d_first.data()), 
+                thrust::raw_pointer_cast(d_first.data()),
                 d_first.size(),
-                thrust::raw_pointer_cast(d_second.data()), 
+                thrust::raw_pointer_cast(d_second.data()),
                 d_second.size(),
                 nbeta_strs_,
                 factor_gpu);
 
             timer_.acc_end("==>easy: scale elements kernel");
-        
+
         } else if (data_type_ == "real") {
 
             timer_.acc_begin("==>easy: setup");
@@ -1033,7 +1365,7 @@ void FCIComputerGPU::evolve_individual_nbody_easy_gpu(
 
             thrust::device_vector<int> d_first(maps.first.begin(), maps.first.end());
             thrust::device_vector<int> d_second(maps.second.begin(), maps.second.end());
-                
+
             timer_.acc_end("==>easy: setup");
 
             timer_.acc_begin("==>easy: scale elements kernel");
@@ -1048,7 +1380,7 @@ void FCIComputerGPU::evolve_individual_nbody_easy_gpu(
                 factor_gpu.x); // Only real component for real data
 
             timer_.acc_end("==>easy: scale elements kernel");
-        
+
         } else {
             throw std::runtime_error("evolve_individual_nbody_easy_gpu: Unknown data_type_.");
         }
@@ -1077,7 +1409,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
     std::vector<int> undagworkb(annb);
     std::vector<int> numbera;
     std::vector<int> numberb;
-    
+
     int parity = 0;
     parity += isolate_number_operators_cpu(
         crea,
@@ -1126,7 +1458,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
         // TODO: Consider custom kernel implementaiton of the gather copy
         // TODO: Try a gather for both sets of indicies (dag+undag sources) at once
 
-        // new funciton that will selectivly copy in 
+        // new funciton that will selectivly copy in
         Cin.gather_in_2D_gpu(
             Cout,
             std::get<2>(*precomp), //sourcea_dag,
@@ -1145,22 +1477,22 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
         const std::complex<double> factor = std::cos(time * cabs);
         cuDoubleComplex factor_gpu = make_cuDoubleComplex(factor.real(), factor.imag());
 
-        timer_.acc_begin("===>hard: apply cos kernal");        
-        
+        timer_.acc_begin("===>hard: apply cos kernal");
+
         scale_elements_wrapper_complex(
             thrust::raw_pointer_cast(Cout.d_data().data()),
-            thrust::raw_pointer_cast(std::get<2>(*precomp).data()), 
+            thrust::raw_pointer_cast(std::get<2>(*precomp).data()),
             std::get<2>(*precomp).size(),
-            thrust::raw_pointer_cast(std::get<4>(*precomp).data()), 
+            thrust::raw_pointer_cast(std::get<4>(*precomp).data()),
             std::get<4>(*precomp).size(),
             nbeta_strs_,
             factor_gpu);
 
         scale_elements_wrapper_complex(
             thrust::raw_pointer_cast(Cout.d_data().data()),
-            thrust::raw_pointer_cast(std::get<3>(*precomp).data()), 
+            thrust::raw_pointer_cast(std::get<3>(*precomp).data()),
             std::get<3>(*precomp).size(),
-            thrust::raw_pointer_cast(std::get<5>(*precomp).data()), 
+            thrust::raw_pointer_cast(std::get<5>(*precomp).data()),
             std::get<5>(*precomp).size(),
             nbeta_strs_,
             factor_gpu);
@@ -1185,9 +1517,9 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
         if(std::get<2>(*precomp).size() != 0 and std::get<4>(*precomp).size() != 0) {
 
             apply_individual_nbody1_accumulate_wrapper(
-                cu_coeff_dag, 
-                thrust::raw_pointer_cast(Cin.read_d_data().data()), 
-                thrust::raw_pointer_cast(Cout.d_data().data()), 
+                cu_coeff_dag,
+                thrust::raw_pointer_cast(Cin.read_d_data().data()),
+                thrust::raw_pointer_cast(Cout.d_data().data()),
                 thrust::raw_pointer_cast(std::get<2>(*precomp).data()),
                 thrust::raw_pointer_cast(std::get<3>(*precomp).data()),
                 thrust::raw_pointer_cast(std::get<6>(*precomp).data()),
@@ -1221,9 +1553,9 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
         if(std::get<3>(*precomp).size() != 0 and std::get<3>(*precomp).size() != 0) {
 
             apply_individual_nbody1_accumulate_wrapper(
-                cu_coeff_undag, 
-                thrust::raw_pointer_cast(Cin.read_d_data().data()), 
-                thrust::raw_pointer_cast(Cout.d_data().data()), 
+                cu_coeff_undag,
+                thrust::raw_pointer_cast(Cin.read_d_data().data()),
+                thrust::raw_pointer_cast(Cout.d_data().data()),
                 thrust::raw_pointer_cast(std::get<3>(*precomp).data()),
                 thrust::raw_pointer_cast(std::get<2>(*precomp).data()),
                 thrust::raw_pointer_cast(std::get<7>(*precomp).data()),
@@ -1236,7 +1568,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
                 Cin.size() * sizeof(cuDoubleComplex));
         }
 
-        
+
         cudaError_t error2 = cudaGetLastError();
         if (error2 != cudaSuccess) {
             std::cerr << "CUDA error: " << cudaGetErrorString(error2) << std::endl;
@@ -1245,7 +1577,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
 
         timer_.acc_end("===>hard nbody acc kernel");
 
-        
+
     } else {
 
         timer_.acc_begin("=>copy in Cin <- C_");
@@ -1285,7 +1617,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
         apply_individual_nbody_accumulate_gpu(
             work_cof * sinfactor,
             Cin,
-            Cout, 
+            Cout,
             anna,
             crea,
             annb,
@@ -1296,7 +1628,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_cpu(
         apply_individual_nbody_accumulate_gpu(
             coeff * std::complex<double>(0.0, -1.0) * sinfactor,
             Cin,
-            Cout, 
+            Cout,
             crea,
             anna,
             creb,
@@ -1329,7 +1661,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
     std::vector<int> undagworkb(annb);
     std::vector<int> numbera;
     std::vector<int> numberb;
-    
+
     int parity = 0;
     parity += isolate_number_operators_cpu(
         crea,
@@ -1374,7 +1706,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
             throw std::runtime_error("evolve_individual_nbody_hard_gpu: data_type_/Precomp mismatch.");
         }
 
-        // DEBUG: Source Target Parity vectors 
+        // DEBUG: Source Target Parity vectors
         // std::cout << "sourcea1: ";
         //     thrust::copy(std::get<2>(*precomp).begin(), std::get<2>(*precomp).end(), std::ostream_iterator<int>(std::cout, " "));
         // std::cout << "\n";
@@ -1405,7 +1737,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
         if constexpr (std::is_same_v<Precomp, PrecompTuple>) {
 
             timer_.acc_begin("===>hard nbody given kernel");
-                
+
             // condition here for all row or all col cases
             if (crea.size() == 0 && creb.size() > 0) {
                 timer_.acc_begin("===>hard nbody given kernel - col case");
@@ -1476,7 +1808,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
             timer_.acc_end("===>hard nbody given kernel - general case");
 
             cudaError_t error2 = cudaGetLastError();
-                
+
             if (error2 != cudaSuccess) {
                 std::cerr << "CUDA error: " << cudaGetErrorString(error2) << std::endl;
                     throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
@@ -1581,11 +1913,11 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
                 factor.real(),
                 acc_coeff1.real(),
                 acc_coeff2.real());
-            
+
             timer_.acc_end("===>hard nbody given kernel - general case");
 
             cudaError_t error2 = cudaGetLastError();
-                
+
             if (error2 != cudaSuccess) {
                 std::cerr << "CUDA error: " << cudaGetErrorString(error2) << std::endl;
                     throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
@@ -1598,7 +1930,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
         }
 
         // std::cout << "State Vec After: \n" << Cout.str(true, true) << std::endl;
-                
+
     } else {
         if (data_type_ == "complex") {
             // Complex Case
@@ -1611,8 +1943,8 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
 
             // DAG mapping: annihilators as dag, creators as undag
             graph_.make_mapping_each_otf_gpu_complex(
-                true, // const bool is_alpha, 
-                anna, 
+                true, // const bool is_alpha,
+                anna,
                 crea,
                 &counta1,
                 sourcea_gpu_,
@@ -1623,8 +1955,8 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
 
             // UNDAG mapping: creators as dag, annihilators as undag
             graph_.make_mapping_each_otf_gpu_complex(
-                true, // const bool is_alpha, 
-                crea, 
+                true, // const bool is_alpha,
+                crea,
                 anna,
                 &counta2,
                 sourcea_undag_gpu_,
@@ -1633,8 +1965,8 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
 
             // DAG mapping: annihilators as dag, creators as undag
             graph_.make_mapping_each_otf_gpu_complex(
-                false, // const bool is_alpha, 
-                annb, 
+                false, // const bool is_alpha,
+                annb,
                 creb,
                 &countb1,
                 sourceb_gpu_,
@@ -1643,15 +1975,15 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
 
             // UNDAG mapping: creators as dag, annihilators as undag
             graph_.make_mapping_each_otf_gpu_complex(
-                false, // const bool is_alpha, 
-                creb, 
+                false, // const bool is_alpha,
+                creb,
                 annb,
                 &countb2,
                 sourceb_undag_gpu_,
                 targetb_undag_gpu_,
                 parityb_undag_gpu_);
 
-            // DEBUG: Source Target Parity vectors 
+            // DEBUG: Source Target Parity vectors
             // std::cout << "sourcea1: ";
             //     thrust::copy(sourcea_gpu_.begin(), sourcea_gpu_.end(), std::ostream_iterator<int>(std::cout, " "));
             // std::cout << "\n";
@@ -1671,7 +2003,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
             // std::cout << "State Vec Before: \n" << Cout.str(true, true) << std::endl;
 
             timer_.acc_begin("===>hard nbody given kernel");
-                
+
             // condition here for all row or all col cases
             if (crea.size() == 0 && creb.size() > 0) {
                 timer_.acc_begin("===>hard nbody given kernel - col case");
@@ -1740,7 +2072,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
             timer_.acc_end("===>hard nbody given kernel - general case");
 
             cudaError_t error2 = cudaGetLastError();
-                
+
             if (error2 != cudaSuccess) {
                 std::cerr << "CUDA error: " << cudaGetErrorString(error2) << std::endl;
                     throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
@@ -1752,7 +2084,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
             // std::cout << "post kernel" << std::endl;
         } else if (data_type_ == "real") {
             // Real Case
-            
+
             // No precomp provided: need to compute on the fly
             int counta1 = 0;
             int counta2 = 0;
@@ -1761,8 +2093,8 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
 
             // DAG mapping: annihilators as dag, creators as undag
             graph_.make_mapping_each_otf_gpu_real(
-                true, // const bool is_alpha, 
-                anna, 
+                true, // const bool is_alpha,
+                anna,
                 crea,
                 &counta1,
                 sourcea_gpu_,
@@ -1773,8 +2105,8 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
 
             // UNDAG mapping: creators as dag, annihilators as undag
             graph_.make_mapping_each_otf_gpu_real(
-                true, // const bool is_alpha, 
-                crea, 
+                true, // const bool is_alpha,
+                crea,
                 anna,
                 &counta2,
                 sourcea_undag_gpu_,
@@ -1783,8 +2115,8 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
 
             // DAG mapping: annihilators as dag, creators as undag
             graph_.make_mapping_each_otf_gpu_real(
-                false, // const bool is_alpha, 
-                annb, 
+                false, // const bool is_alpha,
+                annb,
                 creb,
                 &countb1,
                 sourceb_gpu_,
@@ -1793,15 +2125,15 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
 
             // UNDAG mapping: creators as dag, annihilators as undag
             graph_.make_mapping_each_otf_gpu_real(
-                false, // const bool is_alpha, 
-                creb, 
+                false, // const bool is_alpha,
+                creb,
                 annb,
                 &countb2,
                 sourceb_undag_gpu_,
                 targetb_undag_gpu_,
                 parityb_undag_gpu_real_);
 
-            // DEBUG: Source Target Parity vectors 
+            // DEBUG: Source Target Parity vectors
             // std::cout << "sourcea1: ";
             //     thrust::copy(sourcea_gpu_.begin(), sourcea_gpu_.end(), std::ostream_iterator<int>(std::cout, " "));
             // std::cout << "\n";
@@ -1813,7 +2145,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
             // std::cout << "State Vec Before: \n" << Cout.str(true, true) << std::endl;
 
             timer_.acc_begin("===>hard nbody given kernel");
-                
+
             // condition here for all row or all col cases
             if (crea.size() == 0 && creb.size() > 0) {
                 timer_.acc_begin("===>hard nbody given kernel - col case");
@@ -1882,7 +2214,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
             timer_.acc_end("===>hard nbody given kernel - general case");
 
             cudaError_t error2 = cudaGetLastError();
-                
+
             if (error2 != cudaSuccess) {
                 std::cerr << "CUDA error: " << cudaGetErrorString(error2) << std::endl;
                     throw std::runtime_error("Failed to execute the apply_individual_nbody1_accumulate operation on the GPU.");
@@ -1979,11 +2311,11 @@ void FCIComputerGPU::evolve_individual_nbody_cpu(
 
         evolve_individual_nbody_easy_cpu(
             time,
-            parity * std::get<0>(term), 
+            parity * std::get<0>(term),
             Cin,
             Cout,
             crea,
-            anna, 
+            anna,
             creb,
             annb,
             precomp);
@@ -2002,7 +2334,7 @@ void FCIComputerGPU::evolve_individual_nbody_cpu(
             Cin,
             Cout,
             crea,
-            anna, 
+            anna,
             creb,
             annb,
             precomp);
@@ -2125,7 +2457,7 @@ void FCIComputerGPU::evolve_individual_nbody_gpu(
             parity * 2.0 * std::get<0>(term), // TODO: Ask Nick about (* 2) to coeff?
             Cout,
             crea,
-            anna, 
+            anna,
             creb,
             annb,
             precomp);
@@ -2151,7 +2483,7 @@ void FCIComputerGPU::evolve_individual_nbody_gpu(
             parity * std::get<0>(term),
             Cout,
             crea,
-            anna, 
+            anna,
             creb,
             annb,
             precomp);
@@ -2168,8 +2500,8 @@ void FCIComputerGPU::evolve_individual_nbody_gpu(
     // std::cout << "tensor after evolution:\n" << Cout.str(true, true) << std::endl;
 }
 
-// NOTE(Nick): The trotter function should directly call evolve_individual_nbody_cpu so we don't 
-// need to re-initialize Cin for each mu index, only copy, is currently a big 
+// NOTE(Nick): The trotter function should directly call evolve_individual_nbody_cpu so we don't
+// need to re-initialize Cin for each mu index, only copy, is currently a big
 // performace hit!
 void FCIComputerGPU::apply_sqop_evolution_gpu(
     const std::complex<double> time,
@@ -2209,7 +2541,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
             if(adjoint){
                 for (int i = pool.terms().size() - 1; i >= 0; --i) {
                     evolve_individual_nbody_gpu<PrecompTuple>(
-                        pool.terms()[i].first, 
+                        pool.terms()[i].first,
                         pool.terms()[i].second,
                         C_,
                         antiherm,
@@ -2219,7 +2551,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
             } else {
                 for (const auto& sqop_term : pool.terms()) {
                     evolve_individual_nbody_gpu<PrecompTuple>(
-                        sqop_term.first, 
+                        sqop_term.first,
                         sqop_term.second,
                         C_,
                         antiherm,
@@ -2231,7 +2563,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
             if(adjoint){
                 for (int i = pool.terms().size() - 1; i >= 0; --i) {
                     evolve_individual_nbody_gpu<PrecompTupleReal>(
-                        pool.terms()[i].first, 
+                        pool.terms()[i].first,
                         pool.terms()[i].second,
                         C_,
                         antiherm,
@@ -2241,7 +2573,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
             } else {
                 for (const auto& sqop_term : pool.terms()) {
                     evolve_individual_nbody_gpu<PrecompTupleReal>(
-                        sqop_term.first, 
+                        sqop_term.first,
                         sqop_term.second,
                         C_,
                         antiherm,
@@ -2265,7 +2597,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
                         C_,
                         antiherm,
                         adjoint,
-                        &device_spt_arys); 
+                        &device_spt_arys);
                 }
             } else {
                 for (int i = 0; i < pool.terms().size(); ++i) {
@@ -2276,7 +2608,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
                         C_,
                         antiherm,
                         adjoint,
-                        &device_spt_arys); 
+                        &device_spt_arys);
                 }
             }
         } else if (data_type_ == "real") {
@@ -2289,7 +2621,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
                         C_,
                         antiherm,
                         adjoint,
-                        &device_spt_arys); 
+                        &device_spt_arys);
                 }
             } else {
                 for (int i = 0; i < pool.terms().size(); ++i) {
@@ -2300,7 +2632,7 @@ void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
                         C_,
                         antiherm,
                         adjoint,
-                        &device_spt_arys); 
+                        &device_spt_arys);
                 }
             }
         } else {
@@ -2374,7 +2706,7 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
                                 C_,
                                 antiherm,
                                 adjoint,
-                                &device_spt_arys); 
+                                &device_spt_arys);
                         } else if (data_type_ == "real") {
                             const auto& device_spt_arys = pool.get_mu_tuple_real(i);
                             evolve_individual_nbody_gpu(
@@ -2383,7 +2715,7 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
                                 C_,
                                 antiherm,
                                 adjoint,
-                                &device_spt_arys); 
+                                &device_spt_arys);
                         } else {
                             throw std::runtime_error("Unsupported data type in v5 evolution.");
                         }
@@ -2425,7 +2757,7 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
                                 C_,
                                 antiherm,
                                 adjoint,
-                                &device_spt_arys); 
+                                &device_spt_arys);
                         } else if (data_type_ == "real") {
                             const auto& device_spt_arys = pool.get_mu_tuple_real(i);
                             evolve_individual_nbody_gpu(
@@ -2434,7 +2766,7 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
                                 C_,
                                 antiherm,
                                 adjoint,
-                                &device_spt_arys); 
+                                &device_spt_arys);
                         } else {
                             throw std::runtime_error("Unsupported data type in v5 evolution.");
                         }
@@ -2483,7 +2815,7 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
                                 C_,
                                 antiherm,
                                 adjoint,
-                                &device_spt_arys); 
+                                &device_spt_arys);
                         } else if (data_type_ == "real") {
                             const auto& device_spt_arys = pool.get_mu_tuple_real(i);
                             evolve_individual_nbody_gpu(
@@ -2492,7 +2824,7 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
                                 C_,
                                 antiherm,
                                 adjoint,
-                                &device_spt_arys); 
+                                &device_spt_arys);
                         } else {
                             throw std::runtime_error("Unsupported data type in v5 evolution.");
                         }
@@ -2533,7 +2865,7 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
                                 C_,
                                 antiherm,
                                 adjoint,
-                                &device_spt_arys); 
+                                &device_spt_arys);
                         } else if (data_type_ == "real") {
                             const auto& device_spt_arys = pool.get_mu_tuple_real(i);
                             evolve_individual_nbody_gpu(
@@ -2542,7 +2874,7 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
                                 C_,
                                 antiherm,
                                 adjoint,
-                                &device_spt_arys); 
+                                &device_spt_arys);
                         } else {
                             throw std::runtime_error("Unsupported data type in v5 evolution.");
                         }
@@ -2585,7 +2917,7 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
                                 C_,
                                 antiherm,
                                 adjoint,
-                                &device_spt_arys); 
+                                &device_spt_arys);
                         } else if (data_type_ == "real") {
                             const auto& device_spt_arys = pool.get_mu_tuple_real(i);
                             evolve_individual_nbody_gpu(
@@ -2594,7 +2926,7 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
                                 C_,
                                 antiherm,
                                 adjoint,
-                                &device_spt_arys); 
+                                &device_spt_arys);
                         } else {
                             throw std::runtime_error("Unsupported data type in v5 evolution.");
                         }
@@ -2635,7 +2967,7 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
                                 C_,
                                 antiherm,
                                 adjoint,
-                                &device_spt_arys); 
+                                &device_spt_arys);
                         } else if (data_type_ == "real") {
                             const auto& device_spt_arys = pool.get_mu_tuple_real(i);
                             evolve_individual_nbody_gpu(
@@ -2644,7 +2976,7 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
                                 C_,
                                 antiherm,
                                 adjoint,
-                                &device_spt_arys); 
+                                &device_spt_arys);
                         } else {
                             throw std::runtime_error("Unsupported data type in v5 evolution.");
                         }
@@ -2655,7 +2987,7 @@ void FCIComputerGPU::evolve_pool_trotter_gpu(
         }
 
     } else {
-        throw std::runtime_error("Higher than 2nd order trotter not yet implemented"); 
+        throw std::runtime_error("Higher than 2nd order trotter not yet implemented");
     }
 
     timer_.acc_end("evolve_pool_trotter_gpu(outer)");
@@ -2687,7 +3019,7 @@ void FCIComputerGPU::evolve_op_taylor_cpu(
             1.0 / std::tgamma(order+1),
             1,
             1);
-        
+
         if (C_.norm() * std::abs(coeff) < convergence_thresh) {
             break;
         }
@@ -2697,13 +3029,13 @@ void FCIComputerGPU::evolve_op_taylor_cpu(
 
 /// NOTE: Cin should be const, changing for now
 void FCIComputerGPU::apply_individual_nbody1_accumulate_gpu(
-    const std::complex<double> coeff, 
+    const std::complex<double> coeff,
     TensorGPU& Cin,
     TensorGPU& Cout,
     int counta,
     int countb)
 {
-    
+
     if ((targeta_gpu_.size() != sourcea_gpu_.size()) or (sourcea_gpu_.size() != paritya_gpu_.size())) {
         throw std::runtime_error("The sizes of atarget, asource, and aparity must be the same.");
     }
@@ -2716,9 +3048,9 @@ void FCIComputerGPU::apply_individual_nbody1_accumulate_gpu(
 
     // Call the GPU kernel using thrust raw pointers directly
     apply_individual_nbody1_accumulate_wrapper(
-        cu_coeff, 
-        thrust::raw_pointer_cast(Cin.read_d_data().data()), 
-        thrust::raw_pointer_cast(Cout.d_data().data()), 
+        cu_coeff,
+        thrust::raw_pointer_cast(Cin.read_d_data().data()),
+        thrust::raw_pointer_cast(Cout.d_data().data()),
         thrust::raw_pointer_cast(sourcea_gpu_.data()),
         thrust::raw_pointer_cast(targeta_gpu_.data()),
         thrust::raw_pointer_cast(paritya_gpu_.data()),
@@ -2743,7 +3075,7 @@ void FCIComputerGPU::apply_individual_nbody_accumulate_gpu(
     TensorGPU& Cin,
     TensorGPU& Cout,
     const std::vector<int>& daga,
-    const std::vector<int>& undaga, 
+    const std::vector<int>& undaga,
     const std::vector<int>& dagb,
     const std::vector<int>& undagb)
 {
@@ -2790,7 +3122,7 @@ void FCIComputerGPU::apply_individual_nbody_accumulate_gpu(
     timer_.acc_begin("===>hard nbody acc kernel");
     /// TODO: changing this function to use private members of FCIComputerGPU
     apply_individual_nbody1_accumulate_gpu(
-        coeff, 
+        coeff,
         Cin,
         Cout,
         counta,
@@ -2831,7 +3163,7 @@ void FCIComputerGPU::apply_individual_sqop_term_gpu(
 
     if (std::get<1>(term).size() != std::get<2>(term).size()) {
         throw std::invalid_argument("Each term must have same number of anihilators and creators");
-    }   
+    }
 
     std::vector<size_t> ops1(std::get<1>(term));
     std::vector<size_t> ops2(std::get<2>(term));
@@ -2844,7 +3176,7 @@ void FCIComputerGPU::apply_individual_sqop_term_gpu(
         Cin,
         Cout,
         crea,
-        anna, 
+        anna,
         creb,
         annb);
 }
@@ -2870,7 +3202,7 @@ void FCIComputerGPU::apply_sqop_gpu(const SQOperator& sqop)
 }
 
 void FCIComputerGPU::apply_diagonal_of_sqop_cpu(
-    const SQOperator& sq_op, 
+    const SQOperator& sq_op,
     const bool invert_coeff)
 {
     cpu_error();
@@ -2952,8 +3284,8 @@ std::complex<double> FCIComputerGPU::get_exp_val(const SQOperator& sqop)
     gpu_error();
 
     TensorGPU Cin(
-        {nalfa_strs_, nbeta_strs_}, 
-        "Cin", 
+        {nalfa_strs_, nbeta_strs_},
+        "Cin",
         true,
         data_type_,
         true
@@ -2962,7 +3294,7 @@ std::complex<double> FCIComputerGPU::get_exp_val(const SQOperator& sqop)
     Cin.copy_in_gpu(C_);
 
     C_.zero_gpu();
-    
+
     for (const auto& term : sqop.terms()) {
         if(std::abs(std::get<0>(term)) > compute_threshold_){
         apply_individual_sqop_term_gpu(
@@ -2979,10 +3311,10 @@ std::complex<double> FCIComputerGPU::get_exp_val(const SQOperator& sqop)
 }
 
 std::complex<double> FCIComputerGPU::get_exp_val_tensor_gpu(
-    const std::complex<double> h0e, 
-    const TensorGPU& h1e, 
-    const TensorGPU& h2e, 
-    TensorGPU& h2e_einsum, 
+    const std::complex<double> h0e,
+    const TensorGPU& h1e,
+    const TensorGPU& h2e,
+    TensorGPU& h2e_einsum,
     size_t norb)
 {
     // Save C_ into a gpu_only temporary to avoid host memory overhead
@@ -2991,9 +3323,9 @@ std::complex<double> FCIComputerGPU::get_exp_val_tensor_gpu(
 
     apply_tensor_spat_012bdy_gpu(
         h0e,
-        h1e, 
-        h2e, 
-        h2e_einsum, 
+        h1e,
+        h2e,
+        h2e_einsum,
         norb
     );
 
@@ -3193,7 +3525,7 @@ void FCIComputerGPU::print_vector(const std::vector<int>& vec, const std::string
     for (size_t i = 0; i < vec.size(); ++i) {
         std::cout << static_cast<int>(vec[i]);
         if (i < vec.size() - 1) {
-           std::cout << ", "; 
+           std::cout << ", ";
         }
     }
     std::cout << std::endl;
@@ -3205,7 +3537,7 @@ void FCIComputerGPU::print_vector_thrust(const thrust::host_vector<int>& vec, co
     for (size_t i = 0; i < vec.size(); ++i) {
         std::cout << static_cast<int>(vec[i]);
         if (i < vec.size() - 1) {
-           std::cout << ", "; 
+           std::cout << ", ";
         }
     }
     std::cout << std::endl;
@@ -3217,7 +3549,7 @@ void FCIComputerGPU::print_vector_uint(const std::vector<uint64_t>& vec, const s
     for (size_t i = 0; i < vec.size(); ++i) {
         std::cout << vec[i];
         if (i < vec.size() - 1) {
-            std::cout << ", "; 
+            std::cout << ", ";
         }
     }
     std::cout << std::endl;
@@ -3230,14 +3562,14 @@ void FCIComputerGPU::print_vector_thrust_cuDoubleComplex(const thrust::host_vect
         std::complex<double> tmp = {vec[i].x, vec[i].y};
         std::cout << tmp;
         if (i < vec.size() - 1) {
-            std::cout << ", "; 
+            std::cout << ", ";
         }
     }
     std::cout << std::endl;
 }
 
 void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
-    
+
     if(pool.device_vecs_populated()){
         return;
     }
@@ -3360,18 +3692,18 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
             numberb_undagworkb.insert(numberb_undagworkb.end(), undagworkb.begin(), undagworkb.end());
 
             std::pair<std::vector<int>, std::vector<int>> maps1 = evaluate_map_cpu(
-                numbera_dagworka, 
-                undagworka, 
-                numberb_dagworkb, 
+                numbera_dagworka,
+                undagworka,
+                numberb_dagworkb,
                 undagworkb);
 
             thrust::device_vector<int> d_alfa_1st(maps1.first.begin(), maps1.first.end());
             thrust::device_vector<int> d_beta_1st(maps1.second.begin(), maps1.second.end());
 
             std::pair<std::vector<int>, std::vector<int>> maps2 = evaluate_map_cpu(
-                numbera_undagworka, 
-                dagworka, 
-                numberb_undagworkb, 
+                numbera_undagworka,
+                dagworka,
+                numberb_undagworkb,
                 dagworkb);
 
             thrust::device_vector<int> d_alfa_2nd(maps2.first.begin(), maps2.first.end());

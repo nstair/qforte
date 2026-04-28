@@ -314,6 +314,8 @@ PYBIND11_MODULE(qforte, m) {
         .def("apply_tensor_spin_012bdy", &FCIComputer::apply_tensor_spin_012bdy)
         .def("apply_tensor_spat_12bdy", &FCIComputer::apply_tensor_spat_12bdy)
         .def("apply_tensor_spat_012bdy", &FCIComputer::apply_tensor_spat_012bdy)
+        .def("apply_tensor_spat_12bdy_debug_elementwise", &FCIComputer::apply_tensor_spat_12bdy_debug_elementwise)
+        .def("apply_tensor_spat_012bdy_debug_elementwise", &FCIComputer::apply_tensor_spat_012bdy_debug_elementwise)
         .def("apply_individual_sqop_term", &FCIComputer::apply_individual_sqop_term)
         .def("apply_sqop", &FCIComputer::apply_sqop)
         .def("apply_diagonal_of_sqop", &FCIComputer::apply_diagonal_of_sqop, 
@@ -596,6 +598,8 @@ PYBIND11_MODULE(qforte, m) {
         // .def("apply_tensor_spin_012bdy", &FCIComputerGPU::apply_tensor_spin_012bdy)
         .def("apply_tensor_spat_12bdy_gpu", &FCIComputerGPU::apply_tensor_spat_12bdy_gpu)
         .def("apply_tensor_spat_012bdy_gpu", &FCIComputerGPU::apply_tensor_spat_012bdy_gpu)
+        .def("apply_tensor_spat_12bdy_gpu_v2", &FCIComputerGPU::apply_tensor_spat_12bdy_gpu_v2)
+        .def("apply_tensor_spat_012bdy_gpu_v2", &FCIComputerGPU::apply_tensor_spat_012bdy_gpu_v2)
         .def("apply_individual_sqop_term_gpu", &FCIComputerGPU::apply_individual_sqop_term_gpu)
         .def("apply_sqop_gpu", &FCIComputerGPU::apply_sqop_gpu)
         .def("apply_diagonal_of_sqop_cpu", &FCIComputerGPU::apply_diagonal_of_sqop_cpu, 

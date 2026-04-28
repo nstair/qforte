@@ -15,6 +15,7 @@
 #include <thrust/sort.h>
 #include <thrust/reduce.h>
 #include <thrust/scan.h>
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
 
@@ -3053,3 +3054,705 @@ extern "C" void lm_apply_array12_diff_spin_wrapper_mixed(
     }
 }
 
+// ==============================================
+// Diff Spin v2 tiled implementation
+// ==============================================
+
+namespace {
+
+constexpr int DIFF_V2_TILE_B = 16;   // threadIdx.x: beta-output columns
+constexpr int DIFF_V2_TILE_A = 8;    // threadIdx.y: alpha-output rows
+constexpr int DIFF_V2_CHUNK_A = 8;   // incoming alpha edges staged per row
+constexpr int DIFF_V2_CHUNK_B = 8;   // incoming beta edges staged per column
+
+int diff_spin_v2_tiled_grid_dim(long long tiles)
+{
+    const long long capped = std::min<long long>(tiles, 65535);
+    return static_cast<int>(std::max<long long>(capped, 1));
+}
+
+size_t diff_spin_v2_tiled_shared_bytes()
+{
+    const size_t alpha_slots =
+        static_cast<size_t>(DIFF_V2_TILE_A) * DIFF_V2_CHUNK_A;
+    const size_t beta_slots =
+        static_cast<size_t>(DIFF_V2_TILE_B) * DIFF_V2_CHUNK_B;
+    return 3 * (alpha_slots + beta_slots) * sizeof(int);
+}
+
+} // namespace
+
+__global__ void lm_apply_array12_diff_spin_v2_tiled_kernel_real(
+    double* __restrict__ d_out,
+    const double* __restrict__ d_C,
+    const long long* __restrict__ d_alpha_offsets,
+    const int* __restrict__ d_alpha_sources,
+    const int* __restrict__ d_alpha_pairs,
+    const int* __restrict__ d_alpha_parities,
+    const long long* __restrict__ d_beta_offsets,
+    const int* __restrict__ d_beta_sources,
+    const int* __restrict__ d_beta_pairs,
+    const int* __restrict__ d_beta_parities,
+    const double* __restrict__ d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs)
+{
+    __shared__ long long sh_a_begin[DIFF_V2_TILE_A];
+    __shared__ long long sh_a_count[DIFF_V2_TILE_A];
+    __shared__ long long sh_b_begin[DIFF_V2_TILE_B];
+    __shared__ long long sh_b_count[DIFF_V2_TILE_B];
+    __shared__ long long sh_max_a;
+    __shared__ long long sh_max_b;
+
+    extern __shared__ int sh_edges[];
+    int* sh_a_src = sh_edges;
+    int* sh_a_pair = sh_a_src + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_a_parity = sh_a_pair + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_b_src = sh_a_parity + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_b_pair = sh_b_src + DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+    int* sh_b_parity = sh_b_pair + DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+
+    const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    const int nthreads = blockDim.x * blockDim.y;
+    const long long norbs2 = static_cast<long long>(norbs) * norbs;
+
+    // One block owns a 2D output tile.  If the CI matrix has more tiles than
+    // the grid can expose directly, the block grid-strides over output tiles.
+    for (long long a_base = static_cast<long long>(blockIdx.y) * DIFF_V2_TILE_A;
+         a_base < alpha_states;
+         a_base += static_cast<long long>(gridDim.y) * DIFF_V2_TILE_A) {
+        for (long long b_base = static_cast<long long>(blockIdx.x) * DIFF_V2_TILE_B;
+             b_base < beta_states;
+             b_base += static_cast<long long>(gridDim.x) * DIFF_V2_TILE_B) {
+
+            if (tid < DIFF_V2_TILE_A) {
+                const long long a_out = a_base + tid;
+                if (a_out < alpha_states) {
+                    sh_a_begin[tid] = d_alpha_offsets[a_out];
+                    sh_a_count[tid] = d_alpha_offsets[a_out + 1] - sh_a_begin[tid];
+                } else {
+                    sh_a_begin[tid] = 0;
+                    sh_a_count[tid] = 0;
+                }
+            }
+            if (tid < DIFF_V2_TILE_B) {
+                const long long b_out = b_base + tid;
+                if (b_out < beta_states) {
+                    sh_b_begin[tid] = d_beta_offsets[b_out];
+                    sh_b_count[tid] = d_beta_offsets[b_out + 1] - sh_b_begin[tid];
+                } else {
+                    sh_b_begin[tid] = 0;
+                    sh_b_count[tid] = 0;
+                }
+            }
+            __syncthreads();
+
+            if (tid == 0) {
+                long long max_a = 0;
+                long long max_b = 0;
+                for (int i = 0; i < DIFF_V2_TILE_A; ++i) {
+                    max_a = max_a < sh_a_count[i] ? sh_a_count[i] : max_a;
+                }
+                for (int i = 0; i < DIFF_V2_TILE_B; ++i) {
+                    max_b = max_b < sh_b_count[i] ? sh_b_count[i] : max_b;
+                }
+                sh_max_a = max_a;
+                sh_max_b = max_b;
+            }
+            __syncthreads();
+
+            const long long a_out = a_base + threadIdx.y;
+            const long long b_out = b_base + threadIdx.x;
+            const bool active = a_out < alpha_states && b_out < beta_states;
+            double acc = 0.0;
+
+            // Irregular incoming-list lengths make the tile ragged.  We stage
+            // fixed-size chunks for all rows/columns in the output tile; each
+            // thread then consumes only the chunk entries for its owned
+            // (a_out, b_out) scalar.
+            for (long long a_chunk = 0; a_chunk < sh_max_a; a_chunk += DIFF_V2_CHUNK_A) {
+                for (int slot = tid;
+                     slot < DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+                     slot += nthreads) {
+                    const int local_a = slot / DIFF_V2_CHUNK_A;
+                    const int k = slot - local_a * DIFF_V2_CHUNK_A;
+                    const long long edge = sh_a_begin[local_a] + a_chunk + k;
+                    if (a_chunk + k < sh_a_count[local_a]) {
+                        sh_a_src[slot] = d_alpha_sources[edge];
+                        sh_a_pair[slot] = d_alpha_pairs[edge];
+                        sh_a_parity[slot] = d_alpha_parities[edge];
+                    } else {
+                        sh_a_src[slot] = 0;
+                        sh_a_pair[slot] = 0;
+                        sh_a_parity[slot] = 0;
+                    }
+                }
+                __syncthreads();
+
+                for (long long b_chunk = 0; b_chunk < sh_max_b; b_chunk += DIFF_V2_CHUNK_B) {
+                    for (int slot = tid;
+                         slot < DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+                         slot += nthreads) {
+                        const int local_b = slot / DIFF_V2_CHUNK_B;
+                        const int k = slot - local_b * DIFF_V2_CHUNK_B;
+                        const long long edge = sh_b_begin[local_b] + b_chunk + k;
+                        if (b_chunk + k < sh_b_count[local_b]) {
+                            sh_b_src[slot] = d_beta_sources[edge];
+                            sh_b_pair[slot] = d_beta_pairs[edge];
+                            sh_b_parity[slot] = d_beta_parities[edge];
+                        } else {
+                            sh_b_src[slot] = 0;
+                            sh_b_pair[slot] = 0;
+                            sh_b_parity[slot] = 0;
+                        }
+                    }
+                    __syncthreads();
+
+                    if (active) {
+                        const long long a_rem = sh_a_count[threadIdx.y] - a_chunk;
+                        const long long b_rem = sh_b_count[threadIdx.x] - b_chunk;
+                        const int a_limit = a_rem < DIFF_V2_CHUNK_A
+                            ? static_cast<int>(a_rem) : DIFF_V2_CHUNK_A;
+                        const int b_limit = b_rem < DIFF_V2_CHUNK_B
+                            ? static_cast<int>(b_rem) : DIFF_V2_CHUNK_B;
+                        const int a_slot_base = threadIdx.y * DIFF_V2_CHUNK_A;
+                        const int b_slot_base = threadIdx.x * DIFF_V2_CHUNK_B;
+
+                        for (int ia = 0; ia < a_limit; ++ia) {
+                            const int a_slot = a_slot_base + ia;
+                            const int a_src = sh_a_src[a_slot];
+                            const int ij = sh_a_pair[a_slot];
+                            const int pa = sh_a_parity[a_slot];
+
+                            for (int ib = 0; ib < b_limit; ++ib) {
+                                const int b_slot = b_slot_base + ib;
+                                const int b_src = sh_b_src[b_slot];
+                                const int kl = sh_b_pair[b_slot];
+                                const int pb = sh_b_parity[b_slot];
+                                const size_t h_idx =
+                                    static_cast<size_t>(ij) * static_cast<size_t>(norbs2)
+                                    + static_cast<size_t>(kl);
+                                const size_t c_idx =
+                                    static_cast<size_t>(a_src) * static_cast<size_t>(beta_states)
+                                    + static_cast<size_t>(b_src);
+                                acc += static_cast<double>(pa * pb) * d_h2e[h_idx] * d_C[c_idx];
+                            }
+                        }
+                    }
+                    __syncthreads();
+                }
+            }
+
+            if (active) {
+                const size_t out_idx =
+                    static_cast<size_t>(a_out) * static_cast<size_t>(beta_states)
+                    + static_cast<size_t>(b_out);
+                d_out[out_idx] += acc;
+            }
+            __syncthreads();
+        }
+    }
+}
+
+__global__ void lm_apply_array12_diff_spin_v2_tiled_kernel_mixed(
+    cuDoubleComplex* __restrict__ d_out,
+    const cuDoubleComplex* __restrict__ d_C,
+    const long long* __restrict__ d_alpha_offsets,
+    const int* __restrict__ d_alpha_sources,
+    const int* __restrict__ d_alpha_pairs,
+    const int* __restrict__ d_alpha_parities,
+    const long long* __restrict__ d_beta_offsets,
+    const int* __restrict__ d_beta_sources,
+    const int* __restrict__ d_beta_pairs,
+    const int* __restrict__ d_beta_parities,
+    const double* __restrict__ d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs)
+{
+    __shared__ long long sh_a_begin[DIFF_V2_TILE_A];
+    __shared__ long long sh_a_count[DIFF_V2_TILE_A];
+    __shared__ long long sh_b_begin[DIFF_V2_TILE_B];
+    __shared__ long long sh_b_count[DIFF_V2_TILE_B];
+    __shared__ long long sh_max_a;
+    __shared__ long long sh_max_b;
+
+    extern __shared__ int sh_edges[];
+    int* sh_a_src = sh_edges;
+    int* sh_a_pair = sh_a_src + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_a_parity = sh_a_pair + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_b_src = sh_a_parity + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_b_pair = sh_b_src + DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+    int* sh_b_parity = sh_b_pair + DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+
+    const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    const int nthreads = blockDim.x * blockDim.y;
+    const long long norbs2 = static_cast<long long>(norbs) * norbs;
+
+    for (long long a_base = static_cast<long long>(blockIdx.y) * DIFF_V2_TILE_A;
+         a_base < alpha_states;
+         a_base += static_cast<long long>(gridDim.y) * DIFF_V2_TILE_A) {
+        for (long long b_base = static_cast<long long>(blockIdx.x) * DIFF_V2_TILE_B;
+             b_base < beta_states;
+             b_base += static_cast<long long>(gridDim.x) * DIFF_V2_TILE_B) {
+
+            if (tid < DIFF_V2_TILE_A) {
+                const long long a_out = a_base + tid;
+                if (a_out < alpha_states) {
+                    sh_a_begin[tid] = d_alpha_offsets[a_out];
+                    sh_a_count[tid] = d_alpha_offsets[a_out + 1] - sh_a_begin[tid];
+                } else {
+                    sh_a_begin[tid] = 0;
+                    sh_a_count[tid] = 0;
+                }
+            }
+            if (tid < DIFF_V2_TILE_B) {
+                const long long b_out = b_base + tid;
+                if (b_out < beta_states) {
+                    sh_b_begin[tid] = d_beta_offsets[b_out];
+                    sh_b_count[tid] = d_beta_offsets[b_out + 1] - sh_b_begin[tid];
+                } else {
+                    sh_b_begin[tid] = 0;
+                    sh_b_count[tid] = 0;
+                }
+            }
+            __syncthreads();
+
+            if (tid == 0) {
+                long long max_a = 0;
+                long long max_b = 0;
+                for (int i = 0; i < DIFF_V2_TILE_A; ++i) {
+                    max_a = max_a < sh_a_count[i] ? sh_a_count[i] : max_a;
+                }
+                for (int i = 0; i < DIFF_V2_TILE_B; ++i) {
+                    max_b = max_b < sh_b_count[i] ? sh_b_count[i] : max_b;
+                }
+                sh_max_a = max_a;
+                sh_max_b = max_b;
+            }
+            __syncthreads();
+
+            const long long a_out = a_base + threadIdx.y;
+            const long long b_out = b_base + threadIdx.x;
+            const bool active = a_out < alpha_states && b_out < beta_states;
+            cuDoubleComplex acc = make_cuDoubleComplex(0.0, 0.0);
+
+            for (long long a_chunk = 0; a_chunk < sh_max_a; a_chunk += DIFF_V2_CHUNK_A) {
+                for (int slot = tid;
+                     slot < DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+                     slot += nthreads) {
+                    const int local_a = slot / DIFF_V2_CHUNK_A;
+                    const int k = slot - local_a * DIFF_V2_CHUNK_A;
+                    const long long edge = sh_a_begin[local_a] + a_chunk + k;
+                    if (a_chunk + k < sh_a_count[local_a]) {
+                        sh_a_src[slot] = d_alpha_sources[edge];
+                        sh_a_pair[slot] = d_alpha_pairs[edge];
+                        sh_a_parity[slot] = d_alpha_parities[edge];
+                    } else {
+                        sh_a_src[slot] = 0;
+                        sh_a_pair[slot] = 0;
+                        sh_a_parity[slot] = 0;
+                    }
+                }
+                __syncthreads();
+
+                for (long long b_chunk = 0; b_chunk < sh_max_b; b_chunk += DIFF_V2_CHUNK_B) {
+                    for (int slot = tid;
+                         slot < DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+                         slot += nthreads) {
+                        const int local_b = slot / DIFF_V2_CHUNK_B;
+                        const int k = slot - local_b * DIFF_V2_CHUNK_B;
+                        const long long edge = sh_b_begin[local_b] + b_chunk + k;
+                        if (b_chunk + k < sh_b_count[local_b]) {
+                            sh_b_src[slot] = d_beta_sources[edge];
+                            sh_b_pair[slot] = d_beta_pairs[edge];
+                            sh_b_parity[slot] = d_beta_parities[edge];
+                        } else {
+                            sh_b_src[slot] = 0;
+                            sh_b_pair[slot] = 0;
+                            sh_b_parity[slot] = 0;
+                        }
+                    }
+                    __syncthreads();
+
+                    if (active) {
+                        const long long a_rem = sh_a_count[threadIdx.y] - a_chunk;
+                        const long long b_rem = sh_b_count[threadIdx.x] - b_chunk;
+                        const int a_limit = a_rem < DIFF_V2_CHUNK_A
+                            ? static_cast<int>(a_rem) : DIFF_V2_CHUNK_A;
+                        const int b_limit = b_rem < DIFF_V2_CHUNK_B
+                            ? static_cast<int>(b_rem) : DIFF_V2_CHUNK_B;
+                        const int a_slot_base = threadIdx.y * DIFF_V2_CHUNK_A;
+                        const int b_slot_base = threadIdx.x * DIFF_V2_CHUNK_B;
+
+                        for (int ia = 0; ia < a_limit; ++ia) {
+                            const int a_slot = a_slot_base + ia;
+                            const int a_src = sh_a_src[a_slot];
+                            const int ij = sh_a_pair[a_slot];
+                            const int pa = sh_a_parity[a_slot];
+
+                            for (int ib = 0; ib < b_limit; ++ib) {
+                                const int b_slot = b_slot_base + ib;
+                                const int b_src = sh_b_src[b_slot];
+                                const int kl = sh_b_pair[b_slot];
+                                const int pb = sh_b_parity[b_slot];
+                                const size_t h_idx =
+                                    static_cast<size_t>(ij) * static_cast<size_t>(norbs2)
+                                    + static_cast<size_t>(kl);
+                                const size_t c_idx =
+                                    static_cast<size_t>(a_src) * static_cast<size_t>(beta_states)
+                                    + static_cast<size_t>(b_src);
+                                double weight = d_h2e[h_idx];
+                                if (pa * pb == -1) {
+                                    weight = -weight;
+                                }
+                                const cuDoubleComplex cval = d_C[c_idx];
+                                acc.x += weight * cval.x;
+                                acc.y += weight * cval.y;
+                            }
+                        }
+                    }
+                    __syncthreads();
+                }
+            }
+
+            if (active) {
+                const size_t out_idx =
+                    static_cast<size_t>(a_out) * static_cast<size_t>(beta_states)
+                    + static_cast<size_t>(b_out);
+                d_out[out_idx].x += acc.x;
+                d_out[out_idx].y += acc.y;
+            }
+            __syncthreads();
+        }
+    }
+}
+
+__global__ void lm_apply_array12_diff_spin_v2_tiled_kernel(
+    cuDoubleComplex* __restrict__ d_out,
+    const cuDoubleComplex* __restrict__ d_C,
+    const long long* __restrict__ d_alpha_offsets,
+    const int* __restrict__ d_alpha_sources,
+    const int* __restrict__ d_alpha_pairs,
+    const int* __restrict__ d_alpha_parities,
+    const long long* __restrict__ d_beta_offsets,
+    const int* __restrict__ d_beta_sources,
+    const int* __restrict__ d_beta_pairs,
+    const int* __restrict__ d_beta_parities,
+    const cuDoubleComplex* __restrict__ d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs)
+{
+    __shared__ long long sh_a_begin[DIFF_V2_TILE_A];
+    __shared__ long long sh_a_count[DIFF_V2_TILE_A];
+    __shared__ long long sh_b_begin[DIFF_V2_TILE_B];
+    __shared__ long long sh_b_count[DIFF_V2_TILE_B];
+    __shared__ long long sh_max_a;
+    __shared__ long long sh_max_b;
+
+    extern __shared__ int sh_edges[];
+    int* sh_a_src = sh_edges;
+    int* sh_a_pair = sh_a_src + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_a_parity = sh_a_pair + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_b_src = sh_a_parity + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_b_pair = sh_b_src + DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+    int* sh_b_parity = sh_b_pair + DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+
+    const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    const int nthreads = blockDim.x * blockDim.y;
+    const long long norbs2 = static_cast<long long>(norbs) * norbs;
+
+    for (long long a_base = static_cast<long long>(blockIdx.y) * DIFF_V2_TILE_A;
+         a_base < alpha_states;
+         a_base += static_cast<long long>(gridDim.y) * DIFF_V2_TILE_A) {
+        for (long long b_base = static_cast<long long>(blockIdx.x) * DIFF_V2_TILE_B;
+             b_base < beta_states;
+             b_base += static_cast<long long>(gridDim.x) * DIFF_V2_TILE_B) {
+
+            if (tid < DIFF_V2_TILE_A) {
+                const long long a_out = a_base + tid;
+                if (a_out < alpha_states) {
+                    sh_a_begin[tid] = d_alpha_offsets[a_out];
+                    sh_a_count[tid] = d_alpha_offsets[a_out + 1] - sh_a_begin[tid];
+                } else {
+                    sh_a_begin[tid] = 0;
+                    sh_a_count[tid] = 0;
+                }
+            }
+            if (tid < DIFF_V2_TILE_B) {
+                const long long b_out = b_base + tid;
+                if (b_out < beta_states) {
+                    sh_b_begin[tid] = d_beta_offsets[b_out];
+                    sh_b_count[tid] = d_beta_offsets[b_out + 1] - sh_b_begin[tid];
+                } else {
+                    sh_b_begin[tid] = 0;
+                    sh_b_count[tid] = 0;
+                }
+            }
+            __syncthreads();
+
+            if (tid == 0) {
+                long long max_a = 0;
+                long long max_b = 0;
+                for (int i = 0; i < DIFF_V2_TILE_A; ++i) {
+                    max_a = max_a < sh_a_count[i] ? sh_a_count[i] : max_a;
+                }
+                for (int i = 0; i < DIFF_V2_TILE_B; ++i) {
+                    max_b = max_b < sh_b_count[i] ? sh_b_count[i] : max_b;
+                }
+                sh_max_a = max_a;
+                sh_max_b = max_b;
+            }
+            __syncthreads();
+
+            const long long a_out = a_base + threadIdx.y;
+            const long long b_out = b_base + threadIdx.x;
+            const bool active = a_out < alpha_states && b_out < beta_states;
+            cuDoubleComplex acc = make_cuDoubleComplex(0.0, 0.0);
+
+            for (long long a_chunk = 0; a_chunk < sh_max_a; a_chunk += DIFF_V2_CHUNK_A) {
+                for (int slot = tid;
+                     slot < DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+                     slot += nthreads) {
+                    const int local_a = slot / DIFF_V2_CHUNK_A;
+                    const int k = slot - local_a * DIFF_V2_CHUNK_A;
+                    const long long edge = sh_a_begin[local_a] + a_chunk + k;
+                    if (a_chunk + k < sh_a_count[local_a]) {
+                        sh_a_src[slot] = d_alpha_sources[edge];
+                        sh_a_pair[slot] = d_alpha_pairs[edge];
+                        sh_a_parity[slot] = d_alpha_parities[edge];
+                    } else {
+                        sh_a_src[slot] = 0;
+                        sh_a_pair[slot] = 0;
+                        sh_a_parity[slot] = 0;
+                    }
+                }
+                __syncthreads();
+
+                for (long long b_chunk = 0; b_chunk < sh_max_b; b_chunk += DIFF_V2_CHUNK_B) {
+                    for (int slot = tid;
+                         slot < DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+                         slot += nthreads) {
+                        const int local_b = slot / DIFF_V2_CHUNK_B;
+                        const int k = slot - local_b * DIFF_V2_CHUNK_B;
+                        const long long edge = sh_b_begin[local_b] + b_chunk + k;
+                        if (b_chunk + k < sh_b_count[local_b]) {
+                            sh_b_src[slot] = d_beta_sources[edge];
+                            sh_b_pair[slot] = d_beta_pairs[edge];
+                            sh_b_parity[slot] = d_beta_parities[edge];
+                        } else {
+                            sh_b_src[slot] = 0;
+                            sh_b_pair[slot] = 0;
+                            sh_b_parity[slot] = 0;
+                        }
+                    }
+                    __syncthreads();
+
+                    if (active) {
+                        const long long a_rem = sh_a_count[threadIdx.y] - a_chunk;
+                        const long long b_rem = sh_b_count[threadIdx.x] - b_chunk;
+                        const int a_limit = a_rem < DIFF_V2_CHUNK_A
+                            ? static_cast<int>(a_rem) : DIFF_V2_CHUNK_A;
+                        const int b_limit = b_rem < DIFF_V2_CHUNK_B
+                            ? static_cast<int>(b_rem) : DIFF_V2_CHUNK_B;
+                        const int a_slot_base = threadIdx.y * DIFF_V2_CHUNK_A;
+                        const int b_slot_base = threadIdx.x * DIFF_V2_CHUNK_B;
+
+                        for (int ia = 0; ia < a_limit; ++ia) {
+                            const int a_slot = a_slot_base + ia;
+                            const int a_src = sh_a_src[a_slot];
+                            const int ij = sh_a_pair[a_slot];
+                            const int pa = sh_a_parity[a_slot];
+
+                            for (int ib = 0; ib < b_limit; ++ib) {
+                                const int b_slot = b_slot_base + ib;
+                                const int b_src = sh_b_src[b_slot];
+                                const int kl = sh_b_pair[b_slot];
+                                const int pb = sh_b_parity[b_slot];
+                                const size_t h_idx =
+                                    static_cast<size_t>(ij) * static_cast<size_t>(norbs2)
+                                    + static_cast<size_t>(kl);
+                                const size_t c_idx =
+                                    static_cast<size_t>(a_src) * static_cast<size_t>(beta_states)
+                                    + static_cast<size_t>(b_src);
+                                cuDoubleComplex weight = d_h2e[h_idx];
+                                if (pa * pb == -1) {
+                                    weight.x = -weight.x;
+                                    weight.y = -weight.y;
+                                }
+                                const cuDoubleComplex prod = cuCmul(weight, d_C[c_idx]);
+                                acc.x += prod.x;
+                                acc.y += prod.y;
+                            }
+                        }
+                    }
+                    __syncthreads();
+                }
+            }
+
+            if (active) {
+                const size_t out_idx =
+                    static_cast<size_t>(a_out) * static_cast<size_t>(beta_states)
+                    + static_cast<size_t>(b_out);
+                d_out[out_idx].x += acc.x;
+                d_out[out_idx].y += acc.y;
+            }
+            __syncthreads();
+        }
+    }
+}
+
+extern "C" void lm_apply_array12_diff_spin_v2_tiled_wrapper_real(
+    double* d_out,
+    const double* d_C,
+    const long long* d_alpha_offsets,
+    const int* d_alpha_sources,
+    const int* d_alpha_pairs,
+    const int* d_alpha_parities,
+    const long long* d_beta_offsets,
+    const int* d_beta_sources,
+    const int* d_beta_pairs,
+    const int* d_beta_parities,
+    const double* d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs)
+{
+    const long long beta_tiles =
+        (beta_states + DIFF_V2_TILE_B - 1) / DIFF_V2_TILE_B;
+    const long long alpha_tiles =
+        (alpha_states + DIFF_V2_TILE_A - 1) / DIFF_V2_TILE_A;
+    dim3 block(DIFF_V2_TILE_B, DIFF_V2_TILE_A);
+    dim3 grid(
+        diff_spin_v2_tiled_grid_dim(beta_tiles),
+        diff_spin_v2_tiled_grid_dim(alpha_tiles));
+
+    lm_apply_array12_diff_spin_v2_tiled_kernel_real<<<
+        grid, block, diff_spin_v2_tiled_shared_bytes()>>>(
+            d_out,
+            d_C,
+            d_alpha_offsets,
+            d_alpha_sources,
+            d_alpha_pairs,
+            d_alpha_parities,
+            d_beta_offsets,
+            d_beta_sources,
+            d_beta_pairs,
+            d_beta_parities,
+            d_h2e,
+            alpha_states,
+            beta_states,
+            norbs);
+
+    cudaDeviceSynchronize();
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "lm_apply_array12_diff_spin_v2_tiled_wrapper_real failed ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("lm_apply_array12_diff_spin_v2_tiled_wrapper_real failed");
+    }
+}
+
+extern "C" void lm_apply_array12_diff_spin_v2_tiled_wrapper_mixed(
+    cuDoubleComplex* d_out,
+    const cuDoubleComplex* d_C,
+    const long long* d_alpha_offsets,
+    const int* d_alpha_sources,
+    const int* d_alpha_pairs,
+    const int* d_alpha_parities,
+    const long long* d_beta_offsets,
+    const int* d_beta_sources,
+    const int* d_beta_pairs,
+    const int* d_beta_parities,
+    const double* d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs)
+{
+    const long long beta_tiles =
+        (beta_states + DIFF_V2_TILE_B - 1) / DIFF_V2_TILE_B;
+    const long long alpha_tiles =
+        (alpha_states + DIFF_V2_TILE_A - 1) / DIFF_V2_TILE_A;
+    dim3 block(DIFF_V2_TILE_B, DIFF_V2_TILE_A);
+    dim3 grid(
+        diff_spin_v2_tiled_grid_dim(beta_tiles),
+        diff_spin_v2_tiled_grid_dim(alpha_tiles));
+
+    lm_apply_array12_diff_spin_v2_tiled_kernel_mixed<<<
+        grid, block, diff_spin_v2_tiled_shared_bytes()>>>(
+            d_out,
+            d_C,
+            d_alpha_offsets,
+            d_alpha_sources,
+            d_alpha_pairs,
+            d_alpha_parities,
+            d_beta_offsets,
+            d_beta_sources,
+            d_beta_pairs,
+            d_beta_parities,
+            d_h2e,
+            alpha_states,
+            beta_states,
+            norbs);
+
+    cudaDeviceSynchronize();
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "lm_apply_array12_diff_spin_v2_tiled_wrapper_mixed failed ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("lm_apply_array12_diff_spin_v2_tiled_wrapper_mixed failed");
+    }
+}
+
+extern "C" void lm_apply_array12_diff_spin_v2_tiled_wrapper(
+    cuDoubleComplex* d_out,
+    const cuDoubleComplex* d_C,
+    const long long* d_alpha_offsets,
+    const int* d_alpha_sources,
+    const int* d_alpha_pairs,
+    const int* d_alpha_parities,
+    const long long* d_beta_offsets,
+    const int* d_beta_sources,
+    const int* d_beta_pairs,
+    const int* d_beta_parities,
+    const cuDoubleComplex* d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs)
+{
+    const long long beta_tiles =
+        (beta_states + DIFF_V2_TILE_B - 1) / DIFF_V2_TILE_B;
+    const long long alpha_tiles =
+        (alpha_states + DIFF_V2_TILE_A - 1) / DIFF_V2_TILE_A;
+    dim3 block(DIFF_V2_TILE_B, DIFF_V2_TILE_A);
+    dim3 grid(
+        diff_spin_v2_tiled_grid_dim(beta_tiles),
+        diff_spin_v2_tiled_grid_dim(alpha_tiles));
+
+    lm_apply_array12_diff_spin_v2_tiled_kernel<<<
+        grid, block, diff_spin_v2_tiled_shared_bytes()>>>(
+            d_out,
+            d_C,
+            d_alpha_offsets,
+            d_alpha_sources,
+            d_alpha_pairs,
+            d_alpha_parities,
+            d_beta_offsets,
+            d_beta_sources,
+            d_beta_pairs,
+            d_beta_parities,
+            d_h2e,
+            alpha_states,
+            beta_states,
+            norbs);
+
+    cudaDeviceSynchronize();
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "lm_apply_array12_diff_spin_v2_tiled_wrapper failed ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("lm_apply_array12_diff_spin_v2_tiled_wrapper failed");
+    }
+}

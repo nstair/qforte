@@ -10,8 +10,8 @@
 #include <utility>   // std::declval
 
 
-#include "qforte-def.h" 
-#include "tensor.h" 
+#include "qforte-def.h"
+#include "tensor.h"
 #include "tensor_gpu.h"
 #include "fci_graph.h"
 #include "fci_graph_gpu.h"
@@ -50,19 +50,19 @@ class FCIComputerGPU {
     using PrecompTupleReal =
         decltype(std::declval<const SQOpPoolGPU&>().get_mu_tuple_real(std::size_t{}));
 
-    /// default constructor: create a 'FCI' quantum computer 
+    /// default constructor: create a 'FCI' quantum computer
     /// the computer represends a restricted hilbert space for 'chemistry'
     /// nel: the number of electrons
     /// sz: the z componant spin
-    /// norb: the number of spatial orbitals 
+    /// norb: the number of spatial orbitals
     /// Implementation will be reminicient of modenrn determinant CI codes
     /// Implementation also borrows HEAVILY from the fermionic quantum emulator wfn class
     /// see (https://quantumai.google/openfermion/fqe) and related article
     FCIComputerGPU(
-      int nel, 
-      int sz, 
-      int norb, 
-      bool on_gpu = false, 
+      int nel,
+      int sz,
+      int norb,
+      bool on_gpu = false,
       const std::string& data_type = "complex",
       bool gpu_only = false
       );
@@ -97,34 +97,52 @@ class FCIComputerGPU {
             const std::complex<double> val
             );
 
-    /// apply a TensorOperator to the current state 
+    /// apply a TensorOperator to the current state
     void apply_tensor_operator(const TensorOperator& top);
 
-    /// apply a Tensor represending a 1-body spin-orbital indexed operator to the current state 
+    /// apply a Tensor represending a 1-body spin-orbital indexed operator to the current state
     void apply_tensor_spin_1bdy(
-      const TensorGPU& h1e, 
+      const TensorGPU& h1e,
       size_t norb);
 
-    /// apply TensorGPUs represending 1-body and 2-body spin-orbital indexed operator to the current state 
+    /// apply TensorGPUs represending 1-body and 2-body spin-orbital indexed operator to the current state
     void apply_tensor_spin_12bdy(
-      const TensorGPU& h1e, 
-      const TensorGPU& h2e, 
+      const TensorGPU& h1e,
+      const TensorGPU& h2e,
       size_t norb);
 
-    /// apply TensorGPUs represending 1-body and 2-body spatial-orbital indexed operator to the current state 
+    /// apply TensorGPUs represending 1-body and 2-body spatial-orbital indexed operator to the current state
     void apply_tensor_spat_12bdy_gpu(
-      const TensorGPU& h1e, 
-      const TensorGPU& h2e, 
-      TensorGPU& h2e_einsum, 
+      const TensorGPU& h1e,
+      const TensorGPU& h2e,
+      TensorGPU& h2e_einsum,
+      size_t norb);
+
+    /// apply TensorGPUs representing 1-body and 2-body spatial-orbital indexed operator.
+    /// v2 keeps the current same-spin GPU path and uses an output-element
+    /// owned mixed-spin path that mirrors the CPU debug/reference logic.
+    void apply_tensor_spat_12bdy_gpu_v2(
+      const TensorGPU& h1e,
+      const TensorGPU& h2e,
+      TensorGPU& h2e_einsum,
       size_t norb);
 
     /// apply TensorGPUs represending 1-body and 2-body spatial-orbital indexed operator
-    /// as well as a constant to the current state 
+    /// as well as a constant to the current state
     void apply_tensor_spat_012bdy_gpu(
       const std::complex<double> h0e,
-      const TensorGPU& h1e, 
-      const TensorGPU& h2e, 
-      TensorGPU& h2e_einsum, 
+      const TensorGPU& h1e,
+      const TensorGPU& h2e,
+      TensorGPU& h2e_einsum,
+      size_t norb);
+
+    /// v2 0/1/2-body spatial sigma build.  Mirrors apply_tensor_spat_012bdy_gpu
+    /// structurally while routing mixed spin through the v2 debug-style GPU path.
+    void apply_tensor_spat_012bdy_gpu_v2(
+      const std::complex<double> h0e,
+      const TensorGPU& h1e,
+      const TensorGPU& h2e,
+      TensorGPU& h2e_einsum,
       size_t norb);
 
     void lm_apply_array1(
@@ -156,7 +174,7 @@ class FCIComputerGPU {
       const TensorGPU& h1e,
       const TensorGPU& h2e,
       const int norbs,
-      const bool is_alpha); 
+      const bool is_alpha);
 
     void lm_apply_array12_diff_spin_opt_gpu(
       TensorGPU& out,
@@ -167,9 +185,9 @@ class FCIComputerGPU {
       const int nadexc,
       const int nbdexc,
       TensorGPU& h2e,
-      const int norbs); 
+      const int norbs);
 
-    void lm_apply_array12_diff_spin_opt_gpu_v2(
+    void lm_apply_array12_diff_spin_opt_gpu_v2_tiled(
       TensorGPU& out,
       const std::vector<int>& adexc,
       const std::vector<int>& bdexc,
@@ -186,13 +204,13 @@ class FCIComputerGPU {
 
     std::pair<std::vector<int>, std::vector<int>> evaluate_map_number_cpu(
       const std::vector<int>& numa,
-      const std::vector<int>& numb); 
+      const std::vector<int>& numb);
 
     std::pair<std::vector<int>, std::vector<int>> evaluate_map_cpu(
       const std::vector<int>& crea,
       const std::vector<int>& anna,
       const std::vector<int>& creb,
-      const std::vector<int>& annb); 
+      const std::vector<int>& annb);
 
     void apply_cos_inplace_cpu(
       const std::complex<double> time,
@@ -208,7 +226,7 @@ class FCIComputerGPU {
       const std::vector<int>& ann,
       std::vector<int>& crework,
       std::vector<int>& annwork,
-      std::vector<int>& number); 
+      std::vector<int>& number);
 
     void evolve_individual_nbody_easy_cpu(
       const std::complex<double> time,
@@ -219,7 +237,7 @@ class FCIComputerGPU {
       const std::vector<int>& anna,
       const std::vector<int>& creb,
       const std::vector<int>& annb,
-      const PrecompTuple* precomp = nullptr); 
+      const PrecompTuple* precomp = nullptr);
 
     template<class Precomp>
     void evolve_individual_nbody_easy_gpu(
@@ -241,7 +259,7 @@ class FCIComputerGPU {
       const std::vector<int>& anna,
       const std::vector<int>& creb,
       const std::vector<int>& annb,
-      const PrecompTuple* precomp = nullptr); 
+      const PrecompTuple* precomp = nullptr);
 
     template<class Precomp>
     void evolve_individual_nbody_hard_gpu(
@@ -298,7 +316,7 @@ class FCIComputerGPU {
       const int max_taylor_iter);
 
     void apply_individual_nbody1_accumulate_gpu(
-      const std::complex<double> coeff, 
+      const std::complex<double> coeff,
       TensorGPU& Cin,
       TensorGPU& Cout,
       int counta,
@@ -309,7 +327,7 @@ class FCIComputerGPU {
       TensorGPU& Cin,
       TensorGPU& Cout,
       const std::vector<int>& daga,
-      const std::vector<int>& undaga, 
+      const std::vector<int>& undaga,
       const std::vector<int>& dagb,
       const std::vector<int>& undagb);
 
@@ -330,7 +348,7 @@ class FCIComputerGPU {
     void apply_sqop_gpu(const SQOperator& sqop);
 
     void apply_diagonal_of_sqop_cpu(
-      const SQOperator& sq_op, 
+      const SQOperator& sq_op,
       const bool invert_coeff = true);
 
     void apply_sqop_pool_cpu(const SQOpPool& sqop_pool);
@@ -341,11 +359,11 @@ class FCIComputerGPU {
     std::complex<double> get_exp_val(const SQOperator& sqop);
 
     std::complex<double> get_exp_val_tensor_gpu(
-      const std::complex<double> h0e, 
-      const TensorGPU& h1e, 
-      const TensorGPU& h2e, 
-      TensorGPU& h2e_einsum, 
-      size_t norb);  
+      const std::complex<double> h0e,
+      const TensorGPU& h1e,
+      const TensorGPU& h2e,
+      TensorGPU& h2e_einsum,
+      size_t norb);
 
     // scale on CPU or GPU (safe for either I think)
     void scale(const std::complex<double> a);
@@ -357,9 +375,9 @@ class FCIComputerGPU {
     std::string str(
       bool print_data,
       bool print_complex
-      ) 
+      )
     {
-      return C_.str(print_data, print_complex); 
+      return C_.str(print_data, print_complex);
     }
 
     std::complex<double> state_vector_dot_gpu(FCIComputerGPU& other) const;
@@ -374,9 +392,9 @@ class FCIComputerGPU {
     TensorGPU get_state() const { return C_; }
 
     /// return a tensor of the coeficients
-    TensorGPU get_state_deep() const { 
-      TensorGPU Cprime = C_; 
-      return Cprime; 
+    TensorGPU get_state_deep() const {
+      TensorGPU Cprime = C_;
+      return Cprime;
     }
 
     // copy into pre-allocated tensor
@@ -386,8 +404,8 @@ class FCIComputerGPU {
 
     /// return the dot product of the current FCIComputerGPU state (as the ket) and the HF state (i.e. <HF|C_>)
     std::complex<double> get_hf_dot() const {
-      cpu_error(); 
-      return C_.get({0,0}); 
+      cpu_error();
+      return C_.get({0,0});
     }
 
     /// return the number of electrons
@@ -395,7 +413,7 @@ class FCIComputerGPU {
 
     /// return the z-componant spin
     size_t get_sz() const { return sz_; }
-    
+
     /// return the number of spatial orbitals
     size_t none_ops() const { return norb_; }
 
@@ -437,7 +455,7 @@ class FCIComputerGPU {
 
 
     /// ===> Helpers for populating device index/parity arrays for a particular SQOpPool
-    
+
     /// uses the graph to populate the src/target/parity device vectors, keeps data on device for re-use
     void populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool);
 
@@ -457,7 +475,7 @@ class FCIComputerGPU {
     bool gpu_only_ = false;
 
     bool on_complex_; // true if data is complex, false if data is on real Tensor
-    std::string data_type_ = "complex"; 
+    std::string data_type_ = "complex";
 
     size_t nel_;
     size_t nalfa_el_;
