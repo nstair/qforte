@@ -20,7 +20,7 @@ __global__ void apply_individual_nbody1_accumulate_kernel_atomic(
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
     int tensor_size);
@@ -35,7 +35,7 @@ extern "C" void apply_individual_nbody1_accumulate_wrapper(
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
     int tensor_size);
@@ -57,7 +57,7 @@ __global__ void dot_individual_nbody1_kernel(
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
     cuDoubleComplex* d_accum);
@@ -72,10 +72,40 @@ extern "C" void dot_individual_nbody1_wrapper(
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
     cuDoubleComplex* d_accum);
+
+__global__ void dot_individual_nbody1_real_kernel(
+    double coeff,
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const double* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const double* d_parityb,
+    long long nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    double* d_accum);
+
+extern "C" void dot_individual_nbody1_real_wrapper(
+    double coeff,
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const double* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const double* d_parityb,
+    long long nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    double* d_accum);
 
 // ==============================================
 // Scale elements kernel and wrapper (Complex)
@@ -87,7 +117,7 @@ __global__ void scale_elements_kernel(
     int first_size,
     const int* d_second, 
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor);
 
 extern "C" void scale_elements_wrapper_complex(
@@ -96,7 +126,7 @@ extern "C" void scale_elements_wrapper_complex(
     int first_size,
     const int* d_second, 
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor);
 
 // ==============================================
@@ -109,7 +139,7 @@ __global__ void scale_elements_kernel_real(
     int first_size,
     const int* __restrict__ d_second,
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor);
 
 extern "C" void scale_elements_wrapper_real(
@@ -118,7 +148,7 @@ extern "C" void scale_elements_wrapper_real(
     int first_size,
     const int* d_second,
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor);
 
 // ==============================================
@@ -132,7 +162,7 @@ __global__ void inplace_givens_update_rows_kernel(
     const cuDoubleComplex* __restrict__ paritya1,
     const cuDoubleComplex* __restrict__ paritya2,
     int na,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
@@ -144,7 +174,7 @@ extern "C" void inplace_givens_update_complex_rows_wrapper(
     const cuDoubleComplex* paritya1,
     const cuDoubleComplex* paritya2,
     int na,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
@@ -161,7 +191,7 @@ __global__ void inplace_givens_update_cols_kernel(
     const cuDoubleComplex* __restrict__ parityb2,
     int nalpha, 
     int nb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
@@ -178,7 +208,7 @@ __global__ void inplace_givens_update_complex_tiled(
     const cuDoubleComplex* __restrict__ parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
@@ -196,7 +226,7 @@ extern "C" void inplace_givens_update_complex_tiled_wrapper(
     const cuDoubleComplex* parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,     // leading dimension (num columns)
+    long long nbeta_strs_,     // leading dimension (num columns)
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
@@ -212,7 +242,7 @@ __global__ void inplace_givens_update_rows_kernel_real(
     const double* __restrict__ paritya1,   // [na]  (g† leg, row)
     const double* __restrict__ paritya2,   // [na]  (g  leg, row)
     int na,
-    int nbeta_strs_,                        // number of columns
+    long long nbeta_strs_,                        // number of columns
     double factor,
     double acc_coeff1,
     double acc_coeff2);
@@ -224,7 +254,7 @@ extern "C" void inplace_givens_update_real_rows_wrapper(
     const double* paritya1,
     const double* paritya2,
     int na,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor,
     double acc_coeff1,
     double acc_coeff2);
@@ -271,8 +301,8 @@ __global__ void inplace_givens_update_beta_only_rowmajor_real(
     const double* __restrict__ parityb1,   // [nb]  parity for source row (g† leg)
     const double* __restrict__ parityb2,   // [nb]  parity for target row (g  leg)
     int nb,                                // number of beta pairs
-    int nalpha_strs_,                      // number of alpha strings (rows)
-    int nbeta_strs_,                       // leading dimension (columns)
+    long long nalpha_strs_,                      // number of alpha strings (rows)
+    long long nbeta_strs_,                       // leading dimension (columns)
     double factor,
     double acc_coeff1,
     double acc_coeff2);
@@ -286,8 +316,8 @@ static void launch_inplace_givens_update_beta_only_rowmajor_real(
     const double* parityb1,
     const double* parityb2,
     int nb,
-    int nalpha_strs_,
-    int nbeta_strs_,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
     double factor,
     double acc_coeff1,
     double acc_coeff2);
@@ -299,8 +329,8 @@ extern "C" void inplace_givens_update_real_beta_only_rowmajor_wrapper(
     const double* parityb1,
     const double* parityb2,
     int nb,
-    int nalpha_strs_,
-    int nbeta_strs_,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
     double factor,
     double acc_coeff1,
     double acc_coeff2);
@@ -317,7 +347,7 @@ __global__ void inplace_givens_update_real_tiled(
     const double* __restrict__ parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,     // leading dimension (num columns)
+    long long nbeta_strs_,     // leading dimension (num columns)
     double factor,
     double acc_coeff1,
     double acc_coeff2);
@@ -334,7 +364,7 @@ static void launch_inplace_givens_update_real_tiled(
     const double* parityb2,
     int nalpha,
     int nb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor,
     double acc_coeff1,
     double acc_coeff2);
@@ -352,7 +382,7 @@ extern "C" void inplace_givens_update_real_tiled_wrapper(
     const double* parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,     // leading dimension (num columns)
+    long long nbeta_strs_,     // leading dimension (num columns)
     double factor,
     double acc_coeff1,
     double acc_coeff2);

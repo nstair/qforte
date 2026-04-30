@@ -1775,7 +1775,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
                     // thrust::raw_pointer_cast(std::get<8>(*precomp).data()), // const cuDoubleComplex* parityb1
                     // thrust::raw_pointer_cast(std::get<9>(*precomp).data()), // const cuDoubleComplex* parityb2
                     std::get<2>(*precomp).size(), // int na
-                    nbeta_strs_,                  // int nbeta_strs_
+                    nbeta_strs_,                  // long long nbeta_strs_
                     make_cuDoubleComplex(factor.real(), factor.imag()), // cuDoubleComplex cos_factor
                     make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
                     make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
@@ -1865,8 +1865,8 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
                     thrust::raw_pointer_cast(std::get<8>(*precomp).data()),  // const double* parityb1
                     thrust::raw_pointer_cast(std::get<9>(*precomp).data()),  // const double* parityb2
                     static_cast<int>(std::get<4>(*precomp).size()),          // nb
-                    static_cast<int>(nalfa_strs_),                           // nalpha_strs_
-                    static_cast<int>(nbeta_strs_),                           // nbeta_strs_
+                    static_cast<long long>(nalfa_strs_),                           // nalpha_strs_
+                    static_cast<long long>(nbeta_strs_),                           // nbeta_strs_
                     factor.real(),
                     acc_coeff1.real(),
                     acc_coeff2.real());
@@ -2039,7 +2039,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
                     thrust::raw_pointer_cast(paritya_gpu_.data()), // const cuDoubleComplex* paritya1
                     thrust::raw_pointer_cast(paritya_undag_gpu_.data()), // const cuDoubleComplex* paritya2
                     counta1,      // int na
-                    nbeta_strs_,  // int nbeta_strs_
+                    nbeta_strs_,  // long long nbeta_strs_
                     make_cuDoubleComplex(factor.real(), factor.imag()),
                     make_cuDoubleComplex(acc_coeff1.real(), acc_coeff1.imag()),
                     make_cuDoubleComplex(acc_coeff2.real(), acc_coeff2.imag()));
@@ -2181,7 +2181,7 @@ void FCIComputerGPU::evolve_individual_nbody_hard_gpu(
                     thrust::raw_pointer_cast(paritya_gpu_real_.data()), // const cuDoubleComplex* paritya1
                     thrust::raw_pointer_cast(paritya_undag_gpu_real_.data()), // const cuDoubleComplex* paritya2
                     counta1,      // int nalpha
-                    nbeta_strs_,  // int nbeta_strs_
+                    nbeta_strs_,  // long long nbeta_strs_
                     factor.real(),
                     acc_coeff1.real(),
                     acc_coeff2.real());
@@ -3321,7 +3321,7 @@ std::complex<double> FCIComputerGPU::get_exp_val_tensor_gpu(
     TensorGPU Cin({nalfa_strs_, nbeta_strs_}, "Cin", true, data_type_, true);
     Cin.copy_in_gpu(C_);
 
-    apply_tensor_spat_012bdy_gpu(
+    apply_tensor_spat_012bdy_gpu_v2(
         h0e,
         h1e,
         h2e,
@@ -3438,6 +3438,88 @@ std::complex<double> FCIComputerGPU::dot_sqop_gpu(FCIComputerGPU& sigma, const S
 
     cuDoubleComplex res = d_accum_vec[0];
     return std::complex<double>(res.x, res.y);
+}
+
+void FCIComputerGPU::dot_individual_sqop_term_gpu_real(
+    const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
+    const TensorGPU& psi,
+    const TensorGPU& sigma,
+    double* d_accum)
+{
+    std::vector<int> crea, anna, creb, annb;
+
+    for (size_t i = 0; i < std::get<1>(term).size(); i++) {
+        if (std::get<1>(term)[i] % 2 == 0)
+            crea.push_back(static_cast<int>(std::floor(std::get<1>(term)[i] / 2)));
+        else
+            creb.push_back(static_cast<int>(std::floor(std::get<1>(term)[i] / 2)));
+    }
+    for (size_t i = 0; i < std::get<2>(term).size(); i++) {
+        if (std::get<2>(term)[i] % 2 == 0)
+            anna.push_back(static_cast<int>(std::floor(std::get<2>(term)[i] / 2)));
+        else
+            annb.push_back(static_cast<int>(std::floor(std::get<2>(term)[i] / 2)));
+    }
+
+    if (std::get<1>(term).size() != std::get<2>(term).size())
+        throw std::invalid_argument("Each term must have same number of annihilators and creators");
+
+    std::vector<size_t> ops1(std::get<1>(term));
+    std::vector<size_t> ops2(std::get<2>(term));
+    ops1.insert(ops1.end(), ops2.begin(), ops2.end());
+    int nswaps = parity_sort(ops1);
+
+    // For a real sqop the coefficient must be real; take real part after parity.
+    double coeff = std::real(std::pow(-1, nswaps) * std::get<0>(term));
+
+    int counta = 0, countb = 0;
+    graph_.make_mapping_each_otf_gpu_real(
+        true, crea, anna, &counta,
+        sourcea_gpu_, targeta_gpu_, paritya_gpu_real_);
+    if (counta == 0) return;
+
+    graph_.make_mapping_each_otf_gpu_real(
+        false, creb, annb, &countb,
+        sourceb_gpu_, targetb_gpu_, parityb_gpu_real_);
+    if (countb == 0) return;
+
+    dot_individual_nbody1_real_wrapper(
+        coeff,
+        thrust::raw_pointer_cast(psi.read_d_re_data().data()),
+        thrust::raw_pointer_cast(sigma.read_d_re_data().data()),
+        thrust::raw_pointer_cast(sourcea_gpu_.data()),
+        thrust::raw_pointer_cast(targeta_gpu_.data()),
+        thrust::raw_pointer_cast(paritya_gpu_real_.data()),
+        thrust::raw_pointer_cast(sourceb_gpu_.data()),
+        thrust::raw_pointer_cast(targetb_gpu_.data()),
+        thrust::raw_pointer_cast(parityb_gpu_real_.data()),
+        nbeta_strs_,
+        counta,
+        countb,
+        d_accum);
+}
+
+double FCIComputerGPU::dot_sqop_gpu_real(FCIComputerGPU& sigma, const SQOperator& sqop)
+{
+    gpu_error();
+    sigma.gpu_error();
+
+    thrust::device_vector<double> d_accum_vec(1, 0.0);
+    double* d_accum = thrust::raw_pointer_cast(d_accum_vec.data());
+
+    for (const auto& term : sqop.terms()) {
+        if (std::abs(std::get<0>(term)) > compute_threshold_) {
+            dot_individual_sqop_term_gpu_real(term, C_, sigma.C_, d_accum);
+        }
+    }
+
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_sqop_gpu_real sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+
+    return d_accum_vec[0];
 }
 
 void FCIComputerGPU::copy_state_into(TensorGPU& tensor) const {

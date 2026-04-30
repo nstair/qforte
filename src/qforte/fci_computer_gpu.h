@@ -345,6 +345,13 @@ class FCIComputerGPU {
       const TensorGPU& sigma,
       cuDoubleComplex* d_accum);
 
+    /// Real-path variant: state vectors live in d_re_data_ (double).
+    void dot_individual_sqop_term_gpu_real(
+      const std::tuple< std::complex<double>, std::vector<size_t>, std::vector<size_t>>& term,
+      const TensorGPU& psi,
+      const TensorGPU& sigma,
+      double* d_accum);
+
     void apply_sqop_gpu(const SQOperator& sqop);
 
     void apply_diagonal_of_sqop_cpu(
@@ -387,6 +394,10 @@ class FCIComputerGPU {
     /// state vector is not overwritten and there is no need for an external
     /// psi_i save/restore cycle.
     std::complex<double> dot_sqop_gpu(FCIComputerGPU& sigma, const SQOperator& sqop);
+
+    /// Real-path variant of dot_sqop_gpu: uses d_re_data_ (double) for both state
+    /// vectors.  Returns a plain double — no imaginary part is possible for real states.
+    double dot_sqop_gpu_real(FCIComputerGPU& sigma, const SQOperator& sqop);
 
     /// return a tensor of the coeficients
     TensorGPU get_state() const { return C_; }

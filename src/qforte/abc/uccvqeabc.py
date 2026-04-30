@@ -960,19 +960,6 @@ class UCCVQE(VQE, UCC):
             adjoint=False)
         self._gpu_timers['evolve_pool_trotter_basic_gpu'] += self._gpu_time.time() - t0
 
-        # No more need for psi_i with fused dot-apply
-
-        # Initialize psi_i if it doesn't exist
-        # if not hasattr(self, 'psi_i'):
-        #     self.psi_i = None
-
-        # t0 = self._gpu_time.time()
-        # if self.psi_i:
-        #     qc_psi.copy_state_into(self.psi_i)
-        # else:
-        #     self.psi_i = qc_psi.get_state_deep()
-        # self._gpu_timers['get_state_deep'] += self._gpu_time.time() - t0
-
         # not sure if copy is faster or reapplication of state
         t0 = self._gpu_time.time()
         qc_sig.set_state_from_other_gpu(qc_psi)
@@ -980,7 +967,7 @@ class UCCVQE(VQE, UCC):
 
         if(self._apply_ham_as_tensor):
             t0 = self._gpu_time.time()
-            qc_sig.apply_tensor_spat_012bdy_gpu(
+            qc_sig.apply_tensor_spat_012bdy_gpu_v2(
                 self._zero_body_energy, 
                 self._mo_oeis_gpu, 
                 self._mo_teis_gpu, 
@@ -1000,7 +987,10 @@ class UCCVQE(VQE, UCC):
 
         # new fused opp
         t0 = self._gpu_time.time()
-        grads[mu] = 2.0 * np.real(qc_psi.dot_sqop_gpu(qc_sig, Kmu_prev))
+        if self.data_type == 'real':
+            grads[mu] = 2.0 * qc_psi.dot_sqop_gpu_real(qc_sig, Kmu_prev)
+        else:
+            grads[mu] = 2.0 * np.real(qc_psi.dot_sqop_gpu(qc_sig, Kmu_prev))
         self._gpu_timers['dot_sqop_gpu'] += self._gpu_time.time() - t0
 
         # old way
@@ -1059,7 +1049,10 @@ class UCCVQE(VQE, UCC):
 
             # new fused opp
             t0 = self._gpu_time.time()
-            grads[mu] = 2.0 * np.real(qc_psi.dot_sqop_gpu(qc_sig, Kmu))
+            if self.data_type == 'real':
+                grads[mu] = 2.0 * qc_psi.dot_sqop_gpu_real(qc_sig, Kmu)
+            else:
+                grads[mu] = 2.0 * np.real(qc_psi.dot_sqop_gpu(qc_sig, Kmu))
             self._gpu_timers['dot_sqop_gpu'] += self._gpu_time.time() - t0
 
             # old way

@@ -89,6 +89,8 @@ class UCCNVQE(UCCVQE):
 
         # Initialize GPU pool precomputation if using GPU computer
         if self._computer_type == 'fci_gpu':
+            qforte.gpu_only(True)
+
             self._timer.reset()
             self.initialize_gpu_pool()
             self._timer.record("initialize_gpu_pool")
@@ -353,7 +355,8 @@ class UCCNVQE(UCCVQE):
             self._2_spin, 
             self._norb,
             on_gpu=True,
-            data_type=self.data_type)
+            data_type=self.data_type,
+            gpu_only=True)
         
         self._reusable_qc_psi.hartree_fock_gpu()
         
@@ -362,7 +365,8 @@ class UCCNVQE(UCCVQE):
             self._2_spin, 
             self._norb,
             on_gpu=True,
-            data_type=self.data_type)
+            data_type=self.data_type,
+            gpu_only=True)
         
         # Precompute index arrays for fast evolution
         # This sets device_vecs_populated_ = true and precomputes all index mappings

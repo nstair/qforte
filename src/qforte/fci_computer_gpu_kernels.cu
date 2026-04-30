@@ -82,7 +82,7 @@ __global__ void apply_individual_nbody1_accumulate_kernel_atomic(
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
     int tensor_size) 
@@ -91,8 +91,8 @@ __global__ void apply_individual_nbody1_accumulate_kernel_atomic(
     int idy = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (idx < targeta_size) {
-        int ta_idx = d_targeta[idx] * nbeta_strs_;
-        int sa_idx = d_sourcea[idx] * nbeta_strs_;
+        long long ta_idx = (long long)d_targeta[idx] * nbeta_strs_;
+        long long sa_idx = (long long)d_sourcea[idx] * nbeta_strs_;
         
         cuDoubleComplex pref = cuCmul(coeff, d_paritya[idx]);
 
@@ -101,7 +101,7 @@ __global__ void apply_individual_nbody1_accumulate_kernel_atomic(
             term = cuCmul(term, d_Cin[sa_idx + d_sourceb[idy]]);
 
             // Thread-safe atomic accumulation
-            int output_idx = ta_idx + d_targetb[idy];
+            long long output_idx = ta_idx + d_targetb[idy];
             atomicAdd_double(&d_Cout[output_idx].x, term.x);
             atomicAdd_double(&d_Cout[output_idx].y, term.y);
         }
@@ -118,7 +118,7 @@ void apply_individual_nbody1_accumulate_wrapper(
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
     int tensor_size) 
@@ -167,7 +167,7 @@ __global__ void dot_individual_nbody1_kernel(
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
     cuDoubleComplex* d_accum)
@@ -189,10 +189,10 @@ __global__ void dot_individual_nbody1_kernel(
         // term = coeff * parity_a[idx] * parity_b[idy] * psi[source_a*nb + source_b]
         cuDoubleComplex pref = cuCmul(coeff, d_paritya[idx]);
         cuDoubleComplex term = cuCmul(pref, d_parityb[idy]);
-        term = cuCmul(term, d_psi[d_sourcea[idx] * nbeta_strs_ + d_sourceb[idy]]);
+        term = cuCmul(term, d_psi[(long long)d_sourcea[idx] * nbeta_strs_ + d_sourceb[idy]]);
 
         // contribution = conj(sigma[target_a*nb + target_b]) * term
-        int target_idx = d_targeta[idx] * nbeta_strs_ + d_targetb[idy];
+        long long target_idx = (long long)d_targeta[idx] * nbeta_strs_ + d_targetb[idy];
         cuDoubleComplex val = cuCmul(cuConj(d_sigma[target_idx]), term);
         acc_re = val.x;
         acc_im = val.y;
@@ -228,7 +228,7 @@ extern "C" void dot_individual_nbody1_wrapper(
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
     cuDoubleComplex* d_accum)
@@ -262,6 +262,96 @@ extern "C" void dot_individual_nbody1_wrapper(
 }
 
 // ==============================================
+// Dot kernel and wrapper (Real)
+// ==============================================
+
+/// Real-path per-thread contribution: sigma[target] * coeff * parity_a * parity_b * psi[source]
+/// State vectors are stored as double (d_re_data_); parities are double.
+__global__ void dot_individual_nbody1_real_kernel(
+    double coeff,
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const double* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const double* d_parityb,
+    long long nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    double* d_accum)
+{
+    extern __shared__ double sh_real[];
+
+    int block_threads = blockDim.x * blockDim.y;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int idy = blockIdx.y * blockDim.y + threadIdx.y;
+    int tid = threadIdx.y * blockDim.x + threadIdx.x;
+
+    double acc = 0.0;
+
+    if (idx < targeta_size && idy < targetb_size) {
+        double pref = coeff * d_paritya[idx] * d_parityb[idy];
+        double val  = pref * d_psi[(long long)d_sourcea[idx] * nbeta_strs_ + d_sourceb[idy]];
+        // Real bra: no conjugation needed
+        acc = d_sigma[(long long)d_targeta[idx] * nbeta_strs_ + d_targetb[idy]] * val;
+    }
+
+    sh_real[tid] = acc;
+    __syncthreads();
+
+    for (int s = block_threads / 2; s > 0; s >>= 1) {
+        if (tid < s) sh_real[tid] += sh_real[tid + s];
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd(d_accum, sh_real[0]);
+    }
+}
+
+extern "C" void dot_individual_nbody1_real_wrapper(
+    double coeff,
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const double* d_paritya,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const double* d_parityb,
+    long long nbeta_strs_,
+    int targeta_size,
+    int targetb_size,
+    double* d_accum)
+{
+    dim3 blockSize(16, 16);
+    dim3 gridSize(
+        (targeta_size + blockSize.x - 1) / blockSize.x,
+        (targetb_size + blockSize.y - 1) / blockSize.y);
+
+    size_t sharedMemSize = blockSize.x * blockSize.y * sizeof(double);
+
+    dot_individual_nbody1_real_kernel<<<gridSize, blockSize, sharedMemSize>>>(
+        coeff, d_psi, d_sigma,
+        d_sourcea, d_targeta, d_paritya,
+        d_sourceb, d_targetb, d_parityb,
+        nbeta_strs_, targeta_size, targetb_size, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_individual_nbody1_real_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_individual_nbody1_real_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ==============================================
 // Scale elements kernel and wrapper (Complex)
 // ==============================================
 
@@ -271,14 +361,14 @@ __global__ void scale_elements_kernel(
     int first_size,
     const int* d_second, 
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor) 
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (i < first_size && j < second_size) {
-        int idx = d_first[i] * nbeta_strs_ + d_second[j];
+        long long idx = (long long)d_first[i] * nbeta_strs_ + d_second[j];
         d_Cout[idx] = cuCmul(d_Cout[idx], factor);
     }
 }
@@ -289,7 +379,7 @@ extern "C" void scale_elements_wrapper_complex(
     int first_size,
     const int* d_second, 
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor) 
 {
     if (first_size <= 0 || second_size <= 0 || nbeta_strs_ <= 0) return;
@@ -327,14 +417,14 @@ __global__ void scale_elements_kernel_real(
     int first_size,
     const int* __restrict__ d_second,
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor)
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     const int j = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (i < first_size && j < second_size) {
-        const int idx = d_first[i] * nbeta_strs_ + d_second[j];
+        const long long idx = (long long)d_first[i] * nbeta_strs_ + d_second[j];
         d_Cout[idx] *= factor;
     }
 }
@@ -345,7 +435,7 @@ extern "C" void scale_elements_wrapper_real(
     int first_size,
     const int* d_second,
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor)
 {
     if (first_size <= 0 || second_size <= 0 || nbeta_strs_ <= 0) return;
@@ -386,7 +476,7 @@ __global__ void inplace_givens_update_rows_kernel(
     const cuDoubleComplex* __restrict__ paritya1, // [na]  (g† leg, row)
     const cuDoubleComplex* __restrict__ paritya2, // [na]  (g  leg, row)
     int na,
-    int nbeta_strs_,                        // number of columns
+    long long nbeta_strs_,                        // number of columns
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2)
@@ -407,12 +497,12 @@ __global__ void inplace_givens_update_rows_kernel(
 
     const int sa1 = s_sa1, ta1 = s_ta1;
     const cuDoubleComplex pa1 = s_pa1, pa2 = s_pa2;
-    const int base_u = sa1 * nbeta_strs_;
-    const int base_v = ta1 * nbeta_strs_;
+    const long long base_u = (long long)sa1 * nbeta_strs_;
+    const long long base_v = (long long)ta1 * nbeta_strs_;
 
-    for (int col = threadIdx.x; col < nbeta_strs_; col += blockDim.x) {
-        const int idx_u = base_u + col;   // (sa1, col)
-        const int idx_v = base_v + col;   // (ta1, col)
+    for (long long col = threadIdx.x; col < nbeta_strs_; col += blockDim.x) {
+        const long long idx_u = base_u + col;   // (sa1, col)
+        const long long idx_v = base_v + col;   // (ta1, col)
 
         const cuDoubleComplex u0 = d_Cout[idx_u];
         const cuDoubleComplex v0 = d_Cout[idx_v];
@@ -433,7 +523,7 @@ extern "C" void inplace_givens_update_complex_rows_wrapper(
     const cuDoubleComplex* paritya1,
     const cuDoubleComplex* paritya2,
     int na,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2)
@@ -442,7 +532,7 @@ extern "C" void inplace_givens_update_complex_rows_wrapper(
 
     // Choose threads per block: cover columns with good occupancy.
     // Clamp to device limits if you prefer; 256 is a good default.
-    int threads = std::min(256, nbeta_strs_);
+    int threads = static_cast<int>(std::min<long long>(256, nbeta_strs_));
     // Keep at least one warp
     if (threads < 32) threads = 32;
 
@@ -483,7 +573,7 @@ __global__ void inplace_givens_update_complex_tiled(
     const cuDoubleComplex* __restrict__ parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2)
@@ -545,11 +635,11 @@ __global__ void inplace_givens_update_complex_tiled(
             const cuDoubleComplex pb1 = s_pb1[tx];
             const cuDoubleComplex pb2 = s_pb2[tx];
 
-            const int base_u = sa1 * nbeta_strs_;
-            const int base_v = ta1 * nbeta_strs_;
+            const long long base_u = (long long)sa1 * nbeta_strs_;
+            const long long base_v = (long long)ta1 * nbeta_strs_;
 
-            const int idx_u  = base_u + sb1;  // (sa1, sb1)
-            const int idx_v  = base_v + tb1;  // (ta1, tb1)
+            const long long idx_u  = base_u + sb1;  // (sa1, sb1)
+            const long long idx_v  = base_v + tb1;  // (ta1, tb1)
 
             // Within a warp, tx varies ⇒ idx_* vary by +1 (contiguous) if sb1/tb1 are consecutive.
             // To ensure that, store column-pairs for a tile as consecutive sb1/tb1 (typical).
@@ -583,7 +673,7 @@ static void launch_inplace_givens_update_complex_tiled(
     const cuDoubleComplex* parityb2,
     int nalpha,
     int nb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2)
@@ -643,7 +733,7 @@ extern "C" void inplace_givens_update_complex_tiled_wrapper(
     const cuDoubleComplex* parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,     // leading dimension (num columns)
+    long long nbeta_strs_,     // leading dimension (num columns)
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2)
@@ -691,7 +781,7 @@ __global__ void inplace_givens_update_rows_kernel_real(
     const double* __restrict__ paritya1,   // [na]  (g† leg, row)
     const double* __restrict__ paritya2,   // [na]  (g  leg, row)
     int na,
-    int nbeta_strs_,                        // number of columns
+    long long nbeta_strs_,                        // number of columns
     double factor,
     double acc_coeff1,
     double acc_coeff2)
@@ -713,17 +803,17 @@ __global__ void inplace_givens_update_rows_kernel_real(
     const int sa1 = s_sa1, ta1 = s_ta1;
     const double pa1 = s_pa1, pa2 = s_pa2;
 
-    const int base_u = sa1 * nbeta_strs_;
-    const int base_v = ta1 * nbeta_strs_;
+    const long long base_u = (long long)sa1 * nbeta_strs_;
+    const long long base_v = (long long)ta1 * nbeta_strs_;
 
     // Precompute per-row scalings to save a couple MULs in the loop
     const double a_row = acc_coeff2 * pa2;
     const double b_row = acc_coeff1 * pa1;
 
     // Each thread walks columns with stride blockDim.x (coalesced)
-    for (int col = threadIdx.x; col < nbeta_strs_; col += blockDim.x) {
-        const int idx_u = base_u + col;   // (sa1, col)
-        const int idx_v = base_v + col;   // (ta1, col)
+    for (long long col = threadIdx.x; col < nbeta_strs_; col += blockDim.x) {
+        const long long idx_u = base_u + col;   // (sa1, col)
+        const long long idx_v = base_v + col;   // (ta1, col)
 
         const double u0 = d_Cout[idx_u];
         const double v0 = d_Cout[idx_v];
@@ -743,7 +833,7 @@ extern "C" void inplace_givens_update_real_rows_wrapper(
     const double* paritya1,
     const double* paritya2,
     int na,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor,
     double acc_coeff1,
     double acc_coeff2)
@@ -751,7 +841,7 @@ extern "C" void inplace_givens_update_real_rows_wrapper(
     if (na == 0 || nbeta_strs_ == 0) return;
 
     // Choose threads per block: cover columns with good occupancy.
-    int threads = std::min(256, nbeta_strs_);
+    int threads = static_cast<int>(std::min<long long>(256, nbeta_strs_));
     if (threads < 32) threads = 32;  // keep at least one warp
 
     dim3 block(threads);
@@ -914,7 +1004,7 @@ __global__ void inplace_givens_update_real_tiled(
     const double* __restrict__ parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,     // leading dimension (num columns)
+    long long nbeta_strs_,     // leading dimension (num columns)
     double factor,
     double acc_coeff1,
     double acc_coeff2)
@@ -975,11 +1065,11 @@ __global__ void inplace_givens_update_real_tiled(
             const double pb1 = s_pb1[tx];
             const double pb2 = s_pb2[tx];
 
-            const int base_u = sa1 * nbeta_strs_;
-            const int base_v = ta1 * nbeta_strs_;
+            const long long base_u = (long long)sa1 * nbeta_strs_;
+            const long long base_v = (long long)ta1 * nbeta_strs_;
 
-            const int idx_u  = base_u + sb1;  // (sa1, sb1)
-            const int idx_v  = base_v + tb1;  // (ta1, tb1)
+            const long long idx_u  = base_u + sb1;  // (sa1, sb1)
+            const long long idx_v  = base_v + tb1;  // (ta1, tb1)
 
             const double u0 = d_Cout[idx_u];
             const double v0 = d_Cout[idx_v];
@@ -1013,7 +1103,7 @@ static void launch_inplace_givens_update_real_tiled(
     const double* parityb2,
     int nalpha,
     int nb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor,
     double acc_coeff1,
     double acc_coeff2)
@@ -1073,7 +1163,7 @@ extern "C" void inplace_givens_update_real_tiled_wrapper(
     const double* parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,     // leading dimension (num columns)
+    long long nbeta_strs_,     // leading dimension (num columns)
     double factor,
     double acc_coeff1,
     double acc_coeff2)
@@ -1140,8 +1230,8 @@ __global__ void inplace_givens_update_beta_only_rowmajor_real(
     const double* __restrict__ parityb1, // [nb]  g† parity
     const double* __restrict__ parityb2, // [nb]  g  parity
     int nb,
-    int nalpha_strs_,
-    int nbeta_strs_,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
     double factor,
     double acc_coeff1,
     double acc_coeff2)
@@ -1152,7 +1242,7 @@ __global__ void inplace_givens_update_beta_only_rowmajor_real(
     const int ty  = threadIdx.y;          // row lane within block
 
     const int ib  = blockIdx.x * BX + tx; // global beta-pair index
-    const int row = blockIdx.y * AY + ty; // global alpha-row index
+    const long long row = (long long)blockIdx.y * AY + ty; // global alpha-row index
 
     // ---- Shared memory: BX beta-pair metadata --------------------------------
     // Only row ty==0 loads; all rows reuse it.  One __syncthreads() is enough.
@@ -1200,8 +1290,8 @@ static void launch_inplace_givens_update_beta_only_rowmajor_real(
     const double* parityb1,
     const double* parityb2,
     int nb,
-    int nalpha_strs_,
-    int nbeta_strs_,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
     double factor,
     double acc_coeff1,
     double acc_coeff2)
@@ -1211,7 +1301,7 @@ static void launch_inplace_givens_update_beta_only_rowmajor_real(
     // grid.y can be at most 65535 for ordinary launches; each block covers AY rows.
     // With AY=8, this supports up to 65535*8 = 524280 rows (sufficient for FCI).
     const int grid_x = (nb           + BX - 1) / BX;
-    const int grid_y = (nalpha_strs_ + AY - 1) / AY;
+    const int grid_y = (int)((nalpha_strs_ + AY - 1) / AY);
 
     dim3 block(BX, AY);                  // BX * AY threads, e.g. 32*8 = 256
     dim3 grid(grid_x, grid_y);
@@ -1247,8 +1337,8 @@ extern "C" void inplace_givens_update_real_beta_only_rowmajor_wrapper(
     const double* parityb1,
     const double* parityb2,
     int nb,
-    int nalpha_strs_,
-    int nbeta_strs_,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
     double factor,
     double acc_coeff1,
     double acc_coeff2)

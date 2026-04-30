@@ -632,6 +632,7 @@ PYBIND11_MODULE(qforte, m) {
             )
         .def("state_vector_dot_gpu", &FCIComputerGPU::state_vector_dot_gpu)
         .def("dot_sqop_gpu", &FCIComputerGPU::dot_sqop_gpu)
+        .def("dot_sqop_gpu_real", &FCIComputerGPU::dot_sqop_gpu_real)
         .def("set_state_cpu", &FCIComputerGPU::set_state_cpu)
         .def("set_state_from_other_cpu", &FCIComputerGPU::set_state_from_other_cpu)
         .def("set_state_from_other_gpu", &FCIComputerGPU::set_state_from_other_gpu)
