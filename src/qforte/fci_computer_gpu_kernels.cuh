@@ -23,7 +23,7 @@ __global__ void apply_individual_nbody1_accumulate_kernel_atomic(
     long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
-    int tensor_size);
+    long long tensor_size);
 
 extern "C" void apply_individual_nbody1_accumulate_wrapper(
     const cuDoubleComplex coeff, 
@@ -38,7 +38,7 @@ extern "C" void apply_individual_nbody1_accumulate_wrapper(
     long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
-    int tensor_size);
+    long long tensor_size);
 
 // ==============================================
 // Fused apply+dot kernel and wrapper (Complex)

@@ -617,6 +617,13 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("antiherm") = false,
             py::arg("adjoint") = false
             )
+        .def("apply_sqop_evolution_from_pool_gpu", &FCIComputerGPU::apply_sqop_evolution_from_pool_gpu,
+            py::arg("time"),
+            py::arg("pool"),
+            py::arg("mu"),
+            py::arg("antiherm") = false,
+            py::arg("adjoint") = false
+            )
         .def("evolve_pool_trotter_basic_gpu", &FCIComputerGPU::evolve_pool_trotter_basic_gpu, 
             py::arg("sqop"),
             py::arg("antiherm") = false,

@@ -2527,6 +2527,46 @@ void FCIComputerGPU::apply_sqop_evolution_gpu(
         nullptr);
 }
 
+void FCIComputerGPU::apply_sqop_evolution_from_pool_gpu(
+    const std::complex<double> time,
+    const SQOpPoolGPU& pool,
+    const int mu,
+    const bool antiherm,
+    const bool adjoint)
+{
+    gpu_error();
+
+    if (pool.device_vecs_populated()) {
+        if (data_type_ == "real") {
+            const auto& device_spt_arys = pool.get_mu_tuple_real(mu);
+            evolve_individual_nbody_gpu(
+                time,
+                pool.terms()[mu].second,
+                C_,
+                antiherm,
+                adjoint,
+                &device_spt_arys);
+        } else {
+            const auto& device_spt_arys = pool.get_mu_tuple(mu);
+            evolve_individual_nbody_gpu(
+                time,
+                pool.terms()[mu].second,
+                C_,
+                antiherm,
+                adjoint,
+                &device_spt_arys);
+        }
+    } else {
+        evolve_individual_nbody_gpu<PrecompTuple>(
+            time,
+            pool.terms()[mu].second,
+            C_,
+            antiherm,
+            adjoint,
+            nullptr);
+    }
+}
+
 void FCIComputerGPU::evolve_pool_trotter_basic_gpu(
     const SQOpPoolGPU& pool,
     const bool antiherm,

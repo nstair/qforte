@@ -296,6 +296,13 @@ class FCIComputerGPU {
       const bool antiherm = false,
       const bool adjoint = false);
 
+    void apply_sqop_evolution_from_pool_gpu(
+      const std::complex<double> time,
+      const SQOpPoolGPU& pool,
+      const int mu,
+      const bool antiherm = false,
+      const bool adjoint = false);
+
     void evolve_pool_trotter_basic_gpu(
       const SQOpPoolGPU& pool,
       const bool antiherm = false,

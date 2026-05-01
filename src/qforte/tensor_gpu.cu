@@ -1189,8 +1189,8 @@ void TensorGPU::fineGrainedTranspose()
     gpu_error();
     ndim_error(2);
 
-    const int width = static_cast<int>(shape_[1]);
-    const int height = static_cast<int>(shape_[0]);
+    const long long width = static_cast<long long>(shape_[1]);
+    const long long height = static_cast<long long>(shape_[0]);
 
     if (data_type_ == "complex") {
         // Create temporary buffer for out-of-place transpose

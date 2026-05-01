@@ -1027,17 +1027,19 @@ class UCCVQE(VQE, UCC):
             # The minus sign is dictated by the recursive algorithm used to compute the analytic gradient
             # (see original ADAPT-VQE paper)
             t0 = self._gpu_time.time()
-            qc_psi.apply_sqop_evolution_gpu(
+            qc_psi.apply_sqop_evolution_from_pool_gpu(
                 -1.0*tamp,
-                Kmu_prev,
+                vqc_ops,
+                mu+1,
                 antiherm=True,
                 adjoint=False)
             self._gpu_timers['apply_sqop_evolution_gpu'] += self._gpu_time.time() - t0
             
             t0 = self._gpu_time.time()
-            qc_sig.apply_sqop_evolution_gpu(
+            qc_sig.apply_sqop_evolution_from_pool_gpu(
                 -1.0*tamp,
-                Kmu_prev,
+                vqc_ops,
+                mu+1,
                 antiherm=True,
                 adjoint=False)
             self._gpu_timers['apply_sqop_evolution_gpu'] += self._gpu_time.time() - t0

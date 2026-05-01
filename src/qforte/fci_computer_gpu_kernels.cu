@@ -85,7 +85,7 @@ __global__ void apply_individual_nbody1_accumulate_kernel_atomic(
     long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
-    int tensor_size) 
+    long long tensor_size)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int idy = blockIdx.y * blockDim.y + threadIdx.y;
@@ -121,7 +121,7 @@ void apply_individual_nbody1_accumulate_wrapper(
     long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
-    int tensor_size) 
+    long long tensor_size)
 {
     // 2D grid configuration for the atomic kernel
     dim3 blockSize(16, 16);  // 16x16 = 256 threads per block
