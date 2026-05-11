@@ -406,6 +406,20 @@ class FCIComputerGPU {
     /// vectors.  Returns a plain double — no imaginary part is possible for real states.
     double dot_sqop_gpu_real(FCIComputerGPU& sigma, const SQOperator& sqop);
 
+    /// Pool-indexed variant: uses precomputed source/target/parity arrays from the pool
+    /// to avoid rebuilding mappings on every call.  Falls back to dot_sqop_gpu when
+    /// pool.device_vecs_populated() is false.
+    std::complex<double> dot_sqop_from_pool_gpu(
+      FCIComputerGPU& sigma,
+      const SQOpPoolGPU& pool,
+      int mu);
+
+    /// Real-path pool-indexed variant of dot_sqop_from_pool_gpu.
+    double dot_sqop_from_pool_gpu_real(
+      FCIComputerGPU& sigma,
+      const SQOpPoolGPU& pool,
+      int mu);
+
     /// return a tensor of the coeficients
     TensorGPU get_state() const { return C_; }
 

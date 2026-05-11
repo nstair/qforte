@@ -981,16 +981,15 @@ class UCCVQE(VQE, UCC):
 
         mu = M-1
 
-        # find <sing_N | K_N | psi_N>
-        Kmu_prev = self._pool_obj[self._tops[mu]][1]
-        Kmu_prev.mult_coeffs(self._pool_obj[self._tops[mu]][0])
+        # find <psi_N | K_N | sig_N> using precomputed pool index arrays (no per-call graph traversal)
+        outer_coeff_last = self._pool_obj[self._tops[mu]][0]
 
         # new fused opp
         t0 = self._gpu_time.time()
         if self.data_type == 'real':
-            grads[mu] = 2.0 * qc_psi.dot_sqop_gpu_real(qc_sig, Kmu_prev)
+            grads[mu] = 2.0 * float(np.real(outer_coeff_last)) * qc_psi.dot_sqop_from_pool_gpu_real(qc_sig, vqc_ops, mu)
         else:
-            grads[mu] = 2.0 * np.real(qc_psi.dot_sqop_gpu(qc_sig, Kmu_prev))
+            grads[mu] = 2.0 * np.real(outer_coeff_last * qc_psi.dot_sqop_from_pool_gpu(qc_sig, vqc_ops, mu))
         self._gpu_timers['dot_sqop_gpu'] += self._gpu_time.time() - t0
 
         # old way
@@ -1021,8 +1020,7 @@ class UCCVQE(VQE, UCC):
             else:
                 tamp = params[mu+1]
 
-            Kmu = self._pool_obj[self._tops[mu]][1]
-            Kmu.mult_coeffs(self._pool_obj[self._tops[mu]][0])
+            outer_coeff_mu = self._pool_obj[self._tops[mu]][0]
 
             # The minus sign is dictated by the recursive algorithm used to compute the analytic gradient
             # (see original ADAPT-VQE paper)
@@ -1044,35 +1042,13 @@ class UCCVQE(VQE, UCC):
                 adjoint=False)
             self._gpu_timers['apply_sqop_evolution_gpu'] += self._gpu_time.time() - t0
 
-            # no more psi_i
-            # t0 = self._gpu_time.time()
-            # qc_psi.copy_state_into(self.psi_i)
-            # self._gpu_timers['get_state_deep'] += self._gpu_time.time() - t0
-
-            # new fused opp
+            # new fused opp — pool-indexed: no per-call graph traversal
             t0 = self._gpu_time.time()
             if self.data_type == 'real':
-                grads[mu] = 2.0 * qc_psi.dot_sqop_gpu_real(qc_sig, Kmu)
+                grads[mu] = 2.0 * float(np.real(outer_coeff_mu)) * qc_psi.dot_sqop_from_pool_gpu_real(qc_sig, vqc_ops, mu)
             else:
-                grads[mu] = 2.0 * np.real(qc_psi.dot_sqop_gpu(qc_sig, Kmu))
+                grads[mu] = 2.0 * np.real(outer_coeff_mu * qc_psi.dot_sqop_from_pool_gpu(qc_sig, vqc_ops, mu))
             self._gpu_timers['dot_sqop_gpu'] += self._gpu_time.time() - t0
-
-            # old way
-            # t0 = self._gpu_time.time()
-            # qc_psi.apply_sqop_gpu(Kmu)
-            # self._gpu_timers['apply_sqop_gpu'] += self._gpu_time.time() - t0
-            
-            # t0 = self._gpu_time.time()
-            # grads[mu] = 2.0 * np.real(qc_sig.state_vector_dot_gpu(qc_psi))
-            # self._gpu_timers['vector_dot'] += self._gpu_time.time() - t0
-            # print(f"[GPU GRAD] grads[{mu}] = {grads[mu]:.16f}")
-
-            #reset Kmu |psi_i> -> |psi_i>
-            # t0 = self._gpu_time.time()
-            # qc_psi.set_state_gpu(self.psi_i)
-            # self._gpu_timers['set_state_gpu'] += self._gpu_time.time() - t0
-
-            Kmu_prev = Kmu
 
         np.testing.assert_allclose(np.imag(grads), np.zeros_like(grads), atol=1e-7)
         
@@ -1139,7 +1115,7 @@ class UCCVQE(VQE, UCC):
 
         if(self._apply_ham_as_tensor):
             t0 = self._gpu_time.time()
-            qc_sig.apply_tensor_spat_012bdy_gpu(
+            qc_sig.apply_tensor_spat_012bdy_gpu_v2(
                 self._zero_body_energy, 
                 self._mo_oeis_gpu, 
                 self._mo_teis_gpu, 

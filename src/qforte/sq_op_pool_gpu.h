@@ -84,25 +84,50 @@ class SQOpPoolGPU {
 
     // Scale-inplace index maps
     std::vector<thrust::device_vector<int>>& terms_scale_indsa_dag_gpu() { return terms_scale_indsa_dag_gpu_; }
+    const std::vector<thrust::device_vector<int>>& terms_scale_indsa_dag_gpu() const { return terms_scale_indsa_dag_gpu_; }
     std::vector<thrust::device_vector<int>>& terms_scale_indsa_undag_gpu() { return terms_scale_indsa_undag_gpu_; }
+    const std::vector<thrust::device_vector<int>>& terms_scale_indsa_undag_gpu() const { return terms_scale_indsa_undag_gpu_; }
     std::vector<thrust::device_vector<int>>& terms_scale_indsb_dag_gpu() { return terms_scale_indsb_dag_gpu_; }
+    const std::vector<thrust::device_vector<int>>& terms_scale_indsb_dag_gpu() const { return terms_scale_indsb_dag_gpu_; }
     std::vector<thrust::device_vector<int>>& terms_scale_indsb_undag_gpu() { return terms_scale_indsb_undag_gpu_; }
+    const std::vector<thrust::device_vector<int>>& terms_scale_indsb_undag_gpu() const { return terms_scale_indsb_undag_gpu_; }
 
     // Parity/phase maps (complex)
     std::vector<thrust::device_vector<cuDoubleComplex>>& terms_paritya_dag_gpu() { return terms_paritya_dag_gpu_; }
+    const std::vector<thrust::device_vector<cuDoubleComplex>>& terms_paritya_dag_gpu() const { return terms_paritya_dag_gpu_; }
     std::vector<thrust::device_vector<cuDoubleComplex>>& terms_paritya_undag_gpu() { return terms_paritya_undag_gpu_; }
+    const std::vector<thrust::device_vector<cuDoubleComplex>>& terms_paritya_undag_gpu() const { return terms_paritya_undag_gpu_; }
     std::vector<thrust::device_vector<cuDoubleComplex>>& terms_parityb_dag_gpu() { return terms_parityb_dag_gpu_; }
+    const std::vector<thrust::device_vector<cuDoubleComplex>>& terms_parityb_dag_gpu() const { return terms_parityb_dag_gpu_; }
     std::vector<thrust::device_vector<cuDoubleComplex>>& terms_parityb_undag_gpu() { return terms_parityb_undag_gpu_; }
+    const std::vector<thrust::device_vector<cuDoubleComplex>>& terms_parityb_undag_gpu() const { return terms_parityb_undag_gpu_; }
 
     // Parity/phase maps (real)
     std::vector<thrust::device_vector<double>>& terms_paritya_dag_re_gpu() { return terms_paritya_dag_re_gpu_; }
+    const std::vector<thrust::device_vector<double>>& terms_paritya_dag_re_gpu() const { return terms_paritya_dag_re_gpu_; }
     std::vector<thrust::device_vector<double>>& terms_paritya_undag_re_gpu() { return terms_paritya_undag_re_gpu_; }
+    const std::vector<thrust::device_vector<double>>& terms_paritya_undag_re_gpu() const { return terms_paritya_undag_re_gpu_; }
     std::vector<thrust::device_vector<double>>& terms_parityb_dag_re_gpu() { return terms_parityb_dag_re_gpu_; }
+    const std::vector<thrust::device_vector<double>>& terms_parityb_dag_re_gpu() const { return terms_parityb_dag_re_gpu_; }
     std::vector<thrust::device_vector<double>>& terms_parityb_undag_re_gpu() { return terms_parityb_undag_re_gpu_; }
+    const std::vector<thrust::device_vector<double>>& terms_parityb_undag_re_gpu() const { return terms_parityb_undag_re_gpu_; }
     // std::vector<thrust::device_vector<double>>& terms_parityb_dag_im_gpu() { return terms_parityb_dag_im_gpu_; }
     // std::vector<thrust::device_vector<double>>& terms_parityb_undag_im_gpu() { return terms_parityb_undag_im_gpu_; }
     // std::vector<thrust::device_vector<double>>& terms_paritya_undag_im_gpu() { return terms_paritya_undag_im_gpu_; }
     // std::vector<thrust::device_vector<double>>& terms_paritya_dag_im_gpu() { return terms_paritya_dag_im_gpu_; }
+
+    // === Dot scalar coefficient accessors (parity_sort * inner_coeff, one per mu) ===
+    /// Coefficient for term 0 (excitation/dag direction): parity_sort(crea+anna) * c_mu_t0
+    std::vector<cuDoubleComplex>& dot_coeff_dag() { return dot_coeff_dag_; }
+    const std::vector<cuDoubleComplex>& dot_coeff_dag() const { return dot_coeff_dag_; }
+    /// Coefficient for term 1 (de-excitation/undag direction): parity_sort(anna+crea) * c_mu_t1
+    std::vector<cuDoubleComplex>& dot_coeff_undag() { return dot_coeff_undag_; }
+    const std::vector<cuDoubleComplex>& dot_coeff_undag() const { return dot_coeff_undag_; }
+    /// Real-path equivalents
+    std::vector<double>& dot_coeff_dag_re() { return dot_coeff_dag_re_; }
+    const std::vector<double>& dot_coeff_dag_re() const { return dot_coeff_dag_re_; }
+    std::vector<double>& dot_coeff_undag_re() { return dot_coeff_undag_re_; }
+    const std::vector<double>& dot_coeff_undag_re() const { return dot_coeff_undag_re_; }
 
     // Read-only tuple view of the mu-th entries:
     // (inner_coeffs_[mu], outer_coeffs_[mu],
@@ -263,6 +288,18 @@ class SQOpPoolGPU {
     std::vector<thrust::device_vector<double>> terms_paritya_undag_re_gpu_;
     std::vector<thrust::device_vector<double>> terms_parityb_dag_re_gpu_;
     std::vector<thrust::device_vector<double>> terms_parityb_undag_re_gpu_;
+
+    /// ===> Scalar coefficients for dot_sqop_from_pool_gpu (parity_sort * inner_coeff) <===
+    /// These are the only genuinely new data for the dot path.
+    /// All source/target/parity arrays are reused from the evolution precomputed data above:
+    ///   dag  term (excitation):   source = terms_scale_inds*_undag, target = terms_scale_inds*_dag,
+    ///                             parity = terms_parity*_undag (built with make_mapping_each_pre(crea,anna))
+    ///   undag term (de-excit.):   source = terms_scale_inds*_dag,   target = terms_scale_inds*_undag,
+    ///                             parity = terms_parity*_dag  (built with make_mapping_each_pre(anna,crea))
+    std::vector<cuDoubleComplex> dot_coeff_dag_;    ///< parity_sort(crea+anna)*c_mu for term 0
+    std::vector<cuDoubleComplex> dot_coeff_undag_;  ///< parity_sort(anna+crea)*c_mu for term 1
+    std::vector<double> dot_coeff_dag_re_;          ///< real-path equivalent
+    std::vector<double> dot_coeff_undag_re_;        ///< real-path equivalent
 
     /// How to store parity data for kernels using this pool: "complex" or "real"
     std::string data_type_ = "complex";

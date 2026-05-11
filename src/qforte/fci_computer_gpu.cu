@@ -3562,6 +3562,131 @@ double FCIComputerGPU::dot_sqop_gpu_real(FCIComputerGPU& sigma, const SQOperator
     return d_accum_vec[0];
 }
 
+/// Compute <sigma | K_mu | this> using precomputed pool data.
+/// Reuses source/target/parity already stored by the evolution precomputation:
+///   dag  term (excitation):   source=scale_inds_undag, target=scale_inds_dag, parity=parity_undag
+///   undag term (de-excit.):   source=scale_inds_dag,   target=scale_inds_undag, parity=parity_dag
+/// Only the two scalar coefficients (parity_sort * c_mu) are uniquely precomputed for the dot.
+double FCIComputerGPU::dot_sqop_from_pool_gpu_real(
+    FCIComputerGPU& sigma,
+    const SQOpPoolGPU& pool,
+    int mu)
+{
+    gpu_error();
+    sigma.gpu_error();
+
+    if (!pool.device_vecs_populated()) {
+        return dot_sqop_gpu_real(sigma, pool.terms()[mu].second);
+    }
+
+    thrust::device_vector<double> d_accum_vec(1, 0.0);
+    double* d_accum = thrust::raw_pointer_cast(d_accum_vec.data());
+
+    const double* psi_data   = thrust::raw_pointer_cast(C_.read_d_re_data().data());
+    const double* sigma_data = thrust::raw_pointer_cast(sigma.C_.read_d_re_data().data());
+
+    // dag term (excitation): source=undag, target=dag, parity=undag
+    int counta_dag = static_cast<int>(pool.terms_scale_indsa_undag_gpu()[mu].size());
+    int countb_dag = static_cast<int>(pool.terms_scale_indsb_undag_gpu()[mu].size());
+    if (counta_dag > 0 && countb_dag > 0) {
+        dot_individual_nbody1_real_wrapper(
+            pool.dot_coeff_dag_re()[mu],
+            psi_data, sigma_data,
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_paritya_undag_re_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_parityb_undag_re_gpu()[mu].data()),
+            nbeta_strs_, counta_dag, countb_dag, d_accum);
+    }
+
+    // undag term (de-excitation): source=dag, target=undag, parity=dag
+    int counta_undag = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
+    int countb_undag = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
+    if (counta_undag > 0 && countb_undag > 0) {
+        dot_individual_nbody1_real_wrapper(
+            pool.dot_coeff_undag_re()[mu],
+            psi_data, sigma_data,
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_paritya_dag_re_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_parityb_dag_re_gpu()[mu].data()),
+            nbeta_strs_, counta_undag, countb_undag, d_accum);
+    }
+
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_sqop_from_pool_gpu_real sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+
+    return d_accum_vec[0];
+}
+
+/// Compute <sigma | K_mu | this> (complex path) using precomputed pool arrays.
+std::complex<double> FCIComputerGPU::dot_sqop_from_pool_gpu(
+    FCIComputerGPU& sigma,
+    const SQOpPoolGPU& pool,
+    int mu)
+{
+    gpu_error();
+    sigma.gpu_error();
+
+    if (!pool.device_vecs_populated()) {
+        return dot_sqop_gpu(sigma, pool.terms()[mu].second);
+    }
+
+    thrust::device_vector<cuDoubleComplex> d_accum_vec(1, make_cuDoubleComplex(0.0, 0.0));
+    cuDoubleComplex* d_accum = thrust::raw_pointer_cast(d_accum_vec.data());
+
+    const cuDoubleComplex* psi_data   = thrust::raw_pointer_cast(C_.read_d_data().data());
+    const cuDoubleComplex* sigma_data = thrust::raw_pointer_cast(sigma.C_.read_d_data().data());
+
+    // dag term (excitation): source=undag, target=dag, parity=undag
+    int counta_dag = static_cast<int>(pool.terms_scale_indsa_undag_gpu()[mu].size());
+    int countb_dag = static_cast<int>(pool.terms_scale_indsb_undag_gpu()[mu].size());
+    if (counta_dag > 0 && countb_dag > 0) {
+        dot_individual_nbody1_wrapper(
+            pool.dot_coeff_dag()[mu],
+            psi_data, sigma_data,
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_paritya_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_parityb_undag_gpu()[mu].data()),
+            nbeta_strs_, counta_dag, countb_dag, d_accum);
+    }
+
+    // undag term (de-excitation): source=dag, target=undag, parity=dag
+    int counta_undag = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
+    int countb_undag = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
+    if (counta_undag > 0 && countb_undag > 0) {
+        dot_individual_nbody1_wrapper(
+            pool.dot_coeff_undag()[mu],
+            psi_data, sigma_data,
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_paritya_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_parityb_dag_gpu()[mu].data()),
+            nbeta_strs_, counta_undag, countb_undag, d_accum);
+    }
+
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_sqop_from_pool_gpu sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+
+    cuDoubleComplex res = d_accum_vec[0];
+    return std::complex<double>(res.x, res.y);
+}
+
 void FCIComputerGPU::copy_state_into(TensorGPU& tensor) const {
     tensor.shape_error(C_.shape());
     gpu_error();
@@ -3920,6 +4045,39 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
 
         } else {
             throw std::invalid_argument("Evolved state must remain in spin and particle-number symmetry sector");
+        }
+
+        // === Precompute scalar coefficients for dot_sqop_from_pool_gpu ===
+        // Source, target, and parity are reused from the evolution arrays above:
+        //   dag  term (excitation):   source = scale_inds_undag, target = scale_inds_dag,
+        //                             parity = parity_undag  (built with make_mapping_each_pre(crea,anna))
+        //   undag term (de-excit.):   source = scale_inds_dag,   target = scale_inds_undag,
+        //                             parity = parity_dag    (built with make_mapping_each_pre(anna,crea))
+        // Only the parity_sort * inner_coeff scalars are genuinely new per operator.
+        {
+            // Term 0 (dag / excitation)
+            auto term0 = sqop.terms()[0];
+            std::vector<size_t> ops0a(std::get<1>(term0));
+            std::vector<size_t> ops0b(std::get<2>(term0));
+            ops0a.insert(ops0a.end(), ops0b.begin(), ops0b.end());
+            int nswaps0 = parity_sort(ops0a);
+            std::complex<double> c0 = std::pow(-1, nswaps0) * std::get<0>(term0);
+
+            // Term 1 (undag / de-excitation)
+            auto term1 = sqop.terms()[1];
+            std::vector<size_t> ops1a(std::get<1>(term1));
+            std::vector<size_t> ops1b(std::get<2>(term1));
+            ops1a.insert(ops1a.end(), ops1b.begin(), ops1b.end());
+            int nswaps1 = parity_sort(ops1a);
+            std::complex<double> c1 = std::pow(-1, nswaps1) * std::get<0>(term1);
+
+            if (need_complex) {
+                pool.dot_coeff_dag().push_back(make_cuDoubleComplex(c0.real(), c0.imag()));
+                pool.dot_coeff_undag().push_back(make_cuDoubleComplex(c1.real(), c1.imag()));
+            } else {
+                pool.dot_coeff_dag_re().push_back(std::real(c0));
+                pool.dot_coeff_undag_re().push_back(std::real(c1));
+            }
         }
 
     }
