@@ -41,179 +41,6 @@ extern "C" void apply_individual_nbody1_accumulate_wrapper(
     long long tensor_size);
 
 // ==============================================
-// Fused apply+dot kernel and wrapper (Complex)
-// Computes <sigma | K | psi> as a scalar reduction.
-// Neither d_psi nor d_sigma is modified.
-// d_accum must be a device pointer to a zeroed cuDoubleComplex.
-// ==============================================
-
-__global__ void dot_individual_nbody1_kernel(
-    cuDoubleComplex coeff,
-    const cuDoubleComplex* d_psi,
-    const cuDoubleComplex* d_sigma,
-    const int* d_sourcea,
-    const int* d_targeta,
-    const cuDoubleComplex* d_paritya,
-    const int* d_sourceb,
-    const int* d_targetb,
-    const cuDoubleComplex* d_parityb,
-    long long nbeta_strs_,
-    int targeta_size,
-    int targetb_size,
-    cuDoubleComplex* d_accum);
-
-extern "C" void dot_individual_nbody1_wrapper(
-    cuDoubleComplex coeff,
-    const cuDoubleComplex* d_psi,
-    const cuDoubleComplex* d_sigma,
-    const int* d_sourcea,
-    const int* d_targeta,
-    const cuDoubleComplex* d_paritya,
-    const int* d_sourceb,
-    const int* d_targetb,
-    const cuDoubleComplex* d_parityb,
-    long long nbeta_strs_,
-    int targeta_size,
-    int targetb_size,
-    cuDoubleComplex* d_accum);
-
-__global__ void dot_individual_nbody1_real_kernel(
-    double coeff,
-    const double* d_psi,
-    const double* d_sigma,
-    const int* d_sourcea,
-    const int* d_targeta,
-    const double* d_paritya,
-    const int* d_sourceb,
-    const int* d_targetb,
-    const double* d_parityb,
-    long long nbeta_strs_,
-    int targeta_size,
-    int targetb_size,
-    double* d_accum);
-
-extern "C" void dot_individual_nbody1_real_wrapper(
-    double coeff,
-    const double* d_psi,
-    const double* d_sigma,
-    const int* d_sourcea,
-    const int* d_targeta,
-    const double* d_paritya,
-    const int* d_sourceb,
-    const int* d_targetb,
-    const double* d_parityb,
-    long long nbeta_strs_,
-    int targeta_size,
-    int targetb_size,
-    double* d_accum);
-
-// ==============================================
-// Fused dual-term dot kernel and wrapper (Complex)
-// Processes both dag and undag terms in a single launch using blockIdx.z.
-// ==============================================
-
-__global__ void dot_individual_nbody1_dual_kernel(
-    cuDoubleComplex coeff0,
-    const int* d_sourcea0,
-    const int* d_targeta0,
-    const cuDoubleComplex* d_paritya0,
-    const int* d_sourceb0,
-    const int* d_targetb0,
-    const cuDoubleComplex* d_parityb0,
-    int targeta_size0,
-    int targetb_size0,
-    cuDoubleComplex coeff1,
-    const int* d_sourcea1,
-    const int* d_targeta1,
-    const cuDoubleComplex* d_paritya1,
-    const int* d_sourceb1,
-    const int* d_targetb1,
-    const cuDoubleComplex* d_parityb1,
-    int targeta_size1,
-    int targetb_size1,
-    const cuDoubleComplex* d_psi,
-    const cuDoubleComplex* d_sigma,
-    long long nbeta_strs_,
-    cuDoubleComplex* d_accum);
-
-extern "C" void dot_individual_nbody1_dual_wrapper(
-    cuDoubleComplex coeff0,
-    const cuDoubleComplex* d_psi,
-    const cuDoubleComplex* d_sigma,
-    const int* d_sourcea0,
-    const int* d_targeta0,
-    const cuDoubleComplex* d_paritya0,
-    const int* d_sourceb0,
-    const int* d_targetb0,
-    const cuDoubleComplex* d_parityb0,
-    int targeta_size0,
-    int targetb_size0,
-    cuDoubleComplex coeff1,
-    const int* d_sourcea1,
-    const int* d_targeta1,
-    const cuDoubleComplex* d_paritya1,
-    const int* d_sourceb1,
-    const int* d_targetb1,
-    const cuDoubleComplex* d_parityb1,
-    int targeta_size1,
-    int targetb_size1,
-    long long nbeta_strs_,
-    cuDoubleComplex* d_accum);
-
-// ==============================================
-// Fused dual-term dot kernel and wrapper (Real)
-// Processes both dag and undag terms in a single launch using blockIdx.z.
-// ==============================================
-
-__global__ void dot_individual_nbody1_real_dual_kernel(
-    double coeff0,
-    const int* d_sourcea0,
-    const int* d_targeta0,
-    const double* d_paritya0,
-    const int* d_sourceb0,
-    const int* d_targetb0,
-    const double* d_parityb0,
-    int targeta_size0,
-    int targetb_size0,
-    double coeff1,
-    const int* d_sourcea1,
-    const int* d_targeta1,
-    const double* d_paritya1,
-    const int* d_sourceb1,
-    const int* d_targetb1,
-    const double* d_parityb1,
-    int targeta_size1,
-    int targetb_size1,
-    const double* d_psi,
-    const double* d_sigma,
-    long long nbeta_strs_,
-    double* d_accum);
-
-extern "C" void dot_individual_nbody1_real_dual_wrapper(
-    double coeff0,
-    const double* d_psi,
-    const double* d_sigma,
-    const int* d_sourcea0,
-    const int* d_targeta0,
-    const double* d_paritya0,
-    const int* d_sourceb0,
-    const int* d_targetb0,
-    const double* d_parityb0,
-    int targeta_size0,
-    int targetb_size0,
-    double coeff1,
-    const int* d_sourcea1,
-    const int* d_targeta1,
-    const double* d_paritya1,
-    const int* d_sourceb1,
-    const int* d_targetb1,
-    const double* d_parityb1,
-    int targeta_size1,
-    int targetb_size1,
-    long long nbeta_strs_,
-    double* d_accum);
-
-// ==============================================
 // Givens-style tiled dot kernels (Real)
 // Beta-fast warp layout for coalesced row-major access.
 // Paired dual: each thread computes both dag and undag contributions.
@@ -270,6 +97,17 @@ extern "C" void dot_mixed_dual_real_wrapper(
     double coeff_vu,
     double* d_accum);
 
+extern "C" void dot_easy_number_real_wrapper(
+    double coeff,
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_alpha,
+    int n_alpha,
+    const int* d_beta,
+    int n_beta,
+    long long nbeta_strs_,
+    double* d_accum);
+
 // ==============================================
 // Givens-style tiled dot kernels (Complex)
 // ==============================================
@@ -323,6 +161,17 @@ extern "C" void dot_mixed_dual_wrapper(
     long long nbeta_strs_,
     cuDoubleComplex coeff_uv,
     cuDoubleComplex coeff_vu,
+    cuDoubleComplex* d_accum);
+
+extern "C" void dot_easy_number_wrapper(
+    cuDoubleComplex coeff,
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_alpha,
+    int n_alpha,
+    const int* d_beta,
+    int n_beta,
+    long long nbeta_strs_,
     cuDoubleComplex* d_accum);
 
 // ==============================================
