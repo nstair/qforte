@@ -3588,7 +3588,82 @@ double FCIComputerGPU::dot_sqop_from_pool_gpu_real(
     // dag term (excitation): source=undag, target=dag, parity=undag
     int counta_dag = static_cast<int>(pool.terms_scale_indsa_undag_gpu()[mu].size());
     int countb_dag = static_cast<int>(pool.terms_scale_indsb_undag_gpu()[mu].size());
-    if (counta_dag > 0 && countb_dag > 0) {
+
+    // undag term (de-excitation): source=dag, target=undag, parity=dag
+    int counta_undag = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
+    int countb_undag = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
+
+    bool dag_valid   = (counta_dag > 0 && countb_dag > 0);
+    bool undag_valid = (counta_undag > 0 && countb_undag > 0);
+
+    DotKernelKind kind = pool.dot_kernel_kinds()[mu];
+
+    if (dag_valid && undag_valid && kind != DotKernelKind::Easy) {
+        // Use specialized paired-dual kernels based on operator classification
+        if (kind == DotKernelKind::AlphaOnly) {
+            // Alpha-only: beta is identity, run coalesced row-traversal kernel
+            // source_a=undag, target_a=dag; parity_uv=parity_undag, parity_vu=parity_dag
+            dot_alpha_only_dual_real_wrapper(
+                psi_data, sigma_data,
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_undag_re_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_dag_re_gpu()[mu].data()),
+                counta_dag, nbeta_strs_,
+                pool.dot_coeff_dag_re()[mu],
+                pool.dot_coeff_undag_re()[mu],
+                d_accum);
+        } else if (kind == DotKernelKind::BetaOnly) {
+            // Beta-only: alpha is identity, run beta-fast row-major kernel
+            dot_beta_only_dual_real_wrapper(
+                psi_data, sigma_data,
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_undag_re_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_dag_re_gpu()[mu].data()),
+                countb_dag, nalfa_strs_, nbeta_strs_,
+                pool.dot_coeff_dag_re()[mu],
+                pool.dot_coeff_undag_re()[mu],
+                d_accum);
+        } else {
+            // Mixed: general tiled kernel with beta in fast dimension
+            dot_mixed_dual_real_wrapper(
+                psi_data, sigma_data,
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_undag_re_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_dag_re_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_undag_re_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_dag_re_gpu()[mu].data()),
+                counta_dag, countb_dag, nbeta_strs_,
+                pool.dot_coeff_dag_re()[mu],
+                pool.dot_coeff_undag_re()[mu],
+                d_accum);
+        }
+    } else if (dag_valid && undag_valid) {
+        // Generic fused dual launch (fallback for Easy or unclassified)
+        dot_individual_nbody1_real_dual_wrapper(
+            pool.dot_coeff_dag_re()[mu],
+            psi_data, sigma_data,
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_paritya_undag_re_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_parityb_undag_re_gpu()[mu].data()),
+            counta_dag, countb_dag,
+            pool.dot_coeff_undag_re()[mu],
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_paritya_dag_re_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_parityb_dag_re_gpu()[mu].data()),
+            counta_undag, countb_undag,
+            nbeta_strs_, d_accum);
+    } else if (dag_valid) {
         dot_individual_nbody1_real_wrapper(
             pool.dot_coeff_dag_re()[mu],
             psi_data, sigma_data,
@@ -3599,12 +3674,7 @@ double FCIComputerGPU::dot_sqop_from_pool_gpu_real(
             thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
             thrust::raw_pointer_cast(pool.terms_parityb_undag_re_gpu()[mu].data()),
             nbeta_strs_, counta_dag, countb_dag, d_accum);
-    }
-
-    // undag term (de-excitation): source=dag, target=undag, parity=dag
-    int counta_undag = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
-    int countb_undag = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
-    if (counta_undag > 0 && countb_undag > 0) {
+    } else if (undag_valid) {
         dot_individual_nbody1_real_wrapper(
             pool.dot_coeff_undag_re()[mu],
             psi_data, sigma_data,
@@ -3648,7 +3718,76 @@ std::complex<double> FCIComputerGPU::dot_sqop_from_pool_gpu(
     // dag term (excitation): source=undag, target=dag, parity=undag
     int counta_dag = static_cast<int>(pool.terms_scale_indsa_undag_gpu()[mu].size());
     int countb_dag = static_cast<int>(pool.terms_scale_indsb_undag_gpu()[mu].size());
-    if (counta_dag > 0 && countb_dag > 0) {
+
+    // undag term (de-excitation): source=dag, target=undag, parity=dag
+    int counta_undag = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
+    int countb_undag = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
+
+    bool dag_valid   = (counta_dag > 0 && countb_dag > 0);
+    bool undag_valid = (counta_undag > 0 && countb_undag > 0);
+
+    DotKernelKind kind = pool.dot_kernel_kinds()[mu];
+
+    if (dag_valid && undag_valid && kind != DotKernelKind::Easy) {
+        if (kind == DotKernelKind::AlphaOnly) {
+            dot_alpha_only_dual_wrapper(
+                psi_data, sigma_data,
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_dag_gpu()[mu].data()),
+                counta_dag, nbeta_strs_,
+                pool.dot_coeff_dag()[mu],
+                pool.dot_coeff_undag()[mu],
+                d_accum);
+        } else if (kind == DotKernelKind::BetaOnly) {
+            dot_beta_only_dual_wrapper(
+                psi_data, sigma_data,
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_dag_gpu()[mu].data()),
+                countb_dag, nalfa_strs_, nbeta_strs_,
+                pool.dot_coeff_dag()[mu],
+                pool.dot_coeff_undag()[mu],
+                d_accum);
+        } else {
+            dot_mixed_dual_wrapper(
+                psi_data, sigma_data,
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_dag_gpu()[mu].data()),
+                counta_dag, countb_dag, nbeta_strs_,
+                pool.dot_coeff_dag()[mu],
+                pool.dot_coeff_undag()[mu],
+                d_accum);
+        }
+    } else if (dag_valid && undag_valid) {
+        dot_individual_nbody1_dual_wrapper(
+            pool.dot_coeff_dag()[mu],
+            psi_data, sigma_data,
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_paritya_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_parityb_undag_gpu()[mu].data()),
+            counta_dag, countb_dag,
+            pool.dot_coeff_undag()[mu],
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_paritya_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+            thrust::raw_pointer_cast(pool.terms_parityb_dag_gpu()[mu].data()),
+            counta_undag, countb_undag,
+            nbeta_strs_, d_accum);
+    } else if (dag_valid) {
         dot_individual_nbody1_wrapper(
             pool.dot_coeff_dag()[mu],
             psi_data, sigma_data,
@@ -3659,12 +3798,7 @@ std::complex<double> FCIComputerGPU::dot_sqop_from_pool_gpu(
             thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
             thrust::raw_pointer_cast(pool.terms_parityb_undag_gpu()[mu].data()),
             nbeta_strs_, counta_dag, countb_dag, d_accum);
-    }
-
-    // undag term (de-excitation): source=dag, target=undag, parity=dag
-    int counta_undag = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
-    int countb_undag = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
-    if (counta_undag > 0 && countb_undag > 0) {
+    } else if (undag_valid) {
         dot_individual_nbody1_wrapper(
             pool.dot_coeff_undag()[mu],
             psi_data, sigma_data,
@@ -3901,6 +4035,8 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
                 pool.terms_parityb_undag_re_gpu().emplace_back();
             }
 
+            pool.dot_kernel_kinds().push_back(DotKernelKind::Easy);
+
         } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
 
             // HARD BRANCH
@@ -4041,6 +4177,15 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
                     annb,
                     &countb,
                     pool.terms_parityb_undag_re_gpu());
+            }
+
+            // Classify kernel kind for specialized dot dispatch
+            if (creb.empty() && annb.empty()) {
+                pool.dot_kernel_kinds().push_back(DotKernelKind::AlphaOnly);
+            } else if (crea.empty() && anna.empty()) {
+                pool.dot_kernel_kinds().push_back(DotKernelKind::BetaOnly);
+            } else {
+                pool.dot_kernel_kinds().push_back(DotKernelKind::Mixed);
             }
 
         } else {

@@ -352,6 +352,1026 @@ extern "C" void dot_individual_nbody1_real_wrapper(
 }
 
 // ==============================================
+// Fused dual-term dot kernel and wrapper (Complex)
+// Processes both dag and undag terms in a single launch using blockIdx.z.
+// ==============================================
+
+__global__ void dot_individual_nbody1_dual_kernel(
+    cuDoubleComplex coeff0,
+    const int* d_sourcea0,
+    const int* d_targeta0,
+    const cuDoubleComplex* d_paritya0,
+    const int* d_sourceb0,
+    const int* d_targetb0,
+    const cuDoubleComplex* d_parityb0,
+    int targeta_size0,
+    int targetb_size0,
+    cuDoubleComplex coeff1,
+    const int* d_sourcea1,
+    const int* d_targeta1,
+    const cuDoubleComplex* d_paritya1,
+    const int* d_sourceb1,
+    const int* d_targetb1,
+    const cuDoubleComplex* d_parityb1,
+    int targeta_size1,
+    int targetb_size1,
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    long long nbeta_strs_,
+    cuDoubleComplex* d_accum)
+{
+    extern __shared__ double sh[];
+    int block_threads = blockDim.x * blockDim.y;
+    double* sh_real = sh;
+    double* sh_imag = sh + block_threads;
+
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int idy = blockIdx.y * blockDim.y + threadIdx.y;
+    int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    int term_id = blockIdx.z;  // 0 = dag term, 1 = undag term
+
+    // Select parameters based on which term this z-slice handles
+    cuDoubleComplex coeff       = (term_id == 0) ? coeff0 : coeff1;
+    const int* d_sourcea        = (term_id == 0) ? d_sourcea0 : d_sourcea1;
+    const int* d_targeta        = (term_id == 0) ? d_targeta0 : d_targeta1;
+    const cuDoubleComplex* d_pa = (term_id == 0) ? d_paritya0 : d_paritya1;
+    const int* d_sourceb        = (term_id == 0) ? d_sourceb0 : d_sourceb1;
+    const int* d_targetb        = (term_id == 0) ? d_targetb0 : d_targetb1;
+    const cuDoubleComplex* d_pb = (term_id == 0) ? d_parityb0 : d_parityb1;
+    int ta_size                 = (term_id == 0) ? targeta_size0 : targeta_size1;
+    int tb_size                 = (term_id == 0) ? targetb_size0 : targetb_size1;
+
+    double acc_re = 0.0, acc_im = 0.0;
+
+    if (idx < ta_size && idy < tb_size) {
+        cuDoubleComplex pref = cuCmul(coeff, d_pa[idx]);
+        cuDoubleComplex term = cuCmul(pref, d_pb[idy]);
+        term = cuCmul(term, d_psi[(long long)d_sourcea[idx] * nbeta_strs_ + d_sourceb[idy]]);
+
+        long long target_idx = (long long)d_targeta[idx] * nbeta_strs_ + d_targetb[idy];
+        cuDoubleComplex val = cuCmul(cuConj(d_sigma[target_idx]), term);
+        acc_re = val.x;
+        acc_im = val.y;
+    }
+
+    sh_real[tid] = acc_re;
+    sh_imag[tid] = acc_im;
+    __syncthreads();
+
+    for (int s = block_threads / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            sh_real[tid] += sh_real[tid + s];
+            sh_imag[tid] += sh_imag[tid + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd_double(&d_accum->x, sh_real[0]);
+        atomicAdd_double(&d_accum->y, sh_imag[0]);
+    }
+}
+
+extern "C" void dot_individual_nbody1_dual_wrapper(
+    cuDoubleComplex coeff0,
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourcea0,
+    const int* d_targeta0,
+    const cuDoubleComplex* d_paritya0,
+    const int* d_sourceb0,
+    const int* d_targetb0,
+    const cuDoubleComplex* d_parityb0,
+    int targeta_size0,
+    int targetb_size0,
+    cuDoubleComplex coeff1,
+    const int* d_sourcea1,
+    const int* d_targeta1,
+    const cuDoubleComplex* d_paritya1,
+    const int* d_sourceb1,
+    const int* d_targetb1,
+    const cuDoubleComplex* d_parityb1,
+    int targeta_size1,
+    int targetb_size1,
+    long long nbeta_strs_,
+    cuDoubleComplex* d_accum)
+{
+    dim3 blockSize(16, 16);
+    int max_ta = (targeta_size0 > targeta_size1) ? targeta_size0 : targeta_size1;
+    int max_tb = (targetb_size0 > targetb_size1) ? targetb_size0 : targetb_size1;
+    dim3 gridSize(
+        (max_ta + blockSize.x - 1) / blockSize.x,
+        (max_tb + blockSize.y - 1) / blockSize.y,
+        2);  // z=0 for dag, z=1 for undag
+
+    size_t sharedMemSize = 2 * blockSize.x * blockSize.y * sizeof(double);
+
+    dot_individual_nbody1_dual_kernel<<<gridSize, blockSize, sharedMemSize>>>(
+        coeff0,
+        d_sourcea0, d_targeta0, d_paritya0,
+        d_sourceb0, d_targetb0, d_parityb0,
+        targeta_size0, targetb_size0,
+        coeff1,
+        d_sourcea1, d_targeta1, d_paritya1,
+        d_sourceb1, d_targetb1, d_parityb1,
+        targeta_size1, targetb_size1,
+        d_psi, d_sigma,
+        nbeta_strs_, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_individual_nbody1_dual_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_individual_nbody1_dual_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ==============================================
+// Fused dual-term dot kernel and wrapper (Real)
+// Processes both dag and undag terms in a single launch using blockIdx.z.
+// ==============================================
+
+__global__ void dot_individual_nbody1_real_dual_kernel(
+    double coeff0,
+    const int* d_sourcea0,
+    const int* d_targeta0,
+    const double* d_paritya0,
+    const int* d_sourceb0,
+    const int* d_targetb0,
+    const double* d_parityb0,
+    int targeta_size0,
+    int targetb_size0,
+    double coeff1,
+    const int* d_sourcea1,
+    const int* d_targeta1,
+    const double* d_paritya1,
+    const int* d_sourceb1,
+    const int* d_targetb1,
+    const double* d_parityb1,
+    int targeta_size1,
+    int targetb_size1,
+    const double* d_psi,
+    const double* d_sigma,
+    long long nbeta_strs_,
+    double* d_accum)
+{
+    extern __shared__ double sh_real[];
+
+    int block_threads = blockDim.x * blockDim.y;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int idy = blockIdx.y * blockDim.y + threadIdx.y;
+    int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    int term_id = blockIdx.z;  // 0 = dag term, 1 = undag term
+
+    // Select parameters based on which term this z-slice handles
+    double coeff         = (term_id == 0) ? coeff0 : coeff1;
+    const int* d_sourcea = (term_id == 0) ? d_sourcea0 : d_sourcea1;
+    const int* d_targeta = (term_id == 0) ? d_targeta0 : d_targeta1;
+    const double* d_pa   = (term_id == 0) ? d_paritya0 : d_paritya1;
+    const int* d_sourceb = (term_id == 0) ? d_sourceb0 : d_sourceb1;
+    const int* d_targetb = (term_id == 0) ? d_targetb0 : d_targetb1;
+    const double* d_pb   = (term_id == 0) ? d_parityb0 : d_parityb1;
+    int ta_size          = (term_id == 0) ? targeta_size0 : targeta_size1;
+    int tb_size          = (term_id == 0) ? targetb_size0 : targetb_size1;
+
+    double acc = 0.0;
+
+    if (idx < ta_size && idy < tb_size) {
+        double pref = coeff * d_pa[idx] * d_pb[idy];
+        double val  = pref * d_psi[(long long)d_sourcea[idx] * nbeta_strs_ + d_sourceb[idy]];
+        acc = d_sigma[(long long)d_targeta[idx] * nbeta_strs_ + d_targetb[idy]] * val;
+    }
+
+    sh_real[tid] = acc;
+    __syncthreads();
+
+    for (int s = block_threads / 2; s > 0; s >>= 1) {
+        if (tid < s) sh_real[tid] += sh_real[tid + s];
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd(d_accum, sh_real[0]);
+    }
+}
+
+extern "C" void dot_individual_nbody1_real_dual_wrapper(
+    double coeff0,
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourcea0,
+    const int* d_targeta0,
+    const double* d_paritya0,
+    const int* d_sourceb0,
+    const int* d_targetb0,
+    const double* d_parityb0,
+    int targeta_size0,
+    int targetb_size0,
+    double coeff1,
+    const int* d_sourcea1,
+    const int* d_targeta1,
+    const double* d_paritya1,
+    const int* d_sourceb1,
+    const int* d_targetb1,
+    const double* d_parityb1,
+    int targeta_size1,
+    int targetb_size1,
+    long long nbeta_strs_,
+    double* d_accum)
+{
+    dim3 blockSize(16, 16);
+    int max_ta = (targeta_size0 > targeta_size1) ? targeta_size0 : targeta_size1;
+    int max_tb = (targetb_size0 > targetb_size1) ? targetb_size0 : targetb_size1;
+    dim3 gridSize(
+        (max_ta + blockSize.x - 1) / blockSize.x,
+        (max_tb + blockSize.y - 1) / blockSize.y,
+        2);  // z=0 for dag, z=1 for undag
+
+    size_t sharedMemSize = blockSize.x * blockSize.y * sizeof(double);
+
+    dot_individual_nbody1_real_dual_kernel<<<gridSize, blockSize, sharedMemSize>>>(
+        coeff0,
+        d_sourcea0, d_targeta0, d_paritya0,
+        d_sourceb0, d_targetb0, d_parityb0,
+        targeta_size0, targetb_size0,
+        coeff1,
+        d_sourcea1, d_targeta1, d_paritya1,
+        d_sourceb1, d_targetb1, d_parityb1,
+        targeta_size1, targetb_size1,
+        d_psi, d_sigma,
+        nbeta_strs_, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_individual_nbody1_real_dual_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_individual_nbody1_real_dual_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ==============================================
+// Givens-style tiled dot kernels (Real)
+// Beta-fast warp layout for coalesced row-major access.
+// Paired dual: each thread computes both dag and undag contributions.
+// ==============================================
+
+// ---- Alpha-only paired dual dot kernel (Real) ----
+// For operators that only excite alpha spin (beta is identity-like).
+// Each alpha map entry connects source_row -> target_row; thread walks beta columns.
+// block: (BX=128, 1), grid: (ceil(nbeta/BX), na_pairs)
+template <int BX>
+__global__ void dot_alpha_only_dual_real_kernel(
+    const double* __restrict__ d_psi,
+    const double* __restrict__ d_sigma,
+    const int* __restrict__ d_sourcea,    // source for dag direction (= scale_inds_undag)
+    const int* __restrict__ d_targeta,    // target for dag direction (= scale_inds_dag)
+    const double* __restrict__ d_paritya_uv,  // parity for dag direction
+    const double* __restrict__ d_paritya_vu,  // parity for undag direction
+    int na_pairs,
+    long long nbeta_strs_,
+    double coeff_uv,    // dot_coeff_dag
+    double coeff_vu,    // dot_coeff_undag
+    double* __restrict__ d_accum)
+{
+    extern __shared__ double sh[];
+
+    int b  = blockIdx.x * BX + threadIdx.x;
+    int ia = blockIdx.y;
+    int tid = threadIdx.x;
+
+    double acc = 0.0;
+
+    if (ia < na_pairs && b < nbeta_strs_) {
+        int sa = d_sourcea[ia];
+        int ta = d_targeta[ia];
+
+        long long u_idx = (long long)sa * nbeta_strs_ + b;
+        long long v_idx = (long long)ta * nbeta_strs_ + b;
+
+        double psi_u  = d_psi[u_idx];
+        double psi_v  = d_psi[v_idx];
+        double sig_u  = d_sigma[u_idx];
+        double sig_v  = d_sigma[v_idx];
+
+        double puv = coeff_uv * d_paritya_uv[ia];
+        double pvu = coeff_vu * d_paritya_vu[ia];
+
+        // dag:   sigma[target] * psi[source] = sig_v * psi_u
+        // undag: sigma[source] * psi[target] = sig_u * psi_v
+        acc = puv * sig_v * psi_u + pvu * sig_u * psi_v;
+    }
+
+    sh[tid] = acc;
+    __syncthreads();
+
+    for (int s = BX / 2; s > 0; s >>= 1) {
+        if (tid < s) sh[tid] += sh[tid + s];
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd(d_accum, sh[0]);
+    }
+}
+
+extern "C" void dot_alpha_only_dual_real_wrapper(
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const double* d_paritya_uv,
+    const double* d_paritya_vu,
+    int na_pairs,
+    long long nbeta_strs_,
+    double coeff_uv,
+    double coeff_vu,
+    double* d_accum)
+{
+    constexpr int BX = 128;
+    dim3 blockSize(BX);
+    dim3 gridSize(
+        (static_cast<int>(nbeta_strs_) + BX - 1) / BX,
+        na_pairs);
+
+    size_t sharedMemSize = BX * sizeof(double);
+
+    dot_alpha_only_dual_real_kernel<BX><<<gridSize, blockSize, sharedMemSize>>>(
+        d_psi, d_sigma,
+        d_sourcea, d_targeta, d_paritya_uv, d_paritya_vu,
+        na_pairs, nbeta_strs_, coeff_uv, coeff_vu, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_alpha_only_dual_real_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_alpha_only_dual_real_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ---- Beta-only paired dual dot kernel (Real) ----
+// For operators that only excite beta spin (alpha is identity-like).
+// All alpha rows contribute; each beta map entry connects source_col -> target_col.
+// block: (BX=32, AY=8), grid: (ceil(nb_pairs/BX), ceil(nalpha/AY))
+template <int BX, int AY>
+__global__ void dot_beta_only_dual_real_kernel(
+    const double* __restrict__ d_psi,
+    const double* __restrict__ d_sigma,
+    const int* __restrict__ d_sourceb,    // source for dag direction
+    const int* __restrict__ d_targetb,    // target for dag direction
+    const double* __restrict__ d_parityb_uv,  // parity for dag direction
+    const double* __restrict__ d_parityb_vu,  // parity for undag direction
+    int nb_pairs,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double coeff_uv,
+    double coeff_vu,
+    double* __restrict__ d_accum)
+{
+    __shared__ int    s_sb[BX], s_tb[BX];
+    __shared__ double s_cuv[BX], s_cvu[BX];
+    // Reduction shared memory
+    __shared__ double s_red[BX * AY];
+
+    int tx = threadIdx.x;  // beta pair lane
+    int ty = threadIdx.y;  // alpha row lane
+    int tid = ty * BX + tx;
+
+    int ib = blockIdx.x * BX + tx;
+    long long a = (long long)blockIdx.y * AY + ty;
+
+    // Load beta metadata into shared memory (one row of threads does it)
+    if (ty == 0) {
+        if (ib < nb_pairs) {
+            s_sb[tx]  = d_sourceb[ib];
+            s_tb[tx]  = d_targetb[ib];
+            s_cuv[tx] = coeff_uv * d_parityb_uv[ib];
+            s_cvu[tx] = coeff_vu * d_parityb_vu[ib];
+        } else {
+            s_sb[tx] = 0;
+            s_tb[tx] = 0;
+            s_cuv[tx] = 0.0;
+            s_cvu[tx] = 0.0;
+        }
+    }
+    __syncthreads();
+
+    double acc = 0.0;
+
+    if (a < nalpha_strs_ && ib < nb_pairs) {
+        long long base = a * nbeta_strs_;
+
+        long long u_idx = base + s_sb[tx];
+        long long v_idx = base + s_tb[tx];
+
+        double psi_u = d_psi[u_idx];
+        double psi_v = d_psi[v_idx];
+        double sig_u = d_sigma[u_idx];
+        double sig_v = d_sigma[v_idx];
+
+        acc = s_cuv[tx] * sig_v * psi_u + s_cvu[tx] * sig_u * psi_v;
+    }
+
+    // Block reduction
+    s_red[tid] = acc;
+    __syncthreads();
+
+    int block_threads = BX * AY;
+    for (int s = block_threads / 2; s > 0; s >>= 1) {
+        if (tid < s) s_red[tid] += s_red[tid + s];
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd(d_accum, s_red[0]);
+    }
+}
+
+extern "C" void dot_beta_only_dual_real_wrapper(
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const double* d_parityb_uv,
+    const double* d_parityb_vu,
+    int nb_pairs,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double coeff_uv,
+    double coeff_vu,
+    double* d_accum)
+{
+    constexpr int BX = 32;
+    constexpr int AY = 8;
+    dim3 blockSize(BX, AY);  // 256 threads/block
+    dim3 gridSize(
+        (nb_pairs + BX - 1) / BX,
+        (static_cast<int>(nalpha_strs_) + AY - 1) / AY);
+
+    dot_beta_only_dual_real_kernel<BX, AY><<<gridSize, blockSize>>>(
+        d_psi, d_sigma,
+        d_sourceb, d_targetb, d_parityb_uv, d_parityb_vu,
+        nb_pairs, nalpha_strs_, nbeta_strs_,
+        coeff_uv, coeff_vu, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_beta_only_dual_real_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_beta_only_dual_real_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ---- Mixed alpha×beta paired dual tiled dot kernel (Real) ----
+// For operators exciting both alpha and beta spin.
+// block: (BX=32, AY=8), grid: (ceil(nb_pairs/BX), ceil(na_pairs/AY))
+// threadIdx.x walks beta pairs (fast/coalesced), threadIdx.y walks alpha pairs.
+// Metadata is loaded into shared memory for reuse across the opposing dimension.
+template <int BX, int AY>
+__global__ void dot_mixed_dual_real_kernel(
+    const double* __restrict__ d_psi,
+    const double* __restrict__ d_sigma,
+    const int* __restrict__ d_sourcea,
+    const int* __restrict__ d_targeta,
+    const double* __restrict__ d_paritya_uv,
+    const double* __restrict__ d_paritya_vu,
+    const int* __restrict__ d_sourceb,
+    const int* __restrict__ d_targetb,
+    const double* __restrict__ d_parityb_uv,
+    const double* __restrict__ d_parityb_vu,
+    int na_pairs,
+    int nb_pairs,
+    long long nbeta_strs_,
+    double coeff_uv,
+    double coeff_vu,
+    double* __restrict__ d_accum)
+{
+    // Shared memory for metadata
+    __shared__ int    s_sa[AY], s_ta[AY];
+    __shared__ double s_pauv[AY], s_pavu[AY];
+
+    __shared__ int    s_sb[BX], s_tb[BX];
+    __shared__ double s_pbuv[BX], s_pbvu[BX];
+
+    // Reduction shared memory
+    __shared__ double s_red[BX * AY];
+
+    int tx = threadIdx.x;  // beta-pair lane
+    int ty = threadIdx.y;  // alpha-pair lane
+    int tid = ty * BX + tx;
+
+    int ia = blockIdx.y * AY + ty;
+    int ib = blockIdx.x * BX + tx;
+
+    // Load alpha metadata (one column of threads)
+    if (tx == 0) {
+        if (ia < na_pairs) {
+            s_sa[ty]   = d_sourcea[ia];
+            s_ta[ty]   = d_targeta[ia];
+            s_pauv[ty] = d_paritya_uv[ia];
+            s_pavu[ty] = d_paritya_vu[ia];
+        } else {
+            s_sa[ty] = 0; s_ta[ty] = 0;
+            s_pauv[ty] = 0.0; s_pavu[ty] = 0.0;
+        }
+    }
+
+    // Load beta metadata (one row of threads)
+    if (ty == 0) {
+        if (ib < nb_pairs) {
+            s_sb[tx]   = d_sourceb[ib];
+            s_tb[tx]   = d_targetb[ib];
+            s_pbuv[tx] = d_parityb_uv[ib];
+            s_pbvu[tx] = d_parityb_vu[ib];
+        } else {
+            s_sb[tx] = 0; s_tb[tx] = 0;
+            s_pbuv[tx] = 0.0; s_pbvu[tx] = 0.0;
+        }
+    }
+    __syncthreads();
+
+    double acc = 0.0;
+
+    if (ia < na_pairs && ib < nb_pairs) {
+        long long u_idx = (long long)s_sa[ty] * nbeta_strs_ + s_sb[tx];
+        long long v_idx = (long long)s_ta[ty] * nbeta_strs_ + s_tb[tx];
+
+        double psi_u = d_psi[u_idx];
+        double psi_v = d_psi[v_idx];
+        double sig_u = d_sigma[u_idx];
+        double sig_v = d_sigma[v_idx];
+
+        double cuv = coeff_uv * s_pauv[ty] * s_pbuv[tx];
+        double cvu = coeff_vu * s_pavu[ty] * s_pbvu[tx];
+
+        acc = cuv * sig_v * psi_u + cvu * sig_u * psi_v;
+    }
+
+    // Block reduction
+    s_red[tid] = acc;
+    __syncthreads();
+
+    int block_threads = BX * AY;
+    for (int s = block_threads / 2; s > 0; s >>= 1) {
+        if (tid < s) s_red[tid] += s_red[tid + s];
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd(d_accum, s_red[0]);
+    }
+}
+
+extern "C" void dot_mixed_dual_real_wrapper(
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const double* d_paritya_uv,
+    const double* d_paritya_vu,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const double* d_parityb_uv,
+    const double* d_parityb_vu,
+    int na_pairs,
+    int nb_pairs,
+    long long nbeta_strs_,
+    double coeff_uv,
+    double coeff_vu,
+    double* d_accum)
+{
+    constexpr int BX = 32;
+    constexpr int AY = 8;
+    dim3 blockSize(BX, AY);  // 256 threads/block
+    dim3 gridSize(
+        (nb_pairs + BX - 1) / BX,
+        (na_pairs + AY - 1) / AY);
+
+    dot_mixed_dual_real_kernel<BX, AY><<<gridSize, blockSize>>>(
+        d_psi, d_sigma,
+        d_sourcea, d_targeta, d_paritya_uv, d_paritya_vu,
+        d_sourceb, d_targetb, d_parityb_uv, d_parityb_vu,
+        na_pairs, nb_pairs, nbeta_strs_,
+        coeff_uv, coeff_vu, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_mixed_dual_real_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_mixed_dual_real_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ---- Alpha-only paired dual dot kernel (Complex) ----
+template <int BX>
+__global__ void dot_alpha_only_dual_kernel(
+    const cuDoubleComplex* __restrict__ d_psi,
+    const cuDoubleComplex* __restrict__ d_sigma,
+    const int* __restrict__ d_sourcea,
+    const int* __restrict__ d_targeta,
+    const cuDoubleComplex* __restrict__ d_paritya_uv,
+    const cuDoubleComplex* __restrict__ d_paritya_vu,
+    int na_pairs,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* __restrict__ d_accum)
+{
+    extern __shared__ double sh[];
+    double* sh_real = sh;
+    double* sh_imag = sh + BX;
+
+    int b  = blockIdx.x * BX + threadIdx.x;
+    int ia = blockIdx.y;
+    int tid = threadIdx.x;
+
+    double acc_re = 0.0, acc_im = 0.0;
+
+    if (ia < na_pairs && b < nbeta_strs_) {
+        int sa = d_sourcea[ia];
+        int ta = d_targeta[ia];
+
+        long long u_idx = (long long)sa * nbeta_strs_ + b;
+        long long v_idx = (long long)ta * nbeta_strs_ + b;
+
+        cuDoubleComplex psi_u = d_psi[u_idx];
+        cuDoubleComplex psi_v = d_psi[v_idx];
+        cuDoubleComplex sig_u = d_sigma[u_idx];
+        cuDoubleComplex sig_v = d_sigma[v_idx];
+
+        // dag: conj(sigma[target]) * coeff * parity * psi[source]
+        cuDoubleComplex puv = cuCmul(coeff_uv, d_paritya_uv[ia]);
+        cuDoubleComplex val_dag = cuCmul(cuCmul(puv, cuConj(sig_v)), psi_u);
+
+        // undag: conj(sigma[source]) * coeff * parity * psi[target]
+        cuDoubleComplex pvu = cuCmul(coeff_vu, d_paritya_vu[ia]);
+        cuDoubleComplex val_undag = cuCmul(cuCmul(pvu, cuConj(sig_u)), psi_v);
+
+        acc_re = val_dag.x + val_undag.x;
+        acc_im = val_dag.y + val_undag.y;
+    }
+
+    sh_real[tid] = acc_re;
+    sh_imag[tid] = acc_im;
+    __syncthreads();
+
+    for (int s = BX / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            sh_real[tid] += sh_real[tid + s];
+            sh_imag[tid] += sh_imag[tid + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd_double(&d_accum->x, sh_real[0]);
+        atomicAdd_double(&d_accum->y, sh_imag[0]);
+    }
+}
+
+extern "C" void dot_alpha_only_dual_wrapper(
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya_uv,
+    const cuDoubleComplex* d_paritya_vu,
+    int na_pairs,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* d_accum)
+{
+    constexpr int BX = 128;
+    dim3 blockSize(BX);
+    dim3 gridSize(
+        (static_cast<int>(nbeta_strs_) + BX - 1) / BX,
+        na_pairs);
+
+    size_t sharedMemSize = 2 * BX * sizeof(double);
+
+    dot_alpha_only_dual_kernel<BX><<<gridSize, blockSize, sharedMemSize>>>(
+        d_psi, d_sigma,
+        d_sourcea, d_targeta, d_paritya_uv, d_paritya_vu,
+        na_pairs, nbeta_strs_, coeff_uv, coeff_vu, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_alpha_only_dual_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_alpha_only_dual_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ---- Beta-only paired dual dot kernel (Complex) ----
+template <int BX, int AY>
+__global__ void dot_beta_only_dual_kernel(
+    const cuDoubleComplex* __restrict__ d_psi,
+    const cuDoubleComplex* __restrict__ d_sigma,
+    const int* __restrict__ d_sourceb,
+    const int* __restrict__ d_targetb,
+    const cuDoubleComplex* __restrict__ d_parityb_uv,
+    const cuDoubleComplex* __restrict__ d_parityb_vu,
+    int nb_pairs,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* __restrict__ d_accum)
+{
+    __shared__ int    s_sb[BX], s_tb[BX];
+    __shared__ double s_cuv_re[BX], s_cuv_im[BX];
+    __shared__ double s_cvu_re[BX], s_cvu_im[BX];
+    __shared__ double s_red_re[BX * AY];
+    __shared__ double s_red_im[BX * AY];
+
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int tid = ty * BX + tx;
+
+    int ib = blockIdx.x * BX + tx;
+    long long a = (long long)blockIdx.y * AY + ty;
+
+    if (ty == 0) {
+        if (ib < nb_pairs) {
+            s_sb[tx] = d_sourceb[ib];
+            s_tb[tx] = d_targetb[ib];
+            cuDoubleComplex cuv = cuCmul(coeff_uv, d_parityb_uv[ib]);
+            cuDoubleComplex cvu = cuCmul(coeff_vu, d_parityb_vu[ib]);
+            s_cuv_re[tx] = cuv.x; s_cuv_im[tx] = cuv.y;
+            s_cvu_re[tx] = cvu.x; s_cvu_im[tx] = cvu.y;
+        } else {
+            s_sb[tx] = 0; s_tb[tx] = 0;
+            s_cuv_re[tx] = 0.0; s_cuv_im[tx] = 0.0;
+            s_cvu_re[tx] = 0.0; s_cvu_im[tx] = 0.0;
+        }
+    }
+    __syncthreads();
+
+    double acc_re = 0.0, acc_im = 0.0;
+
+    if (a < nalpha_strs_ && ib < nb_pairs) {
+        long long base = a * nbeta_strs_;
+        long long u_idx = base + s_sb[tx];
+        long long v_idx = base + s_tb[tx];
+
+        cuDoubleComplex psi_u = d_psi[u_idx];
+        cuDoubleComplex psi_v = d_psi[v_idx];
+        cuDoubleComplex sig_u = d_sigma[u_idx];
+        cuDoubleComplex sig_v = d_sigma[v_idx];
+
+        cuDoubleComplex cuv_coeff = make_cuDoubleComplex(s_cuv_re[tx], s_cuv_im[tx]);
+        cuDoubleComplex cvu_coeff = make_cuDoubleComplex(s_cvu_re[tx], s_cvu_im[tx]);
+
+        cuDoubleComplex val_dag   = cuCmul(cuCmul(cuv_coeff, cuConj(sig_v)), psi_u);
+        cuDoubleComplex val_undag = cuCmul(cuCmul(cvu_coeff, cuConj(sig_u)), psi_v);
+
+        acc_re = val_dag.x + val_undag.x;
+        acc_im = val_dag.y + val_undag.y;
+    }
+
+    s_red_re[tid] = acc_re;
+    s_red_im[tid] = acc_im;
+    __syncthreads();
+
+    int block_threads = BX * AY;
+    for (int s = block_threads / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            s_red_re[tid] += s_red_re[tid + s];
+            s_red_im[tid] += s_red_im[tid + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd_double(&d_accum->x, s_red_re[0]);
+        atomicAdd_double(&d_accum->y, s_red_im[0]);
+    }
+}
+
+extern "C" void dot_beta_only_dual_wrapper(
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb_uv,
+    const cuDoubleComplex* d_parityb_vu,
+    int nb_pairs,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* d_accum)
+{
+    constexpr int BX = 32;
+    constexpr int AY = 8;
+    dim3 blockSize(BX, AY);
+    dim3 gridSize(
+        (nb_pairs + BX - 1) / BX,
+        (static_cast<int>(nalpha_strs_) + AY - 1) / AY);
+
+    dot_beta_only_dual_kernel<BX, AY><<<gridSize, blockSize>>>(
+        d_psi, d_sigma,
+        d_sourceb, d_targetb, d_parityb_uv, d_parityb_vu,
+        nb_pairs, nalpha_strs_, nbeta_strs_,
+        coeff_uv, coeff_vu, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_beta_only_dual_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_beta_only_dual_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ---- Mixed alpha×beta paired dual tiled dot kernel (Complex) ----
+template <int BX, int AY>
+__global__ void dot_mixed_dual_kernel(
+    const cuDoubleComplex* __restrict__ d_psi,
+    const cuDoubleComplex* __restrict__ d_sigma,
+    const int* __restrict__ d_sourcea,
+    const int* __restrict__ d_targeta,
+    const cuDoubleComplex* __restrict__ d_paritya_uv,
+    const cuDoubleComplex* __restrict__ d_paritya_vu,
+    const int* __restrict__ d_sourceb,
+    const int* __restrict__ d_targetb,
+    const cuDoubleComplex* __restrict__ d_parityb_uv,
+    const cuDoubleComplex* __restrict__ d_parityb_vu,
+    int na_pairs,
+    int nb_pairs,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* __restrict__ d_accum)
+{
+    __shared__ int    s_sa[AY], s_ta[AY];
+    __shared__ double s_pauv_re[AY], s_pauv_im[AY];
+    __shared__ double s_pavu_re[AY], s_pavu_im[AY];
+
+    __shared__ int    s_sb[BX], s_tb[BX];
+    __shared__ double s_pbuv_re[BX], s_pbuv_im[BX];
+    __shared__ double s_pbvu_re[BX], s_pbvu_im[BX];
+
+    __shared__ double s_red_re[BX * AY];
+    __shared__ double s_red_im[BX * AY];
+
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int tid = ty * BX + tx;
+
+    int ia = blockIdx.y * AY + ty;
+    int ib = blockIdx.x * BX + tx;
+
+    if (tx == 0) {
+        if (ia < na_pairs) {
+            s_sa[ty] = d_sourcea[ia];
+            s_ta[ty] = d_targeta[ia];
+            cuDoubleComplex pa_uv = d_paritya_uv[ia];
+            cuDoubleComplex pa_vu = d_paritya_vu[ia];
+            s_pauv_re[ty] = pa_uv.x; s_pauv_im[ty] = pa_uv.y;
+            s_pavu_re[ty] = pa_vu.x; s_pavu_im[ty] = pa_vu.y;
+        } else {
+            s_sa[ty] = 0; s_ta[ty] = 0;
+            s_pauv_re[ty] = 0.0; s_pauv_im[ty] = 0.0;
+            s_pavu_re[ty] = 0.0; s_pavu_im[ty] = 0.0;
+        }
+    }
+
+    if (ty == 0) {
+        if (ib < nb_pairs) {
+            s_sb[tx] = d_sourceb[ib];
+            s_tb[tx] = d_targetb[ib];
+            cuDoubleComplex pb_uv = d_parityb_uv[ib];
+            cuDoubleComplex pb_vu = d_parityb_vu[ib];
+            s_pbuv_re[tx] = pb_uv.x; s_pbuv_im[tx] = pb_uv.y;
+            s_pbvu_re[tx] = pb_vu.x; s_pbvu_im[tx] = pb_vu.y;
+        } else {
+            s_sb[tx] = 0; s_tb[tx] = 0;
+            s_pbuv_re[tx] = 0.0; s_pbuv_im[tx] = 0.0;
+            s_pbvu_re[tx] = 0.0; s_pbvu_im[tx] = 0.0;
+        }
+    }
+    __syncthreads();
+
+    double acc_re = 0.0, acc_im = 0.0;
+
+    if (ia < na_pairs && ib < nb_pairs) {
+        long long u_idx = (long long)s_sa[ty] * nbeta_strs_ + s_sb[tx];
+        long long v_idx = (long long)s_ta[ty] * nbeta_strs_ + s_tb[tx];
+
+        cuDoubleComplex psi_u = d_psi[u_idx];
+        cuDoubleComplex psi_v = d_psi[v_idx];
+        cuDoubleComplex sig_u = d_sigma[u_idx];
+        cuDoubleComplex sig_v = d_sigma[v_idx];
+
+        // cuv = coeff_uv * parity_a_uv * parity_b_uv
+        cuDoubleComplex pa_uv = make_cuDoubleComplex(s_pauv_re[ty], s_pauv_im[ty]);
+        cuDoubleComplex pb_uv = make_cuDoubleComplex(s_pbuv_re[tx], s_pbuv_im[tx]);
+        cuDoubleComplex cuv = cuCmul(coeff_uv, cuCmul(pa_uv, pb_uv));
+
+        // cvu = coeff_vu * parity_a_vu * parity_b_vu
+        cuDoubleComplex pa_vu = make_cuDoubleComplex(s_pavu_re[ty], s_pavu_im[ty]);
+        cuDoubleComplex pb_vu = make_cuDoubleComplex(s_pbvu_re[tx], s_pbvu_im[tx]);
+        cuDoubleComplex cvu = cuCmul(coeff_vu, cuCmul(pa_vu, pb_vu));
+
+        cuDoubleComplex val_dag   = cuCmul(cuv, cuCmul(cuConj(sig_v), psi_u));
+        cuDoubleComplex val_undag = cuCmul(cvu, cuCmul(cuConj(sig_u), psi_v));
+
+        acc_re = val_dag.x + val_undag.x;
+        acc_im = val_dag.y + val_undag.y;
+    }
+
+    s_red_re[tid] = acc_re;
+    s_red_im[tid] = acc_im;
+    __syncthreads();
+
+    int block_threads = BX * AY;
+    for (int s = block_threads / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            s_red_re[tid] += s_red_re[tid + s];
+            s_red_im[tid] += s_red_im[tid + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd_double(&d_accum->x, s_red_re[0]);
+        atomicAdd_double(&d_accum->y, s_red_im[0]);
+    }
+}
+
+extern "C" void dot_mixed_dual_wrapper(
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya_uv,
+    const cuDoubleComplex* d_paritya_vu,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb_uv,
+    const cuDoubleComplex* d_parityb_vu,
+    int na_pairs,
+    int nb_pairs,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* d_accum)
+{
+    constexpr int BX = 32;
+    constexpr int AY = 8;
+    dim3 blockSize(BX, AY);
+    dim3 gridSize(
+        (nb_pairs + BX - 1) / BX,
+        (na_pairs + AY - 1) / AY);
+
+    dot_mixed_dual_kernel<BX, AY><<<gridSize, blockSize>>>(
+        d_psi, d_sigma,
+        d_sourcea, d_targeta, d_paritya_uv, d_paritya_vu,
+        d_sourceb, d_targetb, d_parityb_uv, d_parityb_vu,
+        na_pairs, nb_pairs, nbeta_strs_,
+        coeff_uv, coeff_vu, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_mixed_dual_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_mixed_dual_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ==============================================
 // Scale elements kernel and wrapper (Complex)
 // ==============================================
 
