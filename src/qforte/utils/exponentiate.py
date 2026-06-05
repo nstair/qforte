@@ -49,7 +49,7 @@ def exponentiate_pauli_string(coefficient, term, Use_cRz=False, ancilla_idx=None
             continue
 
         if (prev_target is not None):
-            cX_circ.add(qforte.gate('cX', target, prev_target))
+            cX_circ.add(qforte.gate('cX', target, prev_target, 0.0))
 
         prev_target = target
         max_target = target

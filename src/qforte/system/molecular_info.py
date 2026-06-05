@@ -15,6 +15,34 @@ class System(object):
     @fci_energy.setter
     def fci_energy(self, fci_energy):
         self._fci_energy = fci_energy
+        self._fci_energy_list = [fci_energy]
+
+    @property
+    def fci_energy_list(self):
+        if hasattr(self, "_fci_energy_list"):
+            return self._fci_energy_list
+        if hasattr(self, "_fci_energy"):
+            return [self._fci_energy]
+        return []
+
+    @fci_energy_list.setter
+    def fci_energy_list(self, fci_energy_list):
+        try:
+            roots = [float(E) for E in fci_energy_list]
+        except TypeError:
+            roots = [float(fci_energy_list)]
+
+        self._fci_energy_list = roots
+        if roots:
+            self._fci_energy = roots[0]
+
+    @property
+    def fci_energies(self):
+        return self.fci_energy_list
+
+    @fci_energies.setter
+    def fci_energies(self, fci_energies):
+        self.fci_energy_list = fci_energies
 
     @property
     def hamiltonian(self):

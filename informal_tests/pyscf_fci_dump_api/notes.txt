@@ -1,0 +1,36 @@
+Need some more informal tests please, intended to test the molecule build from the pyscf dump files.
+All informal tests should go in informal_tests/pyscf_fci_dump_api
+
+Reference files can be found in sandbox/pyscf_dump_qforte. Printed outputs from the 
+inforal test should be well organized, similar to the 
+informal tests in informal_tests/srqk_fci_comp
+
+I would like each of the four following tests:
+
+1. A test that simply uses pyscf to generate the dump files (the first time) in the qforte readable format, 
+this will also serve as a helpful template for future runs.
+
+2. A test that builds a mol (maybe BeH2 in sto-3g) from the pyscf backend, and then builds a mol from the psi4 backend, 
+and then buids a mol from the saved pyscf dump files, and then confirms the following mol attributes are consistant:
+
+the qforte Tensor one electron integrals
+
+the qforte Tensor one two electron integrals
+
+the qforte Tensor one two electron einsum
+
+the orbital energies
+
+the zero body energy
+
+anyting else that might be important... (up to your discression)
+
+3. A test like 2 but without the psi4 comparision, where we test the automated active space pyscf case
+(see dump_naphthanele_avas_ccpvdz.py for reference). We can go to the smaller (6e, 6o) C 2pz active space for 
+benzene for this one (in a sto-3g basis).
+
+4. A test that does what 1 AND 2 do, but compares the output of a vqe (UCCSD) runa and a srqk run with different mol
+builds (BeH2 should compare psi4, pyscf, and pyscf_dump) and (benzene should compare only pyscf, and pyscf_dump).
+
+Can you make that happen please 
+

@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <cmath>
 #include <iterator>
+#include <unordered_map>
 
 // #include "fmt/format.h"
 
@@ -24,8 +25,107 @@
 #include "fci_computer.h"
 #include "fci_graph.h"
 
+namespace {
 
+int count_bits_above_u64(uint64_t string, size_t pos) {
+    if (pos >= 63) {
+        return 0;
+    }
 
+    string >>= (pos + 1);
+    int count = 0;
+    while (string) {
+        string &= (string - 1);
+        count++;
+    }
+    return count;
+}
+
+int fermion_sign_above_u64(uint64_t string, size_t pos) {
+    return (count_bits_above_u64(string, pos) % 2 == 0) ? 1 : -1;
+}
+
+std::vector<double> symmetric_jacobi_eigenvalues(
+    std::vector<std::vector<double>> mat) {
+    const size_t n = mat.size();
+    if (n == 0) {
+        return {};
+    }
+    if (n == 1) {
+        return {mat[0][0]};
+    }
+
+    const size_t max_iter = std::max<size_t>(100, 100 * n * n);
+    const double tol = 1.0e-12;
+
+    for (size_t iter = 0; iter < max_iter; iter++) {
+        size_t p = 0;
+        size_t q = 1;
+        double max_offdiag = 0.0;
+
+        for (size_t i = 0; i < n; i++) {
+            for (size_t j = i + 1; j < n; j++) {
+                const double val = std::abs(mat[i][j]);
+                if (val > max_offdiag) {
+                    max_offdiag = val;
+                    p = i;
+                    q = j;
+                }
+            }
+        }
+
+        if (max_offdiag < tol) {
+            break;
+        }
+
+        const double app = mat[p][p];
+        const double aqq = mat[q][q];
+        const double apq = mat[p][q];
+
+        const double tau = (aqq - app) / (2.0 * apq);
+        const double tau_sign = (tau >= 0.0) ? 1.0 : -1.0;
+        const double t = tau_sign / (std::abs(tau) + std::sqrt(1.0 + tau * tau));
+        const double c = 1.0 / std::sqrt(1.0 + t * t);
+        const double s = t * c;
+
+        for (size_t k = 0; k < n; k++) {
+            if (k == p || k == q) {
+                continue;
+            }
+
+            const double akp = mat[k][p];
+            const double akq = mat[k][q];
+            mat[k][p] = c * akp - s * akq;
+            mat[p][k] = mat[k][p];
+            mat[k][q] = s * akp + c * akq;
+            mat[q][k] = mat[k][q];
+        }
+
+        mat[p][p] = c * c * app - 2.0 * s * c * apq + s * s * aqq;
+        mat[q][q] = s * s * app + 2.0 * s * c * apq + c * c * aqq;
+        mat[p][q] = 0.0;
+        mat[q][p] = 0.0;
+    }
+
+    std::vector<double> eigs(n);
+    for (size_t i = 0; i < n; i++) {
+        eigs[i] = mat[i][i];
+
+        // Keep the printed NOONs tidy when roundoff produces tiny excursions
+        // outside the physical [0, 2] interval.
+        if (eigs[i] < 0.0 && eigs[i] > -1.0e-10) {
+            eigs[i] = 0.0;
+        }
+        if (eigs[i] > 2.0 && eigs[i] < 2.0 + 1.0e-10) {
+            eigs[i] = 2.0;
+        }
+    }
+
+    std::sort(eigs.begin(), eigs.end(), std::greater<double>());
+    return eigs;
+}
+
+} // namespace
 
 FCIComputer::FCIComputer(int nel, int sz, int norb) : 
     nel_(nel), 
@@ -2894,6 +2994,199 @@ std::complex<double> FCIComputer::get_exp_val(const SQOperator& sqop) {
     std::complex<double> val = C_.vector_dot(Cin);
     C_ = Cin;
     return val;
+}
+
+double FCIComputer::get_spin_squared_expectation() const {
+    if (norb_ >= 64) {
+        throw std::runtime_error("get_spin_squared_expectation requires norb < 64.");
+    }
+
+    const std::vector<std::complex<double>>& coeffs = C_.read_data();
+    const std::vector<uint64_t>& astrs = graph_.get_astr();
+    const std::vector<uint64_t>& bstrs = graph_.get_bstr();
+    const std::unordered_map<uint64_t, size_t>& aind = graph_.read_aind();
+    const std::unordered_map<uint64_t, size_t>& bind = graph_.read_bind();
+
+    double norm_sq = 0.0;
+    for (const auto& c : coeffs) {
+        norm_sq += std::norm(c);
+    }
+
+    const double m_s = 0.5 * static_cast<double>(sz_);
+    std::complex<double> expectation = m_s * (m_s + 1.0) * norm_sq;
+
+    for (size_t aidx = 0; aidx < nalfa_strs_; aidx++) {
+        const uint64_t alpha = astrs[aidx];
+        const size_t source_row = aidx * nbeta_strs_;
+
+        for (size_t bidx = 0; bidx < nbeta_strs_; bidx++) {
+            const std::complex<double> source_coeff = coeffs[source_row + bidx];
+            if (std::abs(source_coeff) < compute_threshold_) {
+                continue;
+            }
+
+            const uint64_t beta = bstrs[bidx];
+
+            for (size_t q = 0; q < norb_; q++) {
+                const uint64_t qbit = static_cast<uint64_t>(1) << q;
+
+                if ((beta & qbit) == 0 || (alpha & qbit) != 0) {
+                    continue;
+                }
+
+                const int s_plus_sign =
+                    fermion_sign_above_u64(alpha, q) *
+                    fermion_sign_above_u64(beta, q);
+
+                const uint64_t alpha_after_plus = alpha | qbit;
+                const uint64_t beta_after_plus = beta & ~qbit;
+
+                for (size_t p = 0; p < norb_; p++) {
+                    const uint64_t pbit = static_cast<uint64_t>(1) << p;
+
+                    if ((alpha_after_plus & pbit) == 0 ||
+                        (beta_after_plus & pbit) != 0) {
+                        continue;
+                    }
+
+                    const int s_minus_sign =
+                        fermion_sign_above_u64(alpha_after_plus, p) *
+                        fermion_sign_above_u64(beta_after_plus, p);
+
+                    const uint64_t alpha_target = alpha_after_plus & ~pbit;
+                    const uint64_t beta_target = beta_after_plus | pbit;
+
+                    const size_t target_idx =
+                        aind.at(alpha_target) * nbeta_strs_ + bind.at(beta_target);
+                    const int sign = s_plus_sign * s_minus_sign;
+
+                    expectation +=
+                        std::conj(coeffs[target_idx]) *
+                        static_cast<double>(sign) *
+                        source_coeff;
+                }
+            }
+        }
+    }
+
+    return std::real(expectation);
+}
+
+std::vector<double> FCIComputer::get_natural_orbital_occupation_numbers() const {
+    if (norb_ >= 64) {
+        throw std::runtime_error(
+            "get_natural_orbital_occupation_numbers requires norb < 64.");
+    }
+
+    const std::vector<std::complex<double>>& coeffs = C_.read_data();
+    const std::vector<uint64_t>& astrs = graph_.get_astr();
+    const std::vector<uint64_t>& bstrs = graph_.get_bstr();
+    const std::unordered_map<uint64_t, size_t>& aind = graph_.read_aind();
+    const std::unordered_map<uint64_t, size_t>& bind = graph_.read_bind();
+
+    double norm_sq = 0.0;
+    for (const auto& c : coeffs) {
+        norm_sq += std::norm(c);
+    }
+    if (norm_sq < compute_threshold_) {
+        throw std::runtime_error(
+            "Cannot compute natural orbital occupations for a zero-norm CI vector.");
+    }
+
+    std::vector<std::vector<std::complex<double>>> gamma(
+        norb_, std::vector<std::complex<double>>(norb_, 0.0));
+
+    for (size_t aidx = 0; aidx < nalfa_strs_; aidx++) {
+        const uint64_t alpha = astrs[aidx];
+        const size_t source_row = aidx * nbeta_strs_;
+
+        for (size_t bidx = 0; bidx < nbeta_strs_; bidx++) {
+            const std::complex<double> source_coeff = coeffs[source_row + bidx];
+            if (std::abs(source_coeff) < compute_threshold_) {
+                continue;
+            }
+
+            const uint64_t beta = bstrs[bidx];
+
+            // Alpha contribution: <a^+_{p alpha} a_{q alpha}>.
+            for (size_t q = 0; q < norb_; q++) {
+                const uint64_t qbit = static_cast<uint64_t>(1) << q;
+                if ((alpha & qbit) == 0) {
+                    continue;
+                }
+
+                const int ann_sign = fermion_sign_above_u64(alpha, q);
+                const uint64_t alpha_after_ann = alpha & ~qbit;
+
+                for (size_t p = 0; p < norb_; p++) {
+                    const uint64_t pbit = static_cast<uint64_t>(1) << p;
+                    if ((alpha_after_ann & pbit) != 0) {
+                        continue;
+                    }
+
+                    const int cre_sign =
+                        fermion_sign_above_u64(alpha_after_ann, p);
+                    const uint64_t alpha_target = alpha_after_ann | pbit;
+                    const size_t target_idx =
+                        aind.at(alpha_target) * nbeta_strs_ + bidx;
+                    const int sign = ann_sign * cre_sign;
+
+                    gamma[p][q] +=
+                        std::conj(coeffs[target_idx]) *
+                        static_cast<double>(sign) *
+                        source_coeff;
+                }
+            }
+
+            // Beta contribution: <a^+_{p beta} a_{q beta}>.  In the separated
+            // alpha/beta determinant representation, the two same-spin signs
+            // are evaluated within the beta string; the fixed alpha electron
+            // count contributes twice and cancels.
+            for (size_t q = 0; q < norb_; q++) {
+                const uint64_t qbit = static_cast<uint64_t>(1) << q;
+                if ((beta & qbit) == 0) {
+                    continue;
+                }
+
+                const int ann_sign = fermion_sign_above_u64(beta, q);
+                const uint64_t beta_after_ann = beta & ~qbit;
+
+                for (size_t p = 0; p < norb_; p++) {
+                    const uint64_t pbit = static_cast<uint64_t>(1) << p;
+                    if ((beta_after_ann & pbit) != 0) {
+                        continue;
+                    }
+
+                    const int cre_sign =
+                        fermion_sign_above_u64(beta_after_ann, p);
+                    const uint64_t beta_target = beta_after_ann | pbit;
+                    const size_t target_idx =
+                        aidx * nbeta_strs_ + bind.at(beta_target);
+                    const int sign = ann_sign * cre_sign;
+
+                    gamma[p][q] +=
+                        std::conj(coeffs[target_idx]) *
+                        static_cast<double>(sign) *
+                        source_coeff;
+                }
+            }
+        }
+    }
+
+    // Natural occupations are conventionally quoted for a normalized 1-RDM, so
+    // divide by the CI norm to make the values sum to the electron count even if
+    // the state has tiny numerical norm drift.
+    std::vector<std::vector<double>> gamma_real(
+        norb_, std::vector<double>(norb_, 0.0));
+    for (size_t p = 0; p < norb_; p++) {
+        for (size_t q = 0; q < norb_; q++) {
+            const std::complex<double> hermitian_avg =
+                0.5 * (gamma[p][q] + std::conj(gamma[q][p]));
+            gamma_real[p][q] = std::real(hermitian_avg) / norm_sq;
+        }
+    }
+
+    return symmetric_jacobi_eigenvalues(gamma_real);
 }
 
 std::complex<double> FCIComputer::get_exp_val_tensor(

@@ -1,0 +1,138 @@
+Informal test how-to and TODOs
+==============================
+
+Important environment rule
+--------------------------
+If the user has not specified an Anaconda/conda environment, or if the correct
+environment is unclear from context, Codex must ask the user explicitly which
+environment to use before running these informal tests.
+
+Maintenance rule
+----------------
+Whenever a new informal test is added, update this file in the same change so a
+future Codex run can read only this file and correctly rerun the informal test
+suite for output validation.
+
+
+General notes
+-------------
+Run commands from the repository root.
+
+These tests are intentionally informal scripts, not pytest tests.  Most scripts
+write detailed logs under ignored log directories and print compact PASS/SKIP
+tables to the terminal.
+
+Use the user-specified conda environment in the command examples below.  If the
+user says "qfe_env_v1", for example, replace ENV_NAME with qfe_env_v1:
+
+    conda run -n ENV_NAME python path/to/script.py
+
+Do not refresh expected/reference outputs unless the user explicitly asks for
+that.  Normal validation runs should not overwrite saved references.
+
+
+SRQK informal tests
+-------------------
+Directory:
+
+    informal_tests/srqk_fci_comp
+
+Reference/validation run:
+
+    conda run -n ENV_NAME python informal_tests/srqk_fci_comp/run_srqk_fci_comp.py
+
+Backend parity run:
+
+    conda run -n ENV_NAME python informal_tests/srqk_fci_comp/run_srqk_backend_parity.py
+
+Low-memory backend parity run:
+
+    conda run -n ENV_NAME python informal_tests/srqk_fci_comp/run_srqk_low_memory_backend_parity.py
+
+Only refresh the saved SRQK expected JSON after reviewing intentional numerical
+changes:
+
+    conda run -n ENV_NAME python informal_tests/srqk_fci_comp/run_srqk_fci_comp.py --write-expected
+
+Optional helpers:
+
+    conda run -n ENV_NAME python informal_tests/srqk_fci_comp/run_srqk_fci_comp.py --list-cases
+    conda run -n ENV_NAME python informal_tests/srqk_fci_comp/run_srqk_backend_parity.py --list-backends
+
+
+PySCF dump API informal tests
+-----------------------------
+Directory:
+
+    informal_tests/pyscf_fci_dump_api
+
+The PySCF dump API tests use small saved dumps in:
+
+    informal_tests/pyscf_fci_dump_api/dumps
+
+The dump files should be committed because they are the stable input data for
+these informal checks.  Generated logs and __pycache__ directories should not be
+committed.
+
+Generate missing dumps or confirm existing dumps are present:
+
+    conda run -n ENV_NAME python informal_tests/pyscf_fci_dump_api/run_generate_pyscf_dumps.py
+
+Only overwrite dumps after reviewing intentional changes to the dump data:
+
+    conda run -n ENV_NAME python informal_tests/pyscf_fci_dump_api/run_generate_pyscf_dumps.py --overwrite
+
+BeH2 molecule-build parity:
+
+    conda run -n ENV_NAME python informal_tests/pyscf_fci_dump_api/run_beh2_dump_molecule_parity.py
+
+Benzene AVAS molecule-build parity:
+
+    conda run -n ENV_NAME python informal_tests/pyscf_fci_dump_api/run_benzene_avas_dump_molecule_parity.py
+
+VQE/SRQK algorithm parity across available molecule builds:
+
+    conda run -n ENV_NAME python informal_tests/pyscf_fci_dump_api/run_dump_algorithm_parity.py
+
+Environment expectations:
+
+    - A qforte-enabled environment without PySCF can still run dump-side checks
+      and Psi4-vs-dump BeH2 algorithm parity if Psi4 is available.
+    - Direct PySCF molecule-build checks require PySCF in the selected
+      environment.
+    - If a script prints SKIP, read the printed reason and associated log path.
+
+
+Pre-commit cleanup reminders
+----------------------------
+Before committing, check that generated files are not accidentally staged:
+
+    git status --short --ignored informal_tests sandbox src
+
+Expected generated files/directories to leave untracked or ignored:
+
+    __pycache__/
+    logs/
+    backend_logs/
+    low_memory_logs/
+    output.out
+    timer.dat
+    dmrg.out
+    src/qforte.egg-info/
+    compiled qforte .so/.dylib artifacts
+
+Expected PySCF dump API files to keep:
+
+    informal_tests/pyscf_fci_dump_api/dumps/*.npz
+    informal_tests/pyscf_fci_dump_api/dumps/*.FCIDUMP
+
+
+TODOs
+-----
+- When compiled on a CUDA-capable machine, make sure none of the backend checks
+  that should be available are skipped, especially fci_gpu and cusv.
+
+- Similarly, revisit optional diagnostic properties such as <S^2> and natural
+  orbital occupations.  Make sure comparisons are enabled once the relevant
+  subroutines are implemented for each CPU/GPU backend, and make sure skips are
+  loud and explicit until then.

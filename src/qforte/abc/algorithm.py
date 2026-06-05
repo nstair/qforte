@@ -6,6 +6,7 @@ The abstract base classes inherited by all algorithm subclasses.
 
 from abc import ABC, abstractmethod
 import qforte as qf
+import copy
 from qforte.utils.state_prep import *
 from qforte.utils.point_groups import sq_op_find_symmetry
 
@@ -442,8 +443,30 @@ class AnsatzAlgorithm(Algorithm):
         """
 
         timer2 = qforte.local_timer()
+        pool_type = self._pool_type
+        general_ex_pool_order = getattr(self, "_general_ex_pool_order", "default")
+        self._general_ex_pool_order_applied_in_fill = False
 
-        if self._pool_type in {'sa_SD', 'GSD', 'SD', 'SDT', 'SDTQ', 'SDTQP', 'SDTQPH'}:
+        def set_pool_irreps_if_available():
+            """Pass spatial-orbital symmetry data into generated C++ pools."""
+            orb_irreps = getattr(self._sys, 'orb_irreps_to_int', None)
+            if orb_irreps is not None and hasattr(self._pool_obj, 'set_orb_irreps'):
+                self._pool_obj.set_orb_irreps(orb_irreps, self._irrep)
+
+        # Deprecated compatibility aliases.  The public way to request this
+        # product ordering is now general_ex_pool_order="particle_hole_first".
+        if pool_type == 'GSDx':
+            pool_type = 'GSD'
+            general_ex_pool_order = 'particle_hole_first'
+        elif (
+            isinstance(pool_type, str)
+            and pool_type.endswith('-UpCCGSDx')
+            and pool_type[:-len('-UpCCGSDx')].isdigit()
+        ):
+            pool_type = f"{pool_type[:-len('-UpCCGSDx')]}-UpCCGSD"
+            general_ex_pool_order = 'particle_hole_first'
+
+        if isinstance(pool_type, str) and pool_type in {'sa_SD', 'GSD', 'S', 'SD', 'SDT', 'SDTQ', 'SDTQP', 'SDTQPH', 'All'}:
             if self._computer_type == 'fci_gpu':
                 self._pool_obj = qf.SQOpPoolGPU(data_type=self.data_type)
             else:
@@ -451,13 +474,25 @@ class AnsatzAlgorithm(Algorithm):
 
             timer2.reset()
             self._pool_obj.set_orb_spaces(self._ref)
+            set_pool_irreps_if_available()
             timer2.record("_pool_obj.set_orb_spaces")
 
             timer2.reset()
-            self._pool_obj.fill_pool(self._pool_type)
+            if pool_type == 'GSD' and general_ex_pool_order == 'particle_hole_first':
+                # Internally reuse the legacy x-constructor, but expose this
+                # only as an ordering option.  For GSD the desired order is a
+                # single particle-hole block followed by the generalized block.
+                self._pool_obj.fill_pool('GSDx')
+                self._general_ex_pool_order_applied_in_fill = True
+            else:
+                self._pool_obj.fill_pool(pool_type)
             timer2.record("_pool_obj.fill_pool")
 
-        elif (self._pool_type[0].isdigit() and self._pool_type[1:] == '-UpCCGSD'):
+        elif (
+            isinstance(pool_type, str)
+            and pool_type.endswith('-UpCCGSD')
+            and pool_type[:-len('-UpCCGSD')].isdigit()
+        ):
             if self._computer_type == 'fci_gpu':
                 self._pool_obj = qf.SQOpPoolGPU(data_type=self.data_type)
             else:
@@ -465,14 +500,22 @@ class AnsatzAlgorithm(Algorithm):
 
             timer2.reset()
             self._pool_obj.set_orb_spaces(self._ref)
+            set_pool_irreps_if_available()
             timer2.record("_pool_obj.set_orb_spaces")
 
             timer2.reset()
-            self._pool_obj.fill_pool_kUpCCGSD(int(self._pool_type[0]))
+            kmax = int(pool_type[:-len('-UpCCGSD')])
+            if general_ex_pool_order == 'particle_hole_first':
+                # k-UpCCGSD needs layered ordering, not one global grouping:
+                # PH(k0), GEN(k0), PH(k1), GEN(k1), ...
+                self._pool_obj.fill_pool_kUpCCGSDx(kmax)
+                self._general_ex_pool_order_applied_in_fill = True
+            else:
+                self._pool_obj.fill_pool_kUpCCGSD(kmax)
             timer2.record("_pool_obj.fill_pool")
 
-        elif isinstance(self._pool_type, qf.SQOpPool):
-            self._pool_obj = self._pool_type
+        elif isinstance(pool_type, qf.SQOpPool):
+            self._pool_obj = pool_type
         else:
             raise ValueError('Invalid operator pool type specified.')
 
@@ -530,6 +573,16 @@ class AnsatzAlgorithm(Algorithm):
     def __init__(self, *args, qubit_excitations=False, compact_excitations=False, diis_max_dim=8,
             max_moment_rank = 0, moment_dt=None,
             **kwargs):
+        qf_optimizer_ctor_options = sorted(
+            key for key in kwargs
+            if key.startswith("lbfgs_qf") or key.startswith("bfgs_qf")
+        )
+        if qf_optimizer_ctor_options:
+            raise TypeError(
+                "lbfgs_qf/bfgs_qf optimizer options are run() options. Pass "
+                f"{qf_optimizer_ctor_options} to run(), not to the VQE constructor."
+            )
+
         super().__init__(*args, **kwargs)
         self._curr_energy = 0
         self._Nm = []
@@ -605,7 +658,18 @@ class AnsatzAlgorithm(Algorithm):
             the state preparation circuit.
         """
         Ucirc = self.build_Uvqc(amplitudes=params)
-        Energy = self.measure_energy(Ucirc)
+        if (
+            self._fast
+            and hasattr(self, "_ensure_reusable_ucc_objects")
+            and self._ensure_reusable_ucc_objects()
+            and hasattr(self, "_reusable_fock_zero_state")
+        ):
+            myQC = self._reusable_qc_psi
+            myQC.set_coeff_vec(copy.deepcopy(self._reusable_fock_zero_state))
+            myQC.apply_circuit(Ucirc)
+            Energy = np.real(myQC.direct_op_exp_val(self._qb_ham))
+        else:
+            Energy = self.measure_energy(Ucirc)
 
         self._curr_energy = Energy
         return Energy
@@ -616,17 +680,20 @@ class AnsatzAlgorithm(Algorithm):
         if not self._ref_from_hf:
             raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
         
-        temp_pool = qforte.SQOpPool()
+        temp_pool = None
+        if hasattr(self, "_active_reusable_pool"):
+            temp_pool = self._active_reusable_pool(params)
 
-        # NICK: Write a 'updatte_coeffs' type fucntion for the op-pool.
-        for param, top in zip(params, self._tops):
-            temp_pool.add(param, self._pool_obj[top][1])
-
-        
-        qc = qforte.FCIComputer(
-            self._nel, 
-            self._2_spin, 
-            self._norb)
+        if temp_pool is None:
+            temp_pool = qforte.SQOpPool()
+            for param, top in zip(params, self._tops):
+                temp_pool.add(param, self._pool_obj[top][1])
+            qc = qforte.FCIComputer(
+                self._nel,
+                self._2_spin,
+                self._norb)
+        else:
+            qc = self._reusable_qc_psi
         
         t0 = self._fci_time.time()
         qc.hartree_fock()
@@ -661,17 +728,20 @@ class AnsatzAlgorithm(Algorithm):
         if not self._ref_from_hf:
             raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
         
-        temp_pool = qforte.SQOpPool()
+        temp_pool = None
+        if hasattr(self, "_active_reusable_pool"):
+            temp_pool = self._active_reusable_pool(params)
 
-        # NICK: Write a 'updatte_coeffs' type fucntion for the op-pool.
-        for param, top in zip(params, self._tops):
-            temp_pool.add(param, self._pool_obj[top][1])
-
-        
-        qc = qforte.FQEComputer(
-            self._nel, 
-            self._2_spin, 
-            self._norb)
+        if temp_pool is None:
+            temp_pool = qforte.SQOpPool()
+            for param, top in zip(params, self._tops):
+                temp_pool.add(param, self._pool_obj[top][1])
+            qc = qforte.FQEComputer(
+                self._nel,
+                self._2_spin,
+                self._norb)
+        else:
+            qc = self._reusable_qc_psi
         
         t0 = self._fqe_time.time()
         qc.hartree_fock()
@@ -785,16 +855,20 @@ class AnsatzAlgorithm(Algorithm):
         if not self._ref_from_hf:
             raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
         
-        temp_pool = qforte.SQOpPool()
+        temp_pool = None
+        if hasattr(self, "_active_reusable_pool"):
+            temp_pool = self._active_reusable_pool(params)
 
-        # NICK: Write a 'updatte_coeffs' type fucntion for the op-pool.
-        for param, top in zip(params, self._tops):
-            temp_pool.add(param, self._pool_obj[top][1])
-        
-        qc = qforte.CUSVComputer(
-            self._nel, 
-            self._2_spin, 
-            self._norb)
+        if temp_pool is None:
+            temp_pool = qforte.SQOpPool()
+            for param, top in zip(params, self._tops):
+                temp_pool.add(param, self._pool_obj[top][1])
+            qc = qforte.CUSVComputer(
+                self._nel,
+                self._2_spin,
+                self._norb)
+        else:
+            qc = self._reusable_qc_psi
         
         t0 = self._cusv_time.time()
         qc.hartree_fock()

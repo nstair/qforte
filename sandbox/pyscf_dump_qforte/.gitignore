@@ -1,0 +1,5 @@
+dumps/*.npz
+dumps/*.FCIDUMP
+dumps/*.fcidump
+*.out
+__pycache__/

@@ -10,6 +10,181 @@
 
 #include <stdexcept>
 #include <algorithm>
+#include <iomanip>
+#include <set>
+#include <sstream>
+
+namespace {
+    std::string sq_operator_signature(SQOperator sq_op) {
+        sq_op.simplify();
+
+        std::ostringstream oss;
+        oss << std::setprecision(17);
+        for (const auto& term : sq_op.terms()) {
+            const auto& coeff = std::get<0>(term);
+            oss << coeff.real() << "," << coeff.imag() << ":";
+            for (const auto idx : std::get<1>(term)) {
+                oss << idx << ",";
+            }
+            oss << "|";
+            for (const auto idx : std::get<2>(term)) {
+                oss << idx << ",";
+            }
+            oss << ";";
+        }
+        return oss.str();
+    }
+
+    template <typename PoolType>
+    void add_unique_operator(PoolType& pool, SQOperator sq_op, std::set<std::string>& seen) {
+        sq_op.simplify();
+        if (sq_op.terms().empty()) {
+            return;
+        }
+
+        const std::string signature = sq_operator_signature(sq_op);
+        if (seen.insert(signature).second) {
+            pool.add_term(1.0, sq_op);
+        }
+    }
+
+    template <typename PoolType>
+    void append_unique_pool_terms(PoolType& target, const PoolType& source, std::set<std::string>& seen) {
+        for (const auto& term : source.terms()) {
+            const std::string signature = sq_operator_signature(term.second);
+            if (seen.insert(signature).second) {
+                target.add_term(term.first, term.second);
+            }
+        }
+    }
+
+    template <typename PoolType>
+    void fill_gsd_particle_hole_terms(PoolType& pool, const int nocc, const int nvir) {
+        std::set<std::string> seen;
+
+        for (size_t i = 0; i < static_cast<size_t>(nocc); i++) {
+            const size_t ia = 2 * i;
+            const size_t ib = 2 * i + 1;
+
+            for (size_t a = 0; a < static_cast<size_t>(nvir); a++) {
+                const size_t aa = 2 * static_cast<size_t>(nocc) + 2 * a;
+                const size_t ab = 2 * static_cast<size_t>(nocc) + 2 * a + 1;
+
+                SQOperator temp1a;
+                temp1a.add_term(+1.0, {aa}, {ia});
+                temp1a.add_term(-1.0, {ia}, {aa});
+                add_unique_operator(pool, temp1a, seen);
+
+                SQOperator temp1b;
+                temp1b.add_term(+1.0, {ab}, {ib});
+                temp1b.add_term(-1.0, {ib}, {ab});
+                add_unique_operator(pool, temp1b, seen);
+            }
+        }
+
+        for (size_t i = 0; i < static_cast<size_t>(nocc); i++) {
+            const size_t ia = 2 * i;
+            const size_t ib = 2 * i + 1;
+            for (size_t j = i; j < static_cast<size_t>(nocc); j++) {
+                const size_t ja = 2 * j;
+                const size_t jb = 2 * j + 1;
+                for (size_t a = 0; a < static_cast<size_t>(nvir); a++) {
+                    const size_t aa = 2 * static_cast<size_t>(nocc) + 2 * a;
+                    const size_t ab = 2 * static_cast<size_t>(nocc) + 2 * a + 1;
+                    for (size_t b = a; b < static_cast<size_t>(nvir); b++) {
+                        const size_t ba = 2 * static_cast<size_t>(nocc) + 2 * b;
+                        const size_t bb = 2 * static_cast<size_t>(nocc) + 2 * b + 1;
+
+                        if ((aa != ba) && (ia != ja)) {
+                            SQOperator temp2aaaa;
+                            temp2aaaa.add_term(+1.0, {aa, ba}, {ia, ja});
+                            temp2aaaa.add_term(-1.0, {ja, ia}, {ba, aa});
+                            add_unique_operator(pool, temp2aaaa, seen);
+                        }
+
+                        if ((ab != bb) && (ib != jb)) {
+                            SQOperator temp2bbbb;
+                            temp2bbbb.add_term(+1.0, {ab, bb}, {ib, jb});
+                            temp2bbbb.add_term(-1.0, {jb, ib}, {bb, ab});
+                            add_unique_operator(pool, temp2bbbb, seen);
+                        }
+
+                        if ((aa != bb) && (ia != jb)) {
+                            SQOperator temp2abab;
+                            temp2abab.add_term(+1.0, {aa, bb}, {ia, jb});
+                            temp2abab.add_term(-1.0, {jb, ia}, {bb, aa});
+                            add_unique_operator(pool, temp2abab, seen);
+                        }
+
+                        if ((ab != ba) && (ib != ja)) {
+                            SQOperator temp2baba;
+                            temp2baba.add_term(+1.0, {ab, ba}, {ib, ja});
+                            temp2baba.add_term(-1.0, {ja, ib}, {ba, ab});
+                            add_unique_operator(pool, temp2baba, seen);
+                        }
+
+                        if ((aa != bb) && (ib != ja)) {
+                            SQOperator temp2abba;
+                            temp2abba.add_term(+1.0, {aa, bb}, {ib, ja});
+                            temp2abba.add_term(-1.0, {ja, ib}, {bb, aa});
+                            add_unique_operator(pool, temp2abba, seen);
+                        }
+
+                        if ((ab != ba) && (ia != jb)) {
+                            SQOperator temp2baab;
+                            temp2baab.add_term(+1.0, {ab, ba}, {ia, jb});
+                            temp2baab.add_term(-1.0, {jb, ia}, {ba, ab});
+                            add_unique_operator(pool, temp2baab, seen);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    template <typename PoolType>
+    void fill_kupccgsd_particle_hole_terms(PoolType& pool, const int nocc, const int nvir) {
+        std::set<std::string> seen;
+
+        for (size_t i = 0; i < static_cast<size_t>(nocc); i++) {
+            const size_t ia = 2 * i;
+            const size_t ib = 2 * i + 1;
+
+            for (size_t a = 0; a < static_cast<size_t>(nvir); a++) {
+                const size_t aa = 2 * static_cast<size_t>(nocc) + 2 * a;
+                const size_t ab = 2 * static_cast<size_t>(nocc) + 2 * a + 1;
+
+                SQOperator temp1a;
+                temp1a.add_term(+1.0, {aa}, {ia});
+                temp1a.add_term(-1.0, {ia}, {aa});
+                add_unique_operator(pool, temp1a, seen);
+
+                SQOperator temp1b;
+                temp1b.add_term(+1.0, {ab}, {ib});
+                temp1b.add_term(-1.0, {ib}, {ab});
+                add_unique_operator(pool, temp1b, seen);
+            }
+        }
+
+        for (size_t p = static_cast<size_t>(nocc);
+             p < static_cast<size_t>(nocc + nvir);
+             ++p) {
+            const size_t pa = 2 * p;
+            const size_t pb = 2 * p + 1;
+            for (size_t q = 0; q < static_cast<size_t>(nocc); ++q) {
+                const size_t qa = 2 * q;
+                const size_t qb = 2 * q + 1;
+
+                if ((pa != qa) && (pb != qb)) {
+                    SQOperator temp2abab;
+                    temp2abab.add_term(-1.0, {pa, pb}, {qa, qb});
+                    temp2abab.add_term(+1.0, {qb, qa}, {pb, pa});
+                    add_unique_operator(pool, temp2abab, seen);
+                }
+            }
+        }
+    }
+}
 
 SQOpPoolGPU::~SQOpPoolGPU() {
     // Safe cleanup of device vectors to avoid segfaults during CUDA shutdown
@@ -347,6 +522,18 @@ void SQOpPoolGPU::fill_pool(std::string pool_type){
                 }
             }
         }
+    } else if(pool_type=="GSDx"){
+        SQOpPoolGPU ph_pool(data_type_);
+        fill_gsd_particle_hole_terms(ph_pool, nocc_, nvir_);
+
+        SQOpPoolGPU gsd_pool(data_type_);
+        gsd_pool.nocc_ = nocc_;
+        gsd_pool.nvir_ = nvir_;
+        gsd_pool.fill_pool("GSD");
+
+        std::set<std::string> seen;
+        append_unique_pool_terms(*this, ph_pool, seen);
+        append_unique_pool_terms(*this, gsd_pool, seen);
     } else if ( (pool_type=="S") || (pool_type=="SD") || (pool_type=="SDT") || (pool_type=="SDTQ") || (pool_type=="SDTQP") || (pool_type=="SDTQPH") ) {
 
         int max_nbody = 0;
@@ -757,6 +944,23 @@ void SQOpPoolGPU::fill_pool_kUpCCGSD(int kmax)
                 }
             }
         }        
+    }
+}
+
+void SQOpPoolGPU::fill_pool_kUpCCGSDx(int kmax)
+{
+    for(int k=0; k < kmax; ++k){
+        SQOpPoolGPU ph_pool(data_type_);
+        fill_kupccgsd_particle_hole_terms(ph_pool, nocc_, nvir_);
+
+        SQOpPoolGPU generalized_pool(data_type_);
+        generalized_pool.nocc_ = nocc_;
+        generalized_pool.nvir_ = nvir_;
+        generalized_pool.fill_pool_kUpCCGSD(1);
+
+        std::set<std::string> seen;
+        append_unique_pool_terms(*this, ph_pool, seen);
+        append_unique_pool_terms(*this, generalized_pool, seen);
     }
 }
 

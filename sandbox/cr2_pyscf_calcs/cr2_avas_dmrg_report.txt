@@ -1,0 +1,98 @@
+Cr2 AVAS-DMRG-CASCI Run Report
+================================
+Generated: 2026-05-04T16:42:22
+
+Workflow
+--------
+PySCF mean-field -> AVAS active space -> unrelaxed DMRG-CASCI
+Orbital relaxation: disabled (CASCI, not DMRG-SCF)
+
+System
+------
+Molecule: Cr2
+Cr-Cr distance / Angstrom: 1.680000000000
+Charge: 0
+Spin (N_alpha - N_beta): 0
+Basis: def2-svp
+Symmetry enabled: False
+Memory / MB: 8000
+
+Mean Field
+----------
+Reference: RHF
+SCF convergence tolerance: 1.000000e-10
+SCF max cycles: 200
+SCF level shift: 0.0
+SCF initial guess: minao
+Density fitting: False
+Newton SCF: False
+HF energy / Eh: -2085.582393743717603
+
+AVAS
+----
+Preset: valence_3d4s
+Selected AO labels: ['Cr 3d', 'Cr 4s']
+Threshold: 0.3
+Reference/minao basis: def2-svp
+With IAO: False
+Canonicalize: True
+Active electrons: 12
+Active alpha electrons: 6
+Active beta electrons: 6
+Active orbitals: 12
+Compact notation: (12e, 12o)
+Full alpha/beta CAS coefficients: 853776
+
+DMRG
+----
+Run DMRG: yes
+DMRG energy / Eh: -2085.992607179109200
+Bond dimension maxM: 20
+DMRG tolerance: 1.000000e-06
+Auto orbital ordering: True
+DMRG threads: None
+DMRG memory / MB: None
+Block executable: None
+MPI prefix: None
+Scratch directory: /Users/nstair/Src/my_qforte/qforte/sandbox/cr2_pyscf_calcs/scratch_block2
+Runtime directory: /Users/nstair/Src/my_qforte/qforte/sandbox/cr2_pyscf_calcs/runtime_block2
+Block extra keywords: []
+
+MPS Storage
+-----------
+MPS scratch directory: /Users/nstair/Src/my_qforte/qforte/sandbox/cr2_pyscf_calcs/scratch_block2
+MPS tensor files counted: 13
+MPS tensor bytes: 15488
+Stored MPS parameter bound: 1936
+Full CAS coefficients: 853776
+Compression factor: 4.410000e+02
+Removed MPS tensor files after count: 13
+Parameter bound is ceil(bytes/8) and includes small Block2 file metadata.
+
+Block2 Scratch Cleanup
+----------------------
+Scratch directory cleared: /Users/nstair/Src/my_qforte/qforte/sandbox/cr2_pyscf_calcs/scratch_block2
+Removed files: 37
+Removed directories: 1
+The scratch directory itself is left in place for future runs.
+
+Active Natural Occupations
+--------------------------
+Trace: 12.000000000000
+NO   1:  1.998858052325
+NO   2:  1.932445816928
+NO   3:  1.922219757904
+NO   4:  1.869817514139
+NO   5:  1.809256198977
+NO   6:  1.001616595058
+NO   7:  0.921669262944
+NO   8:  0.189088731006
+NO   9:  0.129957293991
+NO  10:  0.079723381628
+NO  11:  0.077873182726
+NO  12:  0.067474212375
+
+Notes
+-----
+Natural occupations are eigenvalues of the spin-summed active-space 1-RDM.
+The MPS parameter count is inferred from Block2 F.MPS.KET.* tensor files.

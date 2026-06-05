@@ -18,7 +18,7 @@ class FCIComputer;
 class SQOpPool {
   public:
     /// default constructor: creates an empty second quantized operator pool
-    SQOpPool() {}
+    SQOpPool() : nocc_(0), nvir_(0), target_irrep_(0) {}
 
     /// add one set of annihilators and/or creators to the second quantized operator pool
     void add_term(std::complex<double> coeff, const SQOperator& sq_op );
@@ -35,6 +35,17 @@ class SQOpPool {
     /// set the total number of occupied and virtual spatial orbitals from a reference, from the number
     ///     of occupied spin orbitals of each point group symmetry
     void set_orb_spaces(const std::vector<int>& ref);
+
+    /// Set spatial-orbital irreps and target excitation irrep for generated pools.
+    void set_orb_irreps(const std::vector<int>& orb_irreps_to_int, int target_irrep = 0);
+
+    /// Return whether an excitation is allowed by the currently stored irrep data.
+    bool excitation_irrep_allowed(
+      const std::vector<size_t>& creators,
+      const std::vector<size_t>& annihilators) const;
+
+    /// Adds a generated pool operator only if nonzero and symmetry allowed.
+    bool add_pool_operator(std::complex<double> coeff, SQOperator sq_op);
 
     /// onous on caller to pass a sq_op that is actually hermitain, should use a hermitian check funciton...
     /// for an operator, splits the operator into hermitan pairs where each pair becomes a term
@@ -61,6 +72,9 @@ class SQOpPool {
     /// disentangled unitary paired coupled cluster singleds and
     /// doubles ansatz.
     void fill_pool_kUpCCGSD(int kmax);
+
+    /// builds a k-UpCCGSD pool with particle-hole operators first.
+    void fill_pool_kUpCCGSDx(int kmax);
 
     /// builds the sq operator pool based on the operators in the 
     /// second quantized hamiltonain. Similar to add_hermitian pairs
@@ -89,6 +103,14 @@ class SQOpPool {
     /// return the number paulit products needed for each term
     std::vector<int> get_count_pauli_terms_ex_deex() const;
 
+    /// return the exact CNOT count for applying every pool operator using
+    /// the JW transform and conventional Pauli-rotation CNOT ladders
+    int count_cnot_for_jw_exponential(bool qubit_excitations = false, int trotter_number = 1) const;
+
+    /// return the exact CNOT count for one pool operator using the JW transform
+    /// and conventional Pauli-rotation CNOT ladders
+    int count_cnot_for_term_jw_exponential(size_t term_index, bool qubit_excitations = false, int trotter_number = 1) const;
+
     /// return the matrix W, of 
     Tensor get_commutativity_graph() const;
 
@@ -107,6 +129,12 @@ class SQOpPool {
 
     /// the number of virtual spatial orbitals
     int nvir_;
+
+    /// spatial orbital irreps in Cotton ordering; defaults to C1/all zero
+    std::vector<int> orb_irreps_to_int_;
+
+    /// irrep of generated excitations to retain
+    int target_irrep_;
 
     /// the list of sq operators in the pool
     std::vector<std::pair<std::complex<double>, SQOperator>> terms_;

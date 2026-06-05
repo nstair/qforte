@@ -520,6 +520,20 @@ class FCIComputer {
     /// apply a second quantized operator, must be number and spin conserving.
     std::complex<double> get_exp_val(const SQOperator& sqop);
 
+    /// Get <S^2> for the current CI vector.
+    ///
+    /// This uses S^2 = M_S(M_S + 1) + S_- S_+ in the fixed
+    /// (N_alpha, N_beta) sector and applies the spin-flip product directly
+    /// over the determinant grid.
+    double get_spin_squared_expectation() const;
+
+    /// Get spin-summed natural orbital occupation numbers for the current CI vector.
+    ///
+    /// This builds the spatial one-particle density matrix
+    /// gamma_pq = <a^+_{p alpha} a_{q alpha}> + <a^+_{p beta} a_{q beta}>,
+    /// diagonalizes it, and returns the eigenvalues sorted descending.
+    std::vector<double> get_natural_orbital_occupation_numbers() const;
+
     /// Get expectaion of restricted tensor operator, must be number and spin conserving.
     std::complex<double> get_exp_val_tensor(
       const std::complex<double> h0e, 

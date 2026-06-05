@@ -84,6 +84,10 @@ class SQOperator {
     // 2*(r-1), with r being the size of the contiguous qubit support.
     int count_cnot_for_exponential_full() const;
 
+    // Returns the exact CNOT count for the conventional CNOT-ladder
+    // implementation of the JW-transformed exponential of this operator.
+    int count_cnot_for_jw_exponential(bool qubit_excitation = false, int trotter_number = 1) const;
+
     /**
      * @brief Estimate the total number of T-gates required to implement
      *        U = exp[K] for a two-term anti-Hermitian operator

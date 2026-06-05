@@ -84,6 +84,9 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("B") = nullptr)
         .def("count_cnot_for_exponential", &SQOperator::count_cnot_for_exponential)
         .def("count_cnot_for_exponential_full", &SQOperator::count_cnot_for_exponential_full)
+        .def("count_cnot_for_jw_exponential", &SQOperator::count_cnot_for_jw_exponential,
+            py::arg("qubit_excitation") = false,
+            py::arg("trotter_number") = 1)
         .def("count_T_for_exponential_full", &SQOperator::count_T_for_exponential_full)
         .def("str", &SQOperator::str)
         .def("__str__", &SQOperator::str)
@@ -162,12 +165,23 @@ PYBIND11_MODULE(qforte, m) {
         .def("set_coeffs_to_scaler", &SQOpPool::set_coeffs_to_scaler)
         .def("terms", &SQOpPool::terms)
         .def("set_orb_spaces", &SQOpPool::set_orb_spaces)
+        .def("set_orb_irreps", &SQOpPool::set_orb_irreps,
+             py::arg("orb_irreps_to_int"), py::arg("target_irrep") = 0)
+        .def("excitation_irrep_allowed", &SQOpPool::excitation_irrep_allowed)
         .def("get_qubit_op_pool", &SQOpPool::get_qubit_op_pool)
         .def("get_qubit_operator", &SQOpPool::get_qubit_operator, py::arg("order_type"),
              py::arg("combine_like_terms") = true, py::arg("qubit_excitations") = false)
         .def("get_count_pauli_terms_ex_deex", &SQOpPool::get_count_pauli_terms_ex_deex)
+        .def("count_cnot_for_jw_exponential", &SQOpPool::count_cnot_for_jw_exponential,
+             py::arg("qubit_excitations") = false,
+             py::arg("trotter_number") = 1)
+        .def("count_cnot_for_term_jw_exponential", &SQOpPool::count_cnot_for_term_jw_exponential,
+             py::arg("term_index"),
+             py::arg("qubit_excitations") = false,
+             py::arg("trotter_number") = 1)
         .def("fill_pool", &SQOpPool::fill_pool)
         .def("fill_pool_kUpCCGSD", &SQOpPool::fill_pool_kUpCCGSD)
+        .def("fill_pool_kUpCCGSDx", &SQOpPool::fill_pool_kUpCCGSDx)
         .def("fill_pool_sq_hva", &SQOpPool::fill_pool_sq_hva)
         .def("fill_pool_df_trotter", &SQOpPool::fill_pool_df_trotter)
         .def("append_givens_ops_sector", &SQOpPool::append_givens_ops_sector)
@@ -200,6 +214,7 @@ PYBIND11_MODULE(qforte, m) {
              py::arg("combine_like_terms") = true, py::arg("qubit_excitations") = false)
         .def("fill_pool", &SQOpPoolGPU::fill_pool)
         .def("fill_pool_kUpCCGSD", &SQOpPoolGPU::fill_pool_kUpCCGSD)
+        .def("fill_pool_kUpCCGSDx", &SQOpPoolGPU::fill_pool_kUpCCGSDx)
         .def("check_mu_tuple_container_sizes", &SQOpPoolGPU::check_mu_tuple_container_sizes)
         .def("print_mu_tuple_dims", &SQOpPoolGPU::print_mu_tuple_dims)
         .def("print_mu_tuple_elements", &SQOpPoolGPU::print_mu_tuple_elements)
@@ -324,6 +339,11 @@ PYBIND11_MODULE(qforte, m) {
             )
         .def("apply_sqop_pool", &FCIComputer::apply_sqop_pool)
         .def("get_exp_val", &FCIComputer::get_exp_val)
+        .def("get_spin_squared_expectation", &FCIComputer::get_spin_squared_expectation)
+        .def("get_spin_squared", &FCIComputer::get_spin_squared_expectation)
+        .def("get_natural_orbital_occupation_numbers", &FCIComputer::get_natural_orbital_occupation_numbers)
+        .def("get_noons", &FCIComputer::get_natural_orbital_occupation_numbers)
+        .def("get_NOONs", &FCIComputer::get_natural_orbital_occupation_numbers)
         .def("get_exp_val_tensor", &FCIComputer::get_exp_val_tensor)
         .def("scale", &FCIComputer::scale)
         .def("evolve_op_taylor", &FCIComputer::evolve_op_taylor)
@@ -609,6 +629,42 @@ PYBIND11_MODULE(qforte, m) {
         .def("apply_sqop_pool_cpu", &FCIComputerGPU::apply_sqop_pool_cpu)
         .def("get_exp_val_cpu", &FCIComputerGPU::get_exp_val_cpu)
         .def("get_exp_val", &FCIComputerGPU::get_exp_val)
+        .def("get_spin_squared_expectation", [](const FCIComputerGPU&) {
+            PyErr_SetString(
+                PyExc_NotImplementedError,
+                "FCIComputerGPU.get_spin_squared_expectation is not yet implemented. "
+                "Use FCIComputer for now; GPU support will be added in a future PR.");
+            throw py::error_already_set();
+        })
+        .def("get_spin_squared", [](const FCIComputerGPU&) {
+            PyErr_SetString(
+                PyExc_NotImplementedError,
+                "FCIComputerGPU.get_spin_squared is not yet implemented. "
+                "Use FCIComputer for now; GPU support will be added in a future PR.");
+            throw py::error_already_set();
+        })
+        .def("get_natural_orbital_occupation_numbers", [](const FCIComputerGPU&) {
+            PyErr_SetString(
+                PyExc_NotImplementedError,
+                "FCIComputerGPU.get_natural_orbital_occupation_numbers is not yet "
+                "implemented. Use FCIComputer for now; GPU support will be added "
+                "in a future PR.");
+            throw py::error_already_set();
+        })
+        .def("get_noons", [](const FCIComputerGPU&) {
+            PyErr_SetString(
+                PyExc_NotImplementedError,
+                "FCIComputerGPU.get_noons is not yet implemented. Use FCIComputer "
+                "for now; GPU support will be added in a future PR.");
+            throw py::error_already_set();
+        })
+        .def("get_NOONs", [](const FCIComputerGPU&) {
+            PyErr_SetString(
+                PyExc_NotImplementedError,
+                "FCIComputerGPU.get_NOONs is not yet implemented. Use FCIComputer "
+                "for now; GPU support will be added in a future PR.");
+            throw py::error_already_set();
+        })
         .def("get_exp_val_tensor_gpu", &FCIComputerGPU::get_exp_val_tensor_gpu)
         .def("evolve_op_taylor_cpu", &FCIComputerGPU::evolve_op_taylor_cpu)
         .def("apply_sqop_evolution_gpu", &FCIComputerGPU::apply_sqop_evolution_gpu, 

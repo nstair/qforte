@@ -15,6 +15,7 @@ from qforte.utils.state_prep import *
 from qforte.utils.trotterization import trotterize
 from qforte.utils import moment_energy_corrections
 from qforte.maths import optimizer
+from qforte.maths.optimizer import set_lbfgs_qf_options
 
 import numpy as np
 from scipy.optimize import minimize
@@ -85,7 +86,10 @@ class ADAPTVQE(UCCVQE):
             optimizer='BFGS',
             use_analytic_grad = True,
             use_cumulative_thresh = False,
-            add_equiv_ops = False):
+            add_equiv_ops = False,
+            **kwargs):
+
+        set_lbfgs_qf_options(self, kwargs)
 
         self._avqe_thresh = avqe_thresh
         self._opt_thresh = opt_thresh
@@ -278,6 +282,7 @@ class ADAPTVQE(UCCVQE):
         print('\n\n                ==> ADAPT-VQE summary <==')
         print('-----------------------------------------------------------')
         print('Final ADAPT-VQE Energy:                     ', round(self._Egs, 10))
+        print(f"Final <S^2>:                                {self.final_spin_squared_summary_string()}")
         if self._max_moment_rank:
             print('Moment-corrected (MP) ADAPT-VQE Energy:     ', round(self._E_mmcc_mp[-1], 10))
             print('Moment-corrected (EN) ADAPT-VQE Energy:     ', round(self._E_mmcc_en[-1], 10))
@@ -294,13 +299,19 @@ class ADAPTVQE(UCCVQE):
 
         print("\n\n")
         print(self._timer)
+        print(self.final_noons_summary_table())
 
 
     # Define VQE abstract methods.
     def solve(self):
-        if self._optimizer.lower() == "jacobi":
+        optimizer_name = self._optimizer.lower()
+        if optimizer_name == "jacobi":
             self.build_orb_energies()
             return self.jacobi_solver()
+        elif optimizer_name == "lbfgs_qf":
+            return self.lbfgs_qf_solve()
+        elif optimizer_name == "bfgs_qf":
+            return self.bfgs_qf_solve()
         else:
             return self.scipy_solve()
 
@@ -485,5 +496,17 @@ class ADAPTVQE(UCCVQE):
             return self._final_result
 
 ADAPTVQE.jacobi_solver = optimizer.jacobi_solver
+ADAPTVQE.lbfgs_qf_solve = optimizer.lbfgs_qf_solve
+ADAPTVQE.bfgs_qf_solve = optimizer.bfgs_qf_solve
+ADAPTVQE.lbfgs_solver = optimizer.lbfgs_solver
+ADAPTVQE._lbfgs_qf_hess_vec_fd = optimizer._lbfgs_qf_hess_vec_fd
+ADAPTVQE._lbfgs_qf_newton_cg_direction = optimizer._lbfgs_qf_newton_cg_direction
+ADAPTVQE._lbfgs_qf_try_newton_cg_step = optimizer._lbfgs_qf_try_newton_cg_step
+ADAPTVQE._lbfgs_qf_select_target_block = optimizer._lbfgs_qf_select_target_block
+ADAPTVQE._lbfgs_qf_build_target_hessian_block = optimizer._lbfgs_qf_build_target_hessian_block
+ADAPTVQE._lbfgs_qf_target_block_step = optimizer._lbfgs_qf_target_block_step
+ADAPTVQE._lbfgs_qf_try_target_block_step = optimizer._lbfgs_qf_try_target_block_step
+ADAPTVQE._lbfgs_qf_should_escape_negative_curvature = optimizer._lbfgs_qf_should_escape_negative_curvature
+ADAPTVQE._lbfgs_qf_try_negative_curvature_escape = optimizer._lbfgs_qf_try_negative_curvature_escape
 ADAPTVQE.construct_moment_space = moment_energy_corrections.construct_moment_space
 ADAPTVQE.compute_moment_energies = moment_energy_corrections.compute_moment_energies

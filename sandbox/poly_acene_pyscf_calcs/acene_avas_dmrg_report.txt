@@ -1,0 +1,93 @@
+Polyacene AVAS-DMRG-CASCI Run Report
+======================================
+Generated: 2026-05-04T16:43:05
+
+Workflow
+--------
+PySCF mean-field -> AVAS active space -> unrelaxed DMRG-CASCI
+Orbital relaxation: disabled (CASCI, not DMRG-SCF)
+
+System
+------
+Acene: naphthalene
+State: singlet
+Geometry file: /Users/nstair/Src/my_qforte/qforte/sandbox/poly_acene_pyscf_calcs/acene_geoms.txt
+Charge: 0
+Spin (N_alpha - N_beta): 0
+Basis: cc-pvdz
+Symmetry enabled: False
+Memory / MB: 4000
+
+Mean Field
+----------
+Reference: RHF
+SCF convergence tolerance: 1.000000e-10
+SCF max cycles: 100
+Density fitting: False
+HF energy / Eh: -383.383583103004582
+
+AVAS
+----
+Selected AO labels: ['C 2pz']
+Threshold: 0.2
+Reference/minao basis: minao
+With IAO: False
+Canonicalize: True
+Active electrons: 10
+Active alpha electrons: 5
+Active beta electrons: 5
+Active orbitals: 10
+Compact notation: (10e, 10o)
+Full alpha/beta CAS coefficients: 63504
+
+DMRG
+----
+Run DMRG: yes
+DMRG energy / Eh: -383.487541621361743
+Bond dimension maxM: 20
+DMRG tolerance: 1.000000e-06
+Auto orbital ordering: True
+DMRG threads: None
+DMRG memory / MB: None
+Block executable: None
+MPI prefix: None
+Scratch directory: /Users/nstair/Src/my_qforte/qforte/sandbox/poly_acene_pyscf_calcs/scratch_block2
+Runtime directory: /Users/nstair/Src/my_qforte/qforte/sandbox/poly_acene_pyscf_calcs/runtime_block2
+Block extra keywords: []
+
+MPS Storage
+-----------
+MPS scratch directory: /Users/nstair/Src/my_qforte/qforte/sandbox/poly_acene_pyscf_calcs/scratch_block2
+MPS tensor files counted: 11
+MPS tensor bytes: 11140
+Stored MPS parameter bound: 1393
+Full CAS coefficients: 63504
+Compression factor: 4.558794e+01
+Removed MPS tensor files after count: 11
+Parameter bound is ceil(bytes/8) and includes small Block2 file metadata.
+
+Block2 Scratch Cleanup
+----------------------
+Scratch directory cleared: /Users/nstair/Src/my_qforte/qforte/sandbox/poly_acene_pyscf_calcs/scratch_block2
+Removed files: 31
+Removed directories: 1
+The scratch directory itself is left in place for future runs.
+
+Active Natural Occupations
+--------------------------
+Trace: 10.000000000000
+NO   1:  1.975732298048
+NO   2:  1.963577766131
+NO   3:  1.948534722282
+NO   4:  1.935956699001
+NO   5:  1.918503108149
+NO   6:  0.085525629285
+NO   7:  0.065576344054
+NO   8:  0.050279082683
+NO   9:  0.035135147304
+NO  10:  0.021179203062
+
+Notes
+-----
+Natural occupations are eigenvalues of the spin-summed active-space 1-RDM.
+The MPS parameter count is inferred from Block2 F.MPS.KET.* tensor files.

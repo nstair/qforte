@@ -92,8 +92,13 @@ class UCCPQE(PQE, UCC):
     def solve(self):
         if self._optimizer.lower() == 'jacobi':
             self.jacobi_solver()
+        elif self._optimizer.lower() in ['lbfgs_qf', 'bfgs_qf']:
+            raise ValueError(
+                f'optimizer="{self._optimizer.lower()}" currently supports gradient-based VQE '
+                'classes UCCNVQE and ADAPTVQE only. UCCNPQE/SPQE are residual-based '
+                'and do not yet provide the required energy-gradient objective.'
+            )
         elif self._optimizer.lower() in ['nelder-mead', 'powell', 'bfgs', 'l-bfgs-b', 'cg', 'slsqp']:
             self.scipy_solver(self.get_sum_residual_square)
         else:
-            raise NotImplementedError('Currently only Jacobi, Nelder-Mead, Powell, BFGS, L-BFGS-B, CG, and SLSQP solvers are implemented')
-
+            raise NotImplementedError('Currently only Jacobi, lbfgs_qf for gradient-based VQE, Nelder-Mead, Powell, BFGS, L-BFGS-B, CG, and SLSQP solvers are implemented')

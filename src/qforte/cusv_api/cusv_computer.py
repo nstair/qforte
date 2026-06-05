@@ -1419,6 +1419,25 @@ class CUSVComputer:
     def get_exp_val_tensor(self, h0e: complex, h1e: np.ndarray, h2e: np.ndarray) -> complex:
         raise NotImplementedError("CUSVComputer.get_exp_val_tensor(): stub.")
 
+    def get_spin_squared_expectation(self) -> float:
+        raise NotImplementedError(
+            "CUSVComputer.get_spin_squared_expectation(): implement final-state spin diagnostics."
+        )
+
+    def get_spin_squared(self) -> float:
+        return self.get_spin_squared_expectation()
+
+    def get_natural_orbital_occupation_numbers(self) -> List[float]:
+        raise NotImplementedError(
+            "CUSVComputer.get_natural_orbital_occupation_numbers(): implement final-state NOON diagnostics."
+        )
+
+    def get_noons(self) -> List[float]:
+        return self.get_natural_orbital_occupation_numbers()
+
+    def get_NOONs(self) -> List[float]:
+        return self.get_natural_orbital_occupation_numbers()
+
     # ---------- time evolution ----------
 
     def evolve_tensor_taylor(

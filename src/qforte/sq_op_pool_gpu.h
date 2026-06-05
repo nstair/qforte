@@ -242,6 +242,9 @@ class SQOpPoolGPU {
     /// builds the sq operator pool kUpG style
     void fill_pool_kUpCCGSD(int kmax);
 
+    /// builds a k-UpCCGSD pool with particle-hole operators first.
+    void fill_pool_kUpCCGSDx(int kmax);
+
     /// return a vector of string representing this sq operator pool
     std::string str() const;
 

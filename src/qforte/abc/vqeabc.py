@@ -34,18 +34,25 @@ class VQE(AnsatzAlgorithm):
 
 
     @abstractmethod
-    def measure_gradient(self):
+    def measure_gradient(self, params=None, return_energy=False):
         """Returns the energy gradient aray pertaining to the variational
         paramaters used in the preparation circuit Uvqc.
         """
         pass
 
     @abstractmethod
-    def gradient_ary_feval(self):
+    def gradient_ary_feval(self, params, return_energy=False):
         """Computes the gradients with respect to all operators currently in the
         UCCN-VQE ansatz. Used as the jacobian the minimizer calls.
         """
         pass
+
+    def derivative_ary_feval(self, params, return_energy=False,
+                             return_gradient=True, return_hessian_diag=False):
+        """Optionally return energy, gradient, and Hessian diagonal together."""
+        raise NotImplementedError(
+            "Combined derivative bundles are not implemented for this VQE class."
+        )
 
     @abstractmethod
     def solve(self):

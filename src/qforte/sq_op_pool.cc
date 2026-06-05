@@ -13,6 +13,10 @@
 
 #include <stdexcept>
 #include <algorithm>
+#include <cmath>
+#include <iomanip>
+#include <set>
+#include <sstream>
 #include <tuple>
 #include <random>
 
@@ -24,6 +28,66 @@
 
 void SQOpPool::add_term(std::complex<double> coeff, const SQOperator& sq_op ){
     terms_.push_back(std::make_pair(coeff, sq_op));
+}
+
+void SQOpPool::set_orb_irreps(const std::vector<int>& orb_irreps_to_int, int target_irrep) {
+    const int norb = nocc_ + nvir_;
+    if (norb > 0 && static_cast<int>(orb_irreps_to_int.size()) != norb) {
+        throw std::invalid_argument("Orbital irrep vector length must equal the number of spatial orbitals.");
+    }
+
+    orb_irreps_to_int_ = orb_irreps_to_int;
+    target_irrep_ = target_irrep;
+}
+
+bool SQOpPool::excitation_irrep_allowed(
+    const std::vector<size_t>& creators,
+    const std::vector<size_t>& annihilators) const
+{
+    if (creators.size() != annihilators.size()) {
+        return false;
+    }
+
+    if (orb_irreps_to_int_.empty()) {
+        return true;
+    }
+
+    int sym = 0;
+    for (const auto idx : creators) {
+        const size_t spatial_idx = idx / 2;
+        if (spatial_idx >= orb_irreps_to_int_.size()) {
+            throw std::invalid_argument("Excitation creator index is outside the stored orbital irrep space.");
+        }
+        sym ^= orb_irreps_to_int_[spatial_idx];
+    }
+    for (const auto idx : annihilators) {
+        const size_t spatial_idx = idx / 2;
+        if (spatial_idx >= orb_irreps_to_int_.size()) {
+            throw std::invalid_argument("Excitation annihilator index is outside the stored orbital irrep space.");
+        }
+        sym ^= orb_irreps_to_int_[spatial_idx];
+    }
+
+    return sym == target_irrep_;
+}
+
+bool SQOpPool::add_pool_operator(std::complex<double> coeff, SQOperator sq_op) {
+    sq_op.simplify();
+    if (sq_op.terms().empty()) {
+        return false;
+    }
+
+    // Generated UCC pool operators are anti-Hermitian combinations of terms
+    // with the same excitation irrep. Check every term so spin-adapted
+    // combinations cannot smuggle in a disallowed component.
+    for (const auto& term : sq_op.terms()) {
+        if (!excitation_irrep_allowed(std::get<1>(term), std::get<2>(term))) {
+            return false;
+        }
+    }
+
+    terms_.push_back(std::make_pair(coeff, sq_op));
+    return true;
 }
 
 /// NICK: This funcion is working but needs testing for edge cases!!
@@ -101,6 +165,289 @@ namespace {
             return seed;
         }
     };
+
+    double clean_signature_value(double value) {
+        return (std::abs(value) < 1.0e-14) ? 0.0 : value;
+    }
+
+    std::string signed_sq_operator_signature(const SQOperator& sq_op, double sign) {
+        std::ostringstream oss;
+        oss << std::setprecision(17);
+        for (const auto& term : sq_op.terms()) {
+            const auto& coeff = std::get<0>(term);
+            oss << clean_signature_value(sign * coeff.real()) << ","
+                << clean_signature_value(sign * coeff.imag()) << ":";
+            for (const auto idx : std::get<1>(term)) {
+                oss << idx << ",";
+            }
+            oss << "|";
+            for (const auto idx : std::get<2>(term)) {
+                oss << idx << ",";
+            }
+            oss << ";";
+        }
+        return oss.str();
+    }
+
+    std::string sq_operator_signature(SQOperator sq_op) {
+        sq_op.simplify();
+
+        // The legacy GSDx and k-UpCCGSDx constructors are retained as internal
+        // compatibility helpers for general_ex_pool_order="particle_hole_first".
+        // Some particle-hole helpers use the opposite overall sign from the
+        // generalized construction, but the generator span and UCC
+        // parameterization are the same up to theta -> -theta.  Canonicalize
+        // duplicate detection modulo global sign so these ordered pools reorder
+        // rather than enlarge the operator set.
+        const std::string positive = signed_sq_operator_signature(sq_op, +1.0);
+        const std::string negative = signed_sq_operator_signature(sq_op, -1.0);
+        return std::min(positive, negative);
+    }
+
+    template <typename PoolType>
+    void add_unique_operator(PoolType& pool, SQOperator sq_op, std::set<std::string>& seen) {
+        sq_op.simplify();
+        if (sq_op.terms().empty()) {
+            return;
+        }
+
+        const std::string signature = sq_operator_signature(sq_op);
+        if (seen.insert(signature).second) {
+            pool.add_pool_operator(1.0, sq_op);
+        }
+    }
+
+    template <typename PoolType>
+    void append_unique_pool_terms(PoolType& target, const PoolType& source, std::set<std::string>& seen) {
+        for (const auto& term : source.terms()) {
+            const std::string signature = sq_operator_signature(term.second);
+            if (seen.find(signature) == seen.end()) {
+                if (target.add_pool_operator(term.first, term.second)) {
+                    seen.insert(signature);
+                }
+            }
+        }
+    }
+
+    template <typename PoolType>
+    void fill_gsd_particle_hole_terms(PoolType& pool, const int nocc, const int nvir) {
+        std::set<std::string> seen;
+
+        for (size_t i = 0; i < static_cast<size_t>(nocc); i++) {
+            const size_t ia = 2 * i;
+            const size_t ib = 2 * i + 1;
+
+            for (size_t a = 0; a < static_cast<size_t>(nvir); a++) {
+                const size_t aa = 2 * static_cast<size_t>(nocc) + 2 * a;
+                const size_t ab = 2 * static_cast<size_t>(nocc) + 2 * a + 1;
+
+                SQOperator temp1a;
+                temp1a.add_term(+1.0, {aa}, {ia});
+                temp1a.add_term(-1.0, {ia}, {aa});
+                add_unique_operator(pool, temp1a, seen);
+
+                SQOperator temp1b;
+                temp1b.add_term(+1.0, {ab}, {ib});
+                temp1b.add_term(-1.0, {ib}, {ab});
+                add_unique_operator(pool, temp1b, seen);
+            }
+        }
+
+        for (size_t i = 0; i < static_cast<size_t>(nocc); i++) {
+            const size_t ia = 2 * i;
+            const size_t ib = 2 * i + 1;
+            for (size_t j = i; j < static_cast<size_t>(nocc); j++) {
+                const size_t ja = 2 * j;
+                const size_t jb = 2 * j + 1;
+                for (size_t a = 0; a < static_cast<size_t>(nvir); a++) {
+                    const size_t aa = 2 * static_cast<size_t>(nocc) + 2 * a;
+                    const size_t ab = 2 * static_cast<size_t>(nocc) + 2 * a + 1;
+                    for (size_t b = a; b < static_cast<size_t>(nvir); b++) {
+                        const size_t ba = 2 * static_cast<size_t>(nocc) + 2 * b;
+                        const size_t bb = 2 * static_cast<size_t>(nocc) + 2 * b + 1;
+
+                        if ((aa != ba) && (ia != ja)) {
+                            SQOperator temp2aaaa;
+                            temp2aaaa.add_term(+1.0, {aa, ba}, {ia, ja});
+                            temp2aaaa.add_term(-1.0, {ja, ia}, {ba, aa});
+                            add_unique_operator(pool, temp2aaaa, seen);
+                        }
+
+                        if ((ab != bb) && (ib != jb)) {
+                            SQOperator temp2bbbb;
+                            temp2bbbb.add_term(+1.0, {ab, bb}, {ib, jb});
+                            temp2bbbb.add_term(-1.0, {jb, ib}, {bb, ab});
+                            add_unique_operator(pool, temp2bbbb, seen);
+                        }
+
+                        if ((aa != bb) && (ia != jb)) {
+                            SQOperator temp2abab;
+                            temp2abab.add_term(+1.0, {aa, bb}, {ia, jb});
+                            temp2abab.add_term(-1.0, {jb, ia}, {bb, aa});
+                            add_unique_operator(pool, temp2abab, seen);
+                        }
+
+                        if ((ab != ba) && (ib != ja)) {
+                            SQOperator temp2baba;
+                            temp2baba.add_term(+1.0, {ab, ba}, {ib, ja});
+                            temp2baba.add_term(-1.0, {ja, ib}, {ba, ab});
+                            add_unique_operator(pool, temp2baba, seen);
+                        }
+
+                        if ((aa != bb) && (ib != ja)) {
+                            SQOperator temp2abba;
+                            temp2abba.add_term(+1.0, {aa, bb}, {ib, ja});
+                            temp2abba.add_term(-1.0, {ja, ib}, {bb, aa});
+                            add_unique_operator(pool, temp2abba, seen);
+                        }
+
+                        if ((ab != ba) && (ia != jb)) {
+                            SQOperator temp2baab;
+                            temp2baab.add_term(+1.0, {ab, ba}, {ia, jb});
+                            temp2baab.add_term(-1.0, {jb, ia}, {ba, ab});
+                            add_unique_operator(pool, temp2baab, seen);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    template <typename PoolType>
+    void fill_kupccgsd_particle_hole_terms(PoolType& pool, const int nocc, const int nvir) {
+        std::set<std::string> seen;
+
+        for (size_t i = 0; i < static_cast<size_t>(nocc); i++) {
+            const size_t ia = 2 * i;
+            const size_t ib = 2 * i + 1;
+
+            for (size_t a = 0; a < static_cast<size_t>(nvir); a++) {
+                const size_t aa = 2 * static_cast<size_t>(nocc) + 2 * a;
+                const size_t ab = 2 * static_cast<size_t>(nocc) + 2 * a + 1;
+
+                SQOperator temp1a;
+                temp1a.add_term(+1.0, {aa}, {ia});
+                temp1a.add_term(-1.0, {ia}, {aa});
+                add_unique_operator(pool, temp1a, seen);
+
+                SQOperator temp1b;
+                temp1b.add_term(+1.0, {ab}, {ib});
+                temp1b.add_term(-1.0, {ib}, {ab});
+                add_unique_operator(pool, temp1b, seen);
+            }
+        }
+
+        for (size_t p = static_cast<size_t>(nocc);
+             p < static_cast<size_t>(nocc + nvir);
+             ++p) {
+            const size_t pa = 2 * p;
+            const size_t pb = 2 * p + 1;
+            for (size_t q = 0; q < static_cast<size_t>(nocc); ++q) {
+                const size_t qa = 2 * q;
+                const size_t qb = 2 * q + 1;
+
+                if ((pa != qa) && (pb != qb)) {
+                    SQOperator temp2abab;
+                    temp2abab.add_term(-1.0, {pa, pb}, {qa, qb});
+                    temp2abab.add_term(+1.0, {qb, qa}, {pb, pa});
+                    add_unique_operator(pool, temp2abab, seen);
+                }
+            }
+        }
+    }
+
+    void combinations_recursive(
+        const size_t start,
+        const size_t n,
+        const size_t k,
+        std::vector<size_t>& current,
+        std::vector<std::vector<size_t>>& result)
+    {
+        if (current.size() == k) {
+            result.push_back(current);
+            return;
+        }
+
+        const size_t remaining = k - current.size();
+        for (size_t i = start; i + remaining <= n; ++i) {
+            current.push_back(i);
+            combinations_recursive(i + 1, n, k, current, result);
+            current.pop_back();
+        }
+    }
+
+    std::vector<std::vector<size_t>> combinations(const size_t n, const size_t k) {
+        std::vector<std::vector<size_t>> result;
+        if (k > n) {
+            return result;
+        }
+        std::vector<size_t> current;
+        current.reserve(k);
+        combinations_recursive(0, n, k, current, result);
+        return result;
+    }
+
+    template <typename PoolType>
+    void add_particle_hole_rank_terms(PoolType& pool, const int nocc, const int nvir, const int rank) {
+        // Direct particle-hole construction assumes the same RHF occupied-block
+        // layout as the direct singles/doubles code:
+        //   occupied spatial orbitals: 0, ..., nocc - 1
+        //   virtual spatial orbitals:  nocc, ..., nocc + nvir - 1
+        //   alpha spin orbital:        2 * p
+        //   beta spin orbital:         2 * p + 1
+        //
+        // For rank r we choose r_alpha alpha p-h substitutions and r_beta beta
+        // substitutions, with r_alpha + r_beta = r. This reproduces the C1
+        // count sum_a C(nocc,a)C(nvir,a)C(nocc,r-a)C(nvir,r-a).
+        for (int nalpha = 0; nalpha <= rank; ++nalpha) {
+            const int nbeta = rank - nalpha;
+            if (nalpha > nocc || nalpha > nvir || nbeta > nocc || nbeta > nvir) {
+                continue;
+            }
+
+            const auto alpha_occ_combos = combinations(static_cast<size_t>(nocc), static_cast<size_t>(nalpha));
+            const auto alpha_vir_combos = combinations(static_cast<size_t>(nvir), static_cast<size_t>(nalpha));
+            const auto beta_occ_combos = combinations(static_cast<size_t>(nocc), static_cast<size_t>(nbeta));
+            const auto beta_vir_combos = combinations(static_cast<size_t>(nvir), static_cast<size_t>(nbeta));
+
+            for (const auto& alpha_occ : alpha_occ_combos) {
+                for (const auto& alpha_vir : alpha_vir_combos) {
+                    for (const auto& beta_occ : beta_occ_combos) {
+                        for (const auto& beta_vir : beta_vir_combos) {
+                            std::vector<size_t> creators;
+                            std::vector<size_t> annihilators;
+                            creators.reserve(static_cast<size_t>(rank));
+                            annihilators.reserve(static_cast<size_t>(rank));
+
+                            // Deterministic convention: alpha sector first,
+                            // then beta sector, within each lexical combination.
+                            for (const auto a : alpha_vir) {
+                                creators.push_back(2 * (static_cast<size_t>(nocc) + a));
+                            }
+                            for (const auto a : beta_vir) {
+                                creators.push_back(2 * (static_cast<size_t>(nocc) + a) + 1);
+                            }
+                            for (const auto i : alpha_occ) {
+                                annihilators.push_back(2 * i);
+                            }
+                            for (const auto i : beta_occ) {
+                                annihilators.push_back(2 * i + 1);
+                            }
+
+                            SQOperator op;
+                            op.add_term(+1.0, creators, annihilators);
+
+                            std::vector<size_t> reversed_creators(creators.rbegin(), creators.rend());
+                            std::vector<size_t> reversed_annihilators(annihilators.rbegin(), annihilators.rend());
+                            op.add_term(-1.0, reversed_annihilators, reversed_creators);
+                            op.simplify();
+                            pool.add_pool_operator(1.0, op);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 void SQOpPool::add_connection_pairs(
@@ -535,6 +882,14 @@ void SQOpPool::set_orb_spaces(const std::vector<int>& ref){
     }
 
     nvir_ = static_cast<int>(norb - nocc_);
+
+    // C1 is the default: every spatial orbital has irrep 0.  Non-C1
+    // algorithms may override this with set_orb_irreps before fill_pool().
+    if (orb_irreps_to_int_.empty() ||
+        static_cast<int>(orb_irreps_to_int_.size()) != nocc_ + nvir_) {
+        orb_irreps_to_int_ = std::vector<int>(nocc_ + nvir_, 0);
+        target_irrep_ = 0;
+    }
 }
 
 QubitOpPool SQOpPool::get_qubit_op_pool(){
@@ -592,7 +947,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                     temp1a.add_term(-1.0, {ia}, {aa});
                     temp1a.simplify();
                     if(temp1a.terms().size() > 0){
-                        add_term(1.0, temp1a);
+                        add_pool_operator(1.0, temp1a);
                     }
                 }
 
@@ -602,7 +957,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                     temp1b.add_term(-1.0, {ib}, {ab});
                     temp1b.simplify();
                     if(temp1b.terms().size() > 0){
-                        add_term(1.0, temp1b);
+                        add_pool_operator(1.0, temp1b);
                     }
                 }
             }
@@ -636,7 +991,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                                     if( (std::find(adjnt_2bdy.begin(), adjnt_2bdy.end(), vtemp) == adjnt_2bdy.end()) ){
                                         uniqe_2bdy.push_back(vtemp);
                                         adjnt_2bdy.push_back(vadjt);
-                                        add_term(1.0, temp2aaaa);
+                                        add_pool_operator(1.0, temp2aaaa);
                                     }
                                 }
                             }
@@ -654,7 +1009,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                                     if( (std::find(adjnt_2bdy.begin(), adjnt_2bdy.end(), vtemp) == adjnt_2bdy.end()) ){
                                         uniqe_2bdy.push_back(vtemp);
                                         adjnt_2bdy.push_back(vadjt);
-                                        add_term(1.0, temp2bbbb);
+                                        add_pool_operator(1.0, temp2bbbb);
                                     }
                                 }
                             }
@@ -672,7 +1027,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                                     if( (std::find(adjnt_2bdy.begin(), adjnt_2bdy.end(), vtemp) == adjnt_2bdy.end()) ){
                                         uniqe_2bdy.push_back(vtemp);
                                         adjnt_2bdy.push_back(vadjt);
-                                        add_term(1.0, temp2abab);
+                                        add_pool_operator(1.0, temp2abab);
                                     }
                                 }
                             }
@@ -690,7 +1045,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                                     if( (std::find(adjnt_2bdy.begin(), adjnt_2bdy.end(), vtemp) == adjnt_2bdy.end()) ){
                                         uniqe_2bdy.push_back(vtemp);
                                         adjnt_2bdy.push_back(vadjt);
-                                        add_term(1.0, temp2baba);
+                                        add_pool_operator(1.0, temp2baba);
                                     }
                                 }
                             }
@@ -708,7 +1063,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                                     if( (std::find(adjnt_2bdy.begin(), adjnt_2bdy.end(), vtemp) == adjnt_2bdy.end()) ){
                                         uniqe_2bdy.push_back(vtemp);
                                         adjnt_2bdy.push_back(vadjt);
-                                        add_term(1.0, temp2abba);
+                                        add_pool_operator(1.0, temp2abba);
                                     }
                                 }
 
@@ -727,7 +1082,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                                     if( (std::find(adjnt_2bdy.begin(), adjnt_2bdy.end(), vtemp) == adjnt_2bdy.end()) ){
                                         uniqe_2bdy.push_back(vtemp);
                                         adjnt_2bdy.push_back(vadjt);
-                                        add_term(1.0, temp2baab);
+                                        add_pool_operator(1.0, temp2baab);
                                     }
                                 }
                             }
@@ -736,6 +1091,24 @@ void SQOpPool::fill_pool(std::string pool_type){
                 }
             }
         }
+    } else if(pool_type=="GSDx"){
+        SQOpPool ph_pool;
+        ph_pool.nocc_ = nocc_;
+        ph_pool.nvir_ = nvir_;
+        ph_pool.orb_irreps_to_int_ = orb_irreps_to_int_;
+        ph_pool.target_irrep_ = target_irrep_;
+        fill_gsd_particle_hole_terms(ph_pool, nocc_, nvir_);
+
+        SQOpPool gsd_pool;
+        gsd_pool.nocc_ = nocc_;
+        gsd_pool.nvir_ = nvir_;
+        gsd_pool.orb_irreps_to_int_ = orb_irreps_to_int_;
+        gsd_pool.target_irrep_ = target_irrep_;
+        gsd_pool.fill_pool("GSD");
+
+        std::set<std::string> seen;
+        append_unique_pool_terms(*this, ph_pool, seen);
+        append_unique_pool_terms(*this, gsd_pool, seen);
     } else if ( (pool_type=="S") || (pool_type=="SD") || (pool_type=="SDT") || (pool_type=="SDTQ") || (pool_type=="SDTQP") || (pool_type=="SDTQPH") || (pool_type=="All") ) {
 
         int max_nbody = 0;
@@ -779,7 +1152,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                     t_a.add_term(-1.0, {ia}, {aa});
                     t_a.simplify();
                     if (t_a.terms().size() > 0) {
-                        add_term(1.0, t_a);
+                        add_pool_operator(1.0, t_a);
                     }
                     
                     // Beta single: i_β -> a_β (parity: -1 * -1 = +1)
@@ -788,7 +1161,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                     t_b.add_term(-1.0, {ib}, {ab});
                     t_b.simplify();
                     if (t_b.terms().size() > 0) {
-                        add_term(1.0, t_b);
+                        add_pool_operator(1.0, t_b);
                     }
                 }
             }
@@ -822,7 +1195,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                                 t_aaaa.add_term(-1.0, {ja, ia}, {ba, aa});
                                 t_aaaa.simplify();
                                 if (t_aaaa.terms().size() > 0) {
-                                    add_term(1.0, t_aaaa);
+                                    add_pool_operator(1.0, t_aaaa);
                                 }
                             }
                             
@@ -834,7 +1207,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                                 t_bbbb.add_term(-1.0, {jb, ib}, {bb, ab});
                                 t_bbbb.simplify();
                                 if (t_bbbb.terms().size() > 0) {
-                                    add_term(1.0, t_bbbb);
+                                    add_pool_operator(1.0, t_bbbb);
                                 }
                             }
                             
@@ -846,7 +1219,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                                 t_abab.add_term(-1.0, {jb, ia}, {bb, aa});
                                 t_abab.simplify();
                                 if (t_abab.terms().size() > 0) {
-                                    add_term(1.0, t_abab);
+                                    add_pool_operator(1.0, t_abab);
                                 }
                             }
                             
@@ -859,7 +1232,32 @@ void SQOpPool::fill_pool(std::string pool_type){
                                 t_baba.add_term(-1.0, {ja, ib}, {ba, ab});
                                 t_baba.simplify();
                                 if (t_baba.terms().size() > 0) {
-                                    add_term(1.0, t_baba);
+                                    add_pool_operator(1.0, t_baba);
+                                }
+                            }
+
+                            // The following two cross mixed-spin cases are distinct
+                            // particle-hole doubles when both occupied and virtual
+                            // spatial indices differ.  They complete the six spin
+                            // patterns for closed-shell doubles:
+                            // aaaa, bbbb, abab, baba, abba, baab.
+                            if (i != j && a != b) {
+                                SQOperator t_abba;
+                                t_abba.add_term(+1.0, {aa, bb}, {ib, ja});
+                                t_abba.add_term(-1.0, {ja, ib}, {bb, aa});
+                                t_abba.simplify();
+                                if (t_abba.terms().size() > 0) {
+                                    add_pool_operator(1.0, t_abba);
+                                }
+                            }
+
+                            if (i != j && a != b) {
+                                SQOperator t_baab;
+                                t_baab.add_term(+1.0, {ab, ba}, {ia, jb});
+                                t_baab.add_term(-1.0, {jb, ia}, {ba, ab});
+                                t_baab.simplify();
+                                if (t_baab.terms().size() > 0) {
+                                    add_pool_operator(1.0, t_baab);
                                 }
                             }
                         }
@@ -869,10 +1267,21 @@ void SQOpPool::fill_pool(std::string pool_type){
         }
         
         // ============================================
-        // Triples and higher (3+ body excitations)
-        // Fall back to enumeration for these less common cases
+        // Triples/quadruples use a generic direct particle-hole builder.
+        // Quintuple and higher ranks still use the determinant fallback below.
         // ============================================
         if (max_nbody >= 3) {
+            add_particle_hole_rank_terms(*this, nocc_, nvir_, 3);
+        }
+
+        if (max_nbody >= 4) {
+            add_particle_hole_rank_terms(*this, nocc_, nvir_, 4);
+        }
+
+        // ============================================
+        // Pentuples and higher (5+ body excitations)
+        // ============================================
+        if (max_nbody >= 5) {
             int nqb = 2 * (nocc_ + nvir_);
             int nel = 2 * nocc_;
             int na_el = nocc_;
@@ -931,8 +1340,9 @@ void SQOpPool::fill_pool(std::string pool_type){
                 }
 
                 if (pn == nel && na_I == na_el && nb_I == nb_el) {
-                    // Only process triples and higher (singles/doubles already handled)
-                    if (nbody >= 3 && nbody <= max_nbody) {
+                    // Only process ranks 5 and higher here; ranks 1-4 were
+                    // already handled by direct occupied/virtual construction.
+                    if (nbody >= 5 && nbody <= max_nbody) {
                         int total_parity = 1;
                         for (const auto& z : parity) {
                             total_parity *= z;
@@ -945,7 +1355,7 @@ void SQOpPool::fill_pool(std::string pool_type){
                             std::vector<size_t> rholes(holes.rbegin(), holes.rend());
                             t_temp.add_term(-1.0, rholes, rparticles);
                             t_temp.simplify();
-                            add_term(1.0, t_temp);
+                            add_pool_operator(1.0, t_temp);
                         }
                     }
                 }
@@ -969,7 +1379,7 @@ void SQOpPool::fill_pool(std::string pool_type){
 
                 temp1.simplify();
 
-                add_term(1.0, temp1);
+                add_pool_operator(1.0, temp1);
             }
         }
 
@@ -1072,10 +1482,10 @@ void SQOpPool::fill_pool(std::string pool_type){
                         temp2b.mult_coeffs(std::sqrt(2.0/temp2b_norm));
 
                         if(temp2a.terms().size() > 0){
-                            add_term(1.0, temp2a);
+                            add_pool_operator(1.0, temp2a);
                         }
                         if(temp2b.terms().size() > 0){
-                            add_term(1.0, temp2b);
+                            add_pool_operator(1.0, temp2b);
                         }
                     }
                 }
@@ -1103,7 +1513,7 @@ void SQOpPool::fill_pool_kUpCCGSD(int kmax)
                     temp1a.add_term(-1.0, {ia}, {aa});
                     temp1a.simplify();
                     if(temp1a.terms().size() > 0){
-                        add_term(1.0, temp1a);
+                        add_pool_operator(1.0, temp1a);
                     }
                 }
 
@@ -1113,7 +1523,7 @@ void SQOpPool::fill_pool_kUpCCGSD(int kmax)
                     temp1b.add_term(-1.0, {ib}, {ab});
                     temp1b.simplify();
                     if(temp1b.terms().size() > 0){
-                        add_term(1.0, temp1b);
+                        add_pool_operator(1.0, temp1b);
                     }
                 }
             }
@@ -1141,13 +1551,36 @@ void SQOpPool::fill_pool_kUpCCGSD(int kmax)
                             if( (std::find(adjnt_2bdy.begin(), adjnt_2bdy.end(), vtemp) == adjnt_2bdy.end()) ){
                                 uniqe_2bdy.push_back(vtemp);
                                 adjnt_2bdy.push_back(vadjt);
-                                add_term(1.0, temp2abab);
+                                add_pool_operator(1.0, temp2abab);
                             }
                         }
                     }
                 }
             }
         }        
+    }
+}
+
+void SQOpPool::fill_pool_kUpCCGSDx(int kmax)
+{
+    for(int k=0; k < kmax; ++k){
+        SQOpPool ph_pool;
+        ph_pool.nocc_ = nocc_;
+        ph_pool.nvir_ = nvir_;
+        ph_pool.orb_irreps_to_int_ = orb_irreps_to_int_;
+        ph_pool.target_irrep_ = target_irrep_;
+        fill_kupccgsd_particle_hole_terms(ph_pool, nocc_, nvir_);
+
+        SQOpPool generalized_pool;
+        generalized_pool.nocc_ = nocc_;
+        generalized_pool.nvir_ = nvir_;
+        generalized_pool.orb_irreps_to_int_ = orb_irreps_to_int_;
+        generalized_pool.target_irrep_ = target_irrep_;
+        generalized_pool.fill_pool_kUpCCGSD(1);
+
+        std::set<std::string> seen;
+        append_unique_pool_terms(*this, ph_pool, seen);
+        append_unique_pool_terms(*this, generalized_pool, seen);
     }
 }
 
@@ -1352,6 +1785,31 @@ std::vector<int> SQOpPool::get_count_pauli_terms_ex_deex() const
     
     return counts;
 
+}
+
+int SQOpPool::count_cnot_for_jw_exponential(bool qubit_excitations, int trotter_number) const
+{
+    int total = 0;
+    for (size_t i = 0; i < terms_.size(); ++i) {
+        total += count_cnot_for_term_jw_exponential(i, qubit_excitations, trotter_number);
+    }
+    return total;
+}
+
+int SQOpPool::count_cnot_for_term_jw_exponential(
+    size_t term_index,
+    bool qubit_excitations,
+    int trotter_number) const
+{
+    if (term_index >= terms_.size()) {
+        throw std::out_of_range("SQOpPool term index is out of range.");
+    }
+    if (std::abs(terms_[term_index].first) <= 1.0e-12) {
+        return 0;
+    }
+    return terms_[term_index].second.count_cnot_for_jw_exponential(
+        qubit_excitations,
+        trotter_number);
 }
 
 /**
