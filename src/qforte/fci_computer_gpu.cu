@@ -3434,20 +3434,9 @@ void FCIComputerGPU::dot_individual_sqop_term_gpu(
     cuDoubleComplex cu_coeff = make_cuDoubleComplex(coeff.real(), coeff.imag());
 
     // Launch the fused dot kernel — no output tensor, accumulates into d_accum.
-    dot_individual_nbody1_wrapper(
-        cu_coeff,
-        thrust::raw_pointer_cast(psi.read_d_data().data()),
-        thrust::raw_pointer_cast(sigma.read_d_data().data()),
-        thrust::raw_pointer_cast(sourcea_gpu_.data()),
-        thrust::raw_pointer_cast(targeta_gpu_.data()),
-        thrust::raw_pointer_cast(paritya_gpu_.data()),
-        thrust::raw_pointer_cast(sourceb_gpu_.data()),
-        thrust::raw_pointer_cast(targetb_gpu_.data()),
-        thrust::raw_pointer_cast(parityb_gpu_.data()),
-        nbeta_strs_,
-        counta,
-        countb,
-        d_accum);
+    ///TODO: Replace with Easy/Hard N-body kernel selection based on term size
+    // Error out for now
+    throw std::runtime_error("dot_individual_sqop_term_gpu not yet implemented.");
 }
 
 /// Compute <sigma | sqop | (*this)> without modifying either state vector.
@@ -3523,20 +3512,8 @@ void FCIComputerGPU::dot_individual_sqop_term_gpu_real(
         sourceb_gpu_, targetb_gpu_, parityb_gpu_real_);
     if (countb == 0) return;
 
-    dot_individual_nbody1_real_wrapper(
-        coeff,
-        thrust::raw_pointer_cast(psi.read_d_re_data().data()),
-        thrust::raw_pointer_cast(sigma.read_d_re_data().data()),
-        thrust::raw_pointer_cast(sourcea_gpu_.data()),
-        thrust::raw_pointer_cast(targeta_gpu_.data()),
-        thrust::raw_pointer_cast(paritya_gpu_real_.data()),
-        thrust::raw_pointer_cast(sourceb_gpu_.data()),
-        thrust::raw_pointer_cast(targetb_gpu_.data()),
-        thrust::raw_pointer_cast(parityb_gpu_real_.data()),
-        nbeta_strs_,
-        counta,
-        countb,
-        d_accum);
+    // Replace with Easy/Hard N-body kernel selection based on term size.  Error out for now.
+    throw std::runtime_error("dot_individual_sqop_term_gpu_real not yet implemented.");
 }
 
 double FCIComputerGPU::dot_sqop_gpu_real(FCIComputerGPU& sigma, const SQOperator& sqop)
@@ -3585,36 +3562,82 @@ double FCIComputerGPU::dot_sqop_from_pool_gpu_real(
     const double* psi_data   = thrust::raw_pointer_cast(C_.read_d_re_data().data());
     const double* sigma_data = thrust::raw_pointer_cast(sigma.C_.read_d_re_data().data());
 
+    // ----- maybe don't need to check these -----
+
     // dag term (excitation): source=undag, target=dag, parity=undag
     int counta_dag = static_cast<int>(pool.terms_scale_indsa_undag_gpu()[mu].size());
     int countb_dag = static_cast<int>(pool.terms_scale_indsb_undag_gpu()[mu].size());
-    if (counta_dag > 0 && countb_dag > 0) {
-        dot_individual_nbody1_real_wrapper(
-            pool.dot_coeff_dag_re()[mu],
-            psi_data, sigma_data,
-            thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_paritya_undag_re_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_parityb_undag_re_gpu()[mu].data()),
-            nbeta_strs_, counta_dag, countb_dag, d_accum);
-    }
 
     // undag term (de-excitation): source=dag, target=undag, parity=dag
     int counta_undag = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
     int countb_undag = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
-    if (counta_undag > 0 && countb_undag > 0) {
-        dot_individual_nbody1_real_wrapper(
-            pool.dot_coeff_undag_re()[mu],
-            psi_data, sigma_data,
+
+    bool dag_valid   = (counta_dag > 0 && countb_dag > 0);
+    bool undag_valid = (counta_undag > 0 && countb_undag > 0);
+
+    // --------------------------------------------
+
+    DotKernelKind kind = pool.dot_kernel_kinds()[mu];
+
+    if (kind == DotKernelKind::Easy) {
+        const int counta_easy = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
+        const int countb_easy = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
+
+        const double coeff_easy = pool.dot_coeff_dag_re()[mu] + pool.dot_coeff_undag_re()[mu];
+
+        dot_easy_number_real_wrapper(
+            coeff_easy,
+            psi_data,
+            sigma_data,
             thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_paritya_dag_re_gpu()[mu].data()),
+            counta_easy,
             thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_parityb_dag_re_gpu()[mu].data()),
-            nbeta_strs_, counta_undag, countb_undag, d_accum);
+            countb_easy,
+            nbeta_strs_,
+            d_accum);
+    } else {
+        if (kind == DotKernelKind::AlphaOnly) {
+            // Alpha-only: beta is identity, run coalesced row-traversal kernel
+            // source_a=undag, target_a=dag; parity_uv=parity_undag, parity_vu=parity_dag
+            dot_alpha_only_dual_real_wrapper(
+                psi_data, sigma_data,
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_undag_re_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_dag_re_gpu()[mu].data()),
+                counta_dag, nbeta_strs_,
+                pool.dot_coeff_dag_re()[mu],
+                pool.dot_coeff_undag_re()[mu],
+                d_accum);
+        } else if (kind == DotKernelKind::BetaOnly) {
+            // Beta-only: alpha is identity, run beta-fast row-major kernel
+            dot_beta_only_dual_real_wrapper(
+                psi_data, sigma_data,
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_undag_re_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_dag_re_gpu()[mu].data()),
+                countb_dag, nalfa_strs_, nbeta_strs_,
+                pool.dot_coeff_dag_re()[mu],
+                pool.dot_coeff_undag_re()[mu],
+                d_accum);
+        } else {
+            // Mixed: general tiled kernel with beta in fast dimension
+            dot_mixed_dual_real_wrapper(
+                psi_data, sigma_data,
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_undag_re_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_dag_re_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_undag_re_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_dag_re_gpu()[mu].data()),
+                counta_dag, countb_dag, nbeta_strs_,
+                pool.dot_coeff_dag_re()[mu],
+                pool.dot_coeff_undag_re()[mu],
+                d_accum);
+        }
     }
 
     cudaError_t err = cudaDeviceSynchronize();
@@ -3645,36 +3668,80 @@ std::complex<double> FCIComputerGPU::dot_sqop_from_pool_gpu(
     const cuDoubleComplex* psi_data   = thrust::raw_pointer_cast(C_.read_d_data().data());
     const cuDoubleComplex* sigma_data = thrust::raw_pointer_cast(sigma.C_.read_d_data().data());
 
+    // ----- maybe don't need to check these -----
+
     // dag term (excitation): source=undag, target=dag, parity=undag
     int counta_dag = static_cast<int>(pool.terms_scale_indsa_undag_gpu()[mu].size());
     int countb_dag = static_cast<int>(pool.terms_scale_indsb_undag_gpu()[mu].size());
-    if (counta_dag > 0 && countb_dag > 0) {
-        dot_individual_nbody1_wrapper(
-            pool.dot_coeff_dag()[mu],
-            psi_data, sigma_data,
-            thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_paritya_undag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_parityb_undag_gpu()[mu].data()),
-            nbeta_strs_, counta_dag, countb_dag, d_accum);
-    }
 
     // undag term (de-excitation): source=dag, target=undag, parity=dag
     int counta_undag = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
     int countb_undag = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
-    if (counta_undag > 0 && countb_undag > 0) {
-        dot_individual_nbody1_wrapper(
-            pool.dot_coeff_undag()[mu],
-            psi_data, sigma_data,
+
+    bool dag_valid   = (counta_dag > 0 && countb_dag > 0);
+    bool undag_valid = (counta_undag > 0 && countb_undag > 0);
+
+    // --------------------------------------------
+
+    DotKernelKind kind = pool.dot_kernel_kinds()[mu];
+
+    if (kind == DotKernelKind::Easy) {
+        const int counta_easy = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
+        const int countb_easy = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
+
+        const cuDoubleComplex c0 = pool.dot_coeff_dag()[mu];
+        const cuDoubleComplex c1 = pool.dot_coeff_undag()[mu];
+        const cuDoubleComplex coeff_easy = make_cuDoubleComplex(c0.x + c1.x, c0.y + c1.y);
+
+        dot_easy_number_wrapper(
+            coeff_easy,
+            psi_data,
+            sigma_data,
             thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_paritya_dag_gpu()[mu].data()),
+            counta_easy,
             thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
-            thrust::raw_pointer_cast(pool.terms_parityb_dag_gpu()[mu].data()),
-            nbeta_strs_, counta_undag, countb_undag, d_accum);
+            countb_easy,
+            nbeta_strs_,
+            d_accum);
+    } else {
+        if (kind == DotKernelKind::AlphaOnly) {
+            dot_alpha_only_dual_wrapper(
+                psi_data, sigma_data,
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_dag_gpu()[mu].data()),
+                counta_dag, nbeta_strs_,
+                pool.dot_coeff_dag()[mu],
+                pool.dot_coeff_undag()[mu],
+                d_accum);
+        } else if (kind == DotKernelKind::BetaOnly) {
+            dot_beta_only_dual_wrapper(
+                psi_data, sigma_data,
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_dag_gpu()[mu].data()),
+                countb_dag, nalfa_strs_, nbeta_strs_,
+                pool.dot_coeff_dag()[mu],
+                pool.dot_coeff_undag()[mu],
+                d_accum);
+        } else {
+            dot_mixed_dual_wrapper(
+                psi_data, sigma_data,
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsa_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_paritya_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_scale_indsb_dag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_undag_gpu()[mu].data()),
+                thrust::raw_pointer_cast(pool.terms_parityb_dag_gpu()[mu].data()),
+                counta_dag, countb_dag, nbeta_strs_,
+                pool.dot_coeff_dag()[mu],
+                pool.dot_coeff_undag()[mu],
+                d_accum);
+        }
     }
 
     cudaError_t err = cudaDeviceSynchronize();
@@ -3901,6 +3968,8 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
                 pool.terms_parityb_undag_re_gpu().emplace_back();
             }
 
+            pool.dot_kernel_kinds().push_back(DotKernelKind::Easy);
+
         } else if (crea.size() == anna.size() && creb.size() == annb.size()) {
 
             // HARD BRANCH
@@ -4043,6 +4112,15 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
                     pool.terms_parityb_undag_re_gpu());
             }
 
+            // Classify kernel kind for specialized dot dispatch
+            if (creb.empty() && annb.empty()) {
+                pool.dot_kernel_kinds().push_back(DotKernelKind::AlphaOnly);
+            } else if (crea.empty() && anna.empty()) {
+                pool.dot_kernel_kinds().push_back(DotKernelKind::BetaOnly);
+            } else {
+                pool.dot_kernel_kinds().push_back(DotKernelKind::Mixed);
+            }
+
         } else {
             throw std::invalid_argument("Evolved state must remain in spin and particle-number symmetry sector");
         }
@@ -4055,13 +4133,21 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
         //                             parity = parity_dag    (built with make_mapping_each_pre(anna,crea))
         // Only the parity_sort * inner_coeff scalars are genuinely new per operator.
         {
+            const bool is_easy_term = (crea == anna && creb == annb);
+
+            const int n_a = static_cast<int>(anna.size());
+            const int n_b = static_cast<int>(annb.size());
+
+            const int easy_power = n_a * (n_a - 1) / 2 + n_b * (n_b - 1) / 2;
+            const double easy_number_sign = (is_easy_term && (easy_power & 1)) ? -1.0 : 1.0;
+
             // Term 0 (dag / excitation)
             auto term0 = sqop.terms()[0];
             std::vector<size_t> ops0a(std::get<1>(term0));
             std::vector<size_t> ops0b(std::get<2>(term0));
             ops0a.insert(ops0a.end(), ops0b.begin(), ops0b.end());
             int nswaps0 = parity_sort(ops0a);
-            std::complex<double> c0 = std::pow(-1, nswaps0) * std::get<0>(term0);
+            std::complex<double> c0 = easy_number_sign * std::pow(-1, nswaps0) * std::get<0>(term0);
 
             // Term 1 (undag / de-excitation)
             auto term1 = sqop.terms()[1];
@@ -4069,7 +4155,7 @@ void FCIComputerGPU::populate_index_arrays_for_pool_evo(SQOpPoolGPU& pool){
             std::vector<size_t> ops1b(std::get<2>(term1));
             ops1a.insert(ops1a.end(), ops1b.begin(), ops1b.end());
             int nswaps1 = parity_sort(ops1a);
-            std::complex<double> c1 = std::pow(-1, nswaps1) * std::get<0>(term1);
+            std::complex<double> c1 = easy_number_sign * std::pow(-1, nswaps1) * std::get<0>(term1);
 
             if (need_complex) {
                 pool.dot_coeff_dag().push_back(make_cuDoubleComplex(c0.real(), c0.imag()));

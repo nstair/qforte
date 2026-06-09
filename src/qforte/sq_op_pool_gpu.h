@@ -23,6 +23,14 @@
 
 // #include "qforte-def.h"
 
+/// Classification of pool operator terms for specialized dot kernel dispatch.
+enum class DotKernelKind : int {
+    AlphaOnly = 0,   ///< Only alpha spin excitations (beta=identity)
+    BetaOnly  = 1,   ///< Only beta spin excitations (alpha=identity)
+    Mixed     = 2,   ///< Both alpha and beta excitations
+    Easy      = 3    ///< Number-operator-like (no excitation, only scaling)
+};
+
 class SQOperator;
 class QubitOperator;
 class QubitOpPool;
@@ -128,6 +136,10 @@ class SQOpPoolGPU {
     const std::vector<double>& dot_coeff_dag_re() const { return dot_coeff_dag_re_; }
     std::vector<double>& dot_coeff_undag_re() { return dot_coeff_undag_re_; }
     const std::vector<double>& dot_coeff_undag_re() const { return dot_coeff_undag_re_; }
+
+    /// Per-operator kernel classification for specialized dot dispatch
+    std::vector<DotKernelKind>& dot_kernel_kinds() { return dot_kernel_kinds_; }
+    const std::vector<DotKernelKind>& dot_kernel_kinds() const { return dot_kernel_kinds_; }
 
     // Read-only tuple view of the mu-th entries:
     // (inner_coeffs_[mu], outer_coeffs_[mu],
@@ -303,6 +315,9 @@ class SQOpPoolGPU {
     std::vector<cuDoubleComplex> dot_coeff_undag_;  ///< parity_sort(anna+crea)*c_mu for term 1
     std::vector<double> dot_coeff_dag_re_;          ///< real-path equivalent
     std::vector<double> dot_coeff_undag_re_;        ///< real-path equivalent
+
+    /// Per-operator kernel classification for specialized dot dispatch
+    std::vector<DotKernelKind> dot_kernel_kinds_;
 
     /// How to store parity data for kernels using this pool: "complex" or "real"
     std::string data_type_ = "complex";
