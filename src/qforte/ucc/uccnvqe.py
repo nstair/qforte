@@ -155,6 +155,8 @@ class UCCNVQE(UCCVQE):
         )
         self._batched_opt_history = []
 
+        self.validate_vqe_optimizer_configuration()
+
         self._tops = []
         self._tamps = []
         self._conmutator_pool = []
@@ -190,22 +192,6 @@ class UCCNVQE(UCCVQE):
         self._timer.reset()
         self.apply_pool_ordering()
         self._timer.record("apply_pool_ordering")
-
-        if self._computer_type == 'fci_gpu':
-            optimizer_name = self._optimizer.lower()
-            if optimizer_name in {"lbfgs_qf", "bfgs_qf"}:
-                raise NotImplementedError(
-                    f'optimizer="{self._optimizer}" is not yet implemented for '
-                    'computer_type="fci_gpu". The in-house qf optimizer path '
-                    "needs FCIComputerGPU derivative support and will be added "
-                    "in a future PR."
-                )
-            if getattr(self, "_batched_opt_type", "none") != "none":
-                raise NotImplementedError(
-                    'batched_opt_type is not yet implemented for computer_type="fci_gpu". '
-                    "The batched optimizer path needs reduced-space FCIComputerGPU "
-                    "energy/gradient support and will be added in a future PR."
-                )
 
         # Initialize reusable pool/computer state before optimizer callbacks.
         if self._computer_type == 'fci_gpu':
@@ -382,12 +368,6 @@ class UCCNVQE(UCCVQE):
     def _validate_batched_optimization_options(self):
         """Validate opt-in batched optimization settings."""
         optimizer_name = self._optimizer.lower()
-        if self._computer_type == "fci_gpu":
-            raise NotImplementedError(
-                'batched_opt_type is not yet implemented for computer_type="fci_gpu". '
-                "The batched optimizer path needs reduced-space FCIComputerGPU "
-                "energy/gradient support and will be added in a future PR."
-            )
         supported = {"bfgs_qf", "lbfgs_qf", "bfgs", "l-bfgs-b"}
         if optimizer_name not in supported:
             raise ValueError(
@@ -617,28 +597,36 @@ class UCCNVQE(UCCVQE):
         def grad_batch(z, return_energy=False):
             x_trial = embed(z)
             if return_energy:
+                saved_energy = self.energy_feval
+                saved_grad = self.gradient_ary_feval
+                self.energy_feval = orig_energy
+                self.gradient_ary_feval = orig_grad
                 try:
-                    E_full, g_full = self._with_full_batch_state(
-                        full_tops,
-                        x_trial,
-                        lambda arg: orig_grad(arg, return_energy=True),
-                        x_trial,
-                    )
-                except TypeError as exc:
-                    if "return_energy" not in str(exc):
-                        raise
-                    E_full = self._with_full_batch_state(
-                        full_tops,
-                        x_trial,
-                        orig_energy,
-                        x_trial,
-                    )
-                    g_full = self._with_full_batch_state(
-                        full_tops,
-                        x_trial,
-                        orig_grad,
-                        x_trial,
-                    )
+                    try:
+                        E_full, g_full = self._with_full_batch_state(
+                            full_tops,
+                            x_trial,
+                            lambda arg: orig_grad(arg, return_energy=True),
+                            x_trial,
+                        )
+                    except TypeError as exc:
+                        if "return_energy" not in str(exc):
+                            raise
+                        E_full = self._with_full_batch_state(
+                            full_tops,
+                            x_trial,
+                            orig_energy,
+                            x_trial,
+                        )
+                        g_full = self._with_full_batch_state(
+                            full_tops,
+                            x_trial,
+                            orig_grad,
+                            x_trial,
+                        )
+                finally:
+                    self.energy_feval = saved_energy
+                    self.gradient_ary_feval = saved_grad
                 return float(np.real(E_full)), np.asarray(g_full, dtype=float)[active_indices]
 
             g_full = self._with_full_batch_state(full_tops, x_trial, orig_grad, x_trial)
@@ -939,6 +927,7 @@ class UCCNVQE(UCCVQE):
         return res
 
     def solve(self):
+        self.validate_vqe_optimizer_configuration()
         optimizer_name = self._optimizer.lower()
         if getattr(self, "_batched_opt_type", "none") != "none":
             if optimizer_name == "jacobi":

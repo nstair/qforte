@@ -631,42 +631,13 @@ PYBIND11_MODULE(qforte, m) {
         .def("apply_sqop_pool_cpu", &FCIComputerGPU::apply_sqop_pool_cpu)
         .def("get_exp_val_cpu", &FCIComputerGPU::get_exp_val_cpu)
         .def("get_exp_val", &FCIComputerGPU::get_exp_val)
-        .def("get_spin_squared_expectation", [](const FCIComputerGPU&) {
-            PyErr_SetString(
-                PyExc_NotImplementedError,
-                "FCIComputerGPU.get_spin_squared_expectation is not yet implemented. "
-                "Use FCIComputer for now; GPU support will be added in a future PR.");
-            throw py::error_already_set();
-        })
-        .def("get_spin_squared", [](const FCIComputerGPU&) {
-            PyErr_SetString(
-                PyExc_NotImplementedError,
-                "FCIComputerGPU.get_spin_squared is not yet implemented. "
-                "Use FCIComputer for now; GPU support will be added in a future PR.");
-            throw py::error_already_set();
-        })
-        .def("get_natural_orbital_occupation_numbers", [](const FCIComputerGPU&) {
-            PyErr_SetString(
-                PyExc_NotImplementedError,
-                "FCIComputerGPU.get_natural_orbital_occupation_numbers is not yet "
-                "implemented. Use FCIComputer for now; GPU support will be added "
-                "in a future PR.");
-            throw py::error_already_set();
-        })
-        .def("get_noons", [](const FCIComputerGPU&) {
-            PyErr_SetString(
-                PyExc_NotImplementedError,
-                "FCIComputerGPU.get_noons is not yet implemented. Use FCIComputer "
-                "for now; GPU support will be added in a future PR.");
-            throw py::error_already_set();
-        })
-        .def("get_NOONs", [](const FCIComputerGPU&) {
-            PyErr_SetString(
-                PyExc_NotImplementedError,
-                "FCIComputerGPU.get_NOONs is not yet implemented. Use FCIComputer "
-                "for now; GPU support will be added in a future PR.");
-            throw py::error_already_set();
-        })
+        .def("get_spin_squared_expectation", &FCIComputerGPU::get_spin_squared_expectation)
+        .def("get_spin_squared", &FCIComputerGPU::get_spin_squared_expectation)
+        .def(
+            "get_natural_orbital_occupation_numbers",
+            &FCIComputerGPU::get_natural_orbital_occupation_numbers)
+        .def("get_noons", &FCIComputerGPU::get_natural_orbital_occupation_numbers)
+        .def("get_NOONs", &FCIComputerGPU::get_natural_orbital_occupation_numbers)
         .def("get_exp_val_tensor_gpu", &FCIComputerGPU::get_exp_val_tensor_gpu)
         .def("evolve_op_taylor_cpu", &FCIComputerGPU::evolve_op_taylor_cpu)
         .def("apply_sqop_evolution_gpu", &FCIComputerGPU::apply_sqop_evolution_gpu, 

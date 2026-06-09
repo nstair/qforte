@@ -66,19 +66,7 @@ CASE_MATRIX = [
         "init_amps": "zero",
     },
     {
-        "label": "c1_gsd_lbfgs_grad_order_batch",
-        "symmetry": "c1",
-        "pool_type": "GSD",
-        "optimizer": "lbfgs_qf",
-        "init_amps": "zero",
-        "primary_pool_order": "gradients",
-        "secondary_pool_order": "shell",
-        "general_ex_pool_order": "particle_hole_first",
-        "batched_opt_type": "half_sweep",
-        "hdiag_method": "analytic",
-    },
-    {
-        "label": "c1_1up_bfgs_mp2_batch_hdiag_analytic",
+        "label": "c1_1up_bfgs_mp2_batch_no_hdiag",
         "symmetry": "c1",
         "pool_type": "1-UpCCGSD",
         "optimizer": "bfgs_qf",
@@ -87,27 +75,7 @@ CASE_MATRIX = [
         "secondary_pool_order": "shell",
         "general_ex_pool_order": "particle_hole_first",
         "batched_opt_type": "half_sweep_then_all",
-        "hdiag_method": "analytic",
-    },
-    {
-        "label": "c1_2up_lbfgs_zero_batch",
-        "symmetry": "c1",
-        "pool_type": "2-UpCCGSD",
-        "optimizer": "lbfgs_qf",
-        "init_amps": "zero",
-        "secondary_pool_order": "shell",
-        "general_ex_pool_order": "particle_hole_first",
-        "batched_opt_type": "half_sweep",
-        "hdiag_method": "analytic",
-    },
-    {
-        "label": "c2v_sd_lbfgs_zero_hdiag_analytic",
-        "symmetry": "c2v",
-        "pool_type": "SD",
-        "optimizer": "lbfgs_qf",
-        "init_amps": "zero",
-        "secondary_pool_order": "shell",
-        "hdiag_method": "analytic",
+        "use_hessian_diag": False,
     },
     {
         "label": "c2v_sd_jacobi_mp2",
@@ -118,7 +86,7 @@ CASE_MATRIX = [
         "primary_pool_order": "mp2_amps",
     },
     {
-        "label": "c2v_gsd_bfgs_batch_hdiag_analytic",
+        "label": "c2v_gsd_bfgs_batch_no_hdiag",
         "symmetry": "c2v",
         "pool_type": "GSD",
         "optimizer": "bfgs_qf",
@@ -126,27 +94,7 @@ CASE_MATRIX = [
         "secondary_pool_order": "shell",
         "general_ex_pool_order": "particle_hole_first",
         "batched_opt_type": "half_sweep_then_all",
-        "hdiag_method": "analytic",
-    },
-    {
-        "label": "c2v_1up_lbfgs_mp2_batch",
-        "symmetry": "c2v",
-        "pool_type": "1-UpCCGSD",
-        "optimizer": "lbfgs_qf",
-        "init_amps": "mp2",
-        "primary_pool_order": "mp2_amps",
-        "secondary_pool_order": "shell",
-        "general_ex_pool_order": "particle_hole_first",
-        "batched_opt_type": "half_sweep",
-        "hdiag_method": "analytic",
-    },
-    {
-        "label": "c2v_2up_jacobi_zero",
-        "symmetry": "c2v",
-        "pool_type": "2-UpCCGSD",
-        "optimizer": "jacobi",
-        "init_amps": "zero",
-        "general_ex_pool_order": "particle_hole_first",
+        "use_hessian_diag": False,
     },
 ]
 
@@ -181,10 +129,14 @@ def build_hf(symmetry: str):
 def qf_optimizer_options(case: dict[str, Any]) -> dict[str, Any]:
     optimizer = case["optimizer"].lower()
     hdiag_method = case.get("hdiag_method")
-    use_hdiag = hdiag_method is not None and optimizer in {"bfgs_qf", "lbfgs_qf"}
+    explicit_use_hdiag = case.get("use_hessian_diag")
+    if explicit_use_hdiag is None:
+        use_hdiag = hdiag_method is not None and optimizer in {"bfgs_qf", "lbfgs_qf"}
+    else:
+        use_hdiag = bool(explicit_use_hdiag) and optimizer in {"bfgs_qf", "lbfgs_qf"}
 
     if optimizer == "bfgs_qf":
-        return {
+        options = {
             "bfgs_qf_maxiter": MAXITER,
             "bfgs_qf_max_ls": 10,
             "bfgs_qf_alpha0": 1.0,
@@ -192,30 +144,42 @@ def qf_optimizer_options(case: dict[str, Any]) -> dict[str, Any]:
             "bfgs_qf_reset_on_bad_curvature": True,
             "bfgs_qf_reset_on_nondescent": True,
             "bfgs_qf_use_hessian_diag": use_hdiag,
-            "bfgs_qf_hdiag_method": hdiag_method or "analytic",
-            "bfgs_qf_hdiag_start": 1,
-            "bfgs_qf_hdiag_stop": 1,
-            "bfgs_qf_hdiag_mode": "abs",
-            "bfgs_qf_hdiag_floor": 1.0e-3,
             "bfgs_qf_print_aux": False,
             "bfgs_qf_use_gradient_energy": True,
         }
+        if use_hdiag:
+            options.update(
+                {
+                    "bfgs_qf_hdiag_method": hdiag_method or "analytic",
+                    "bfgs_qf_hdiag_start": 1,
+                    "bfgs_qf_hdiag_stop": 1,
+                    "bfgs_qf_hdiag_mode": "abs",
+                    "bfgs_qf_hdiag_floor": 1.0e-3,
+                }
+            )
+        return options
 
     if optimizer == "lbfgs_qf":
-        return {
+        options = {
             "lbfgs_qf_memory": 5,
             "lbfgs_qf_max_ls": 10,
             "lbfgs_qf_alpha0": 1.0,
             "lbfgs_qf_max_step_norm": 0.5,
             "lbfgs_qf_use_hessian_diag": use_hdiag,
-            "lbfgs_qf_hdiag_method": hdiag_method or "analytic",
-            "lbfgs_qf_hdiag_start": 1,
-            "lbfgs_qf_hdiag_stop": 1,
-            "lbfgs_qf_hdiag_mode": "abs",
-            "lbfgs_qf_hdiag_floor": 1.0e-3,
             "lbfgs_qf_print_aux": False,
             "lbfgs_qf_use_gradient_energy": True,
         }
+        if use_hdiag:
+            options.update(
+                {
+                    "lbfgs_qf_hdiag_method": hdiag_method or "analytic",
+                    "lbfgs_qf_hdiag_start": 1,
+                    "lbfgs_qf_hdiag_stop": 1,
+                    "lbfgs_qf_hdiag_mode": "abs",
+                    "lbfgs_qf_hdiag_floor": 1.0e-3,
+                }
+            )
+        return options
 
     return {}
 

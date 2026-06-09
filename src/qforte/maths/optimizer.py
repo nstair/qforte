@@ -1564,13 +1564,6 @@ def _qf_gradient_optimizer_checks(self, optimizer_name):
             'classes UCCNVQE and ADAPTVQE only. UCCNPQE/SPQE are residual-based '
             'and do not yet provide the required energy-gradient objective.'
         )
-    if getattr(self, "_computer_type", None) == "fci_gpu":
-        raise NotImplementedError(
-            f'optimizer="{optimizer_name}" is not yet implemented for '
-            'computer_type="fci_gpu". The in-house qf optimizer path currently '
-            "depends on CPU FCIComputer derivative/diagnostic helpers; matching "
-            "FCIComputerGPU support will be added in a future PR."
-        )
     if hasattr(self, '_use_analytic_grad') and not self._use_analytic_grad:
         raise ValueError(f'optimizer="{optimizer_name}" requires use_analytic_grad=True.')
     if not hasattr(self, 'gradient_ary_feval'):

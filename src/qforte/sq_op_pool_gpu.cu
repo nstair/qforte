@@ -15,14 +15,17 @@
 #include <sstream>
 
 namespace {
-    std::string sq_operator_signature(SQOperator sq_op) {
-        sq_op.simplify();
+    double clean_signature_value(double value) {
+        return (std::abs(value) < 1.0e-14) ? 0.0 : value;
+    }
 
+    std::string signed_sq_operator_signature(const SQOperator& sq_op, double sign) {
         std::ostringstream oss;
         oss << std::setprecision(17);
         for (const auto& term : sq_op.terms()) {
             const auto& coeff = std::get<0>(term);
-            oss << coeff.real() << "," << coeff.imag() << ":";
+            oss << clean_signature_value(sign * coeff.real()) << ","
+                << clean_signature_value(sign * coeff.imag()) << ":";
             for (const auto idx : std::get<1>(term)) {
                 oss << idx << ",";
             }
@@ -33,6 +36,18 @@ namespace {
             oss << ";";
         }
         return oss.str();
+    }
+
+    std::string sq_operator_signature(SQOperator sq_op) {
+        sq_op.simplify();
+
+        // Match the CPU SQOpPool canonicalization so compatibility helpers
+        // like GSDx and k-UpCCGSDx reorder operators without changing the
+        // generated span when a helper emits the same generator with a global
+        // sign flip.
+        const std::string positive = signed_sq_operator_signature(sq_op, +1.0);
+        const std::string negative = signed_sq_operator_signature(sq_op, -1.0);
+        return std::min(positive, negative);
     }
 
     template <typename PoolType>

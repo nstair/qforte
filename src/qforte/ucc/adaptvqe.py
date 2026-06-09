@@ -101,6 +101,8 @@ class ADAPTVQE(UCCVQE):
         self._use_cumulative_thresh = use_cumulative_thresh
         self._add_equiv_ops = add_equiv_ops
 
+        self.validate_vqe_optimizer_configuration()
+
         self._results = []
         self._energies = []
         self._grad_norms = []
@@ -304,6 +306,7 @@ class ADAPTVQE(UCCVQE):
 
     # Define VQE abstract methods.
     def solve(self):
+        self.validate_vqe_optimizer_configuration()
         optimizer_name = self._optimizer.lower()
         if optimizer_name == "jacobi":
             self.build_orb_energies()

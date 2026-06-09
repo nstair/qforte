@@ -278,17 +278,11 @@ class UCCVQE(VQE, UCC):
             self._fci_timers['apply_sqop'] += self._fci_time.time() - t0
 
     def build_final_fci_state(self, params=None):
-        """Build an FCIComputer holding the current final UCC state.
+        """Build an FCIComputer or FCIComputerGPU holding the current final UCC state.
 
         This is used for final-state diagnostics such as <S^2> and NOONs.  It mirrors the
         FCI/tUCC state construction used in the analytical-gradient routines.
         """
-        if getattr(self, "_computer_type", None) == "fci_gpu":
-            raise NotImplementedError(
-                "Final-state <S^2>/NOON diagnostics are not yet implemented for "
-                'computer_type="fci_gpu". These diagnostics need FCIComputerGPU '
-                "implementations and will be added in a future PR."
-            )
         if not getattr(self, "_ref_from_hf", True):
             raise ValueError(
                 "Final-state FCI diagnostics currently require an HF reference state."
@@ -296,6 +290,35 @@ class UCCVQE(VQE, UCC):
 
         if params is None:
             params = self._tamps
+
+        if getattr(self, "_computer_type", None) == "fci_gpu":
+            if hasattr(self, "_reusable_pool_gpu") and hasattr(self, "_reusable_qc_psi"):
+                complex_params = [complex(p, 0.0) for p in params]
+                self._reusable_pool_gpu.update_evolution_coeffs(complex_params)
+
+                qc = self._reusable_qc_psi
+                qc.hartree_fock_gpu()
+                qc.evolve_pool_trotter_basic_gpu(
+                    self._reusable_pool_gpu,
+                    antiherm=True,
+                    adjoint=False,
+                )
+                return qc
+
+            vqc_ops = qf.SQOpPoolGPU(data_type=self.data_type)
+            for tamp, top in zip(params, self._tops):
+                vqc_ops.add(tamp, self._pool_obj[top][1])
+
+            qc = qf.FCIComputerGPU(
+                self._nel,
+                self._2_spin,
+                self._norb,
+                on_gpu=True,
+                data_type=self.data_type,
+            )
+            qc.hartree_fock_gpu()
+            qc.evolve_pool_trotter_basic_gpu(vqc_ops, antiherm=True, adjoint=False)
+            return qc
 
         vqc_ops = qf.SQOpPool()
         for tamp, top in zip(params, self._tops):

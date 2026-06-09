@@ -30,6 +30,84 @@
 
 namespace {
 
+std::vector<double> symmetric_jacobi_eigenvalues_gpu(
+    std::vector<std::vector<double>> mat)
+{
+    const size_t n = mat.size();
+    if (n == 0) {
+        return {};
+    }
+    if (n == 1) {
+        return {mat[0][0]};
+    }
+
+    const size_t max_iter = std::max<size_t>(100, 100 * n * n);
+    const double tol = 1.0e-12;
+
+    for (size_t iter = 0; iter < max_iter; iter++) {
+        size_t p = 0;
+        size_t q = 1;
+        double max_offdiag = 0.0;
+
+        for (size_t i = 0; i < n; i++) {
+            for (size_t j = i + 1; j < n; j++) {
+                const double val = std::abs(mat[i][j]);
+                if (val > max_offdiag) {
+                    max_offdiag = val;
+                    p = i;
+                    q = j;
+                }
+            }
+        }
+
+        if (max_offdiag < tol) {
+            break;
+        }
+
+        const double app = mat[p][p];
+        const double aqq = mat[q][q];
+        const double apq = mat[p][q];
+
+        const double tau = (aqq - app) / (2.0 * apq);
+        const double tau_sign = (tau >= 0.0) ? 1.0 : -1.0;
+        const double t = tau_sign / (std::abs(tau) + std::sqrt(1.0 + tau * tau));
+        const double c = 1.0 / std::sqrt(1.0 + t * t);
+        const double s = t * c;
+
+        for (size_t k = 0; k < n; k++) {
+            if (k == p || k == q) {
+                continue;
+            }
+
+            const double akp = mat[k][p];
+            const double akq = mat[k][q];
+            mat[k][p] = c * akp - s * akq;
+            mat[p][k] = mat[k][p];
+            mat[k][q] = s * akp + c * akq;
+            mat[q][k] = mat[k][q];
+        }
+
+        mat[p][p] = c * c * app - 2.0 * s * c * apq + s * s * aqq;
+        mat[q][q] = s * s * app + 2.0 * s * c * apq + c * c * aqq;
+        mat[p][q] = 0.0;
+        mat[q][p] = 0.0;
+    }
+
+    std::vector<double> eigs(n);
+    for (size_t i = 0; i < n; i++) {
+        eigs[i] = mat[i][i];
+        if (eigs[i] < 0.0 && eigs[i] > -1.0e-10) {
+            eigs[i] = 0.0;
+        }
+        if (eigs[i] > 2.0 && eigs[i] < 2.0 + 1.0e-10) {
+            eigs[i] = 2.0;
+        }
+    }
+
+    std::sort(eigs.begin(), eigs.end(), std::greater<double>());
+    return eigs;
+}
+
 struct IncomingExcitationTablesGPUV2 {
     thrust::device_vector<long long> offsets;
     thrust::device_vector<int> sources;
@@ -3350,6 +3428,200 @@ std::complex<double> FCIComputerGPU::get_exp_val(const SQOperator& sqop)
     return val;
 }
 
+double FCIComputerGPU::get_spin_squared_expectation() const
+{
+    if (norb_ >= 64) {
+        throw std::runtime_error("get_spin_squared_expectation requires norb < 64.");
+    }
+
+    gpu_error();
+
+    const double norm_sq = std::real(C_.vector_dot(C_));
+    const double m_s = 0.5 * static_cast<double>(sz_);
+
+    SQOperator s_minus_s_plus;
+    for (size_t p = 0; p < norb_; p++) {
+        const size_t p_alpha = 2 * p;
+        const size_t p_beta = p_alpha + 1;
+
+        // S_- S_+ = sum_p n_{p beta}
+        //           - sum_{pq} a^+_{p beta} a^+_{q alpha} a_{p alpha} a_{q beta}
+        s_minus_s_plus.add_term(1.0, {p_beta}, {p_beta});
+
+        for (size_t q = 0; q < norb_; q++) {
+            const size_t q_alpha = 2 * q;
+            const size_t q_beta = q_alpha + 1;
+            s_minus_s_plus.add_term(-1.0, {p_beta, q_alpha}, {p_alpha, q_beta});
+        }
+    }
+
+    FCIComputerGPU& self = const_cast<FCIComputerGPU&>(*this);
+    const std::complex<double> spin_flip_expectation = self.get_exp_val(s_minus_s_plus);
+
+    return m_s * (m_s + 1.0) * norm_sq + std::real(spin_flip_expectation);
+}
+
+std::vector<double> FCIComputerGPU::get_natural_orbital_occupation_numbers() const
+{
+    if (norb_ >= 64) {
+        throw std::runtime_error(
+            "get_natural_orbital_occupation_numbers requires norb < 64.");
+    }
+
+    gpu_error();
+
+    const double norm_sq = std::real(C_.vector_dot(C_));
+    if (norm_sq < compute_threshold_) {
+        throw std::runtime_error(
+            "Cannot compute natural orbital occupations for a zero-norm CI vector.");
+    }
+
+    FCIGraphGPU& graph = const_cast<FCIGraphGPU&>(graph_);
+
+    auto one_body_element = [&](bool alpha, size_t p, size_t q) -> std::complex<double> {
+        std::vector<int> dag{static_cast<int>(p)};
+        std::vector<int> undag{static_cast<int>(q)};
+        int count = 0;
+
+        if (data_type_ == "real") {
+            thrust::device_vector<int> source_gpu;
+            thrust::device_vector<int> target_gpu;
+            thrust::device_vector<double> parity_gpu;
+
+            graph.make_mapping_each_otf_gpu_real(
+                alpha,
+                dag,
+                undag,
+                &count,
+                source_gpu,
+                target_gpu,
+                parity_gpu);
+
+            if (count == 0) {
+                return 0.0;
+            }
+
+            thrust::device_vector<double> d_accum_vec(1, 0.0);
+            double* d_accum = thrust::raw_pointer_cast(d_accum_vec.data());
+            const double* psi = thrust::raw_pointer_cast(C_.read_d_re_data().data());
+
+            if (alpha) {
+                dot_alpha_only_dual_real_wrapper(
+                    psi,
+                    psi,
+                    thrust::raw_pointer_cast(source_gpu.data()),
+                    thrust::raw_pointer_cast(target_gpu.data()),
+                    thrust::raw_pointer_cast(parity_gpu.data()),
+                    thrust::raw_pointer_cast(parity_gpu.data()),
+                    count,
+                    nbeta_strs_,
+                    1.0,
+                    0.0,
+                    d_accum);
+            } else {
+                dot_beta_only_dual_real_wrapper(
+                    psi,
+                    psi,
+                    thrust::raw_pointer_cast(source_gpu.data()),
+                    thrust::raw_pointer_cast(target_gpu.data()),
+                    thrust::raw_pointer_cast(parity_gpu.data()),
+                    thrust::raw_pointer_cast(parity_gpu.data()),
+                    count,
+                    nalfa_strs_,
+                    nbeta_strs_,
+                    1.0,
+                    0.0,
+                    d_accum);
+            }
+
+            const double value = d_accum_vec[0];
+            return std::complex<double>(value, 0.0);
+        }
+
+        if (data_type_ != "complex") {
+            throw std::runtime_error(
+                "Unsupported TensorGPU data_type for natural orbital occupations.");
+        }
+
+        thrust::device_vector<int> source_gpu;
+        thrust::device_vector<int> target_gpu;
+        thrust::device_vector<cuDoubleComplex> parity_gpu;
+
+        graph.make_mapping_each_otf_gpu_complex(
+            alpha,
+            dag,
+            undag,
+            &count,
+            source_gpu,
+            target_gpu,
+            parity_gpu);
+
+        if (count == 0) {
+            return 0.0;
+        }
+
+        thrust::device_vector<cuDoubleComplex> d_accum_vec(
+            1, make_cuDoubleComplex(0.0, 0.0));
+        cuDoubleComplex* d_accum = thrust::raw_pointer_cast(d_accum_vec.data());
+        const cuDoubleComplex* psi = thrust::raw_pointer_cast(C_.read_d_data().data());
+        const cuDoubleComplex zero = make_cuDoubleComplex(0.0, 0.0);
+        const cuDoubleComplex one = make_cuDoubleComplex(1.0, 0.0);
+
+        if (alpha) {
+            dot_alpha_only_dual_wrapper(
+                psi,
+                psi,
+                thrust::raw_pointer_cast(source_gpu.data()),
+                thrust::raw_pointer_cast(target_gpu.data()),
+                thrust::raw_pointer_cast(parity_gpu.data()),
+                thrust::raw_pointer_cast(parity_gpu.data()),
+                count,
+                nbeta_strs_,
+                one,
+                zero,
+                d_accum);
+        } else {
+            dot_beta_only_dual_wrapper(
+                psi,
+                psi,
+                thrust::raw_pointer_cast(source_gpu.data()),
+                thrust::raw_pointer_cast(target_gpu.data()),
+                thrust::raw_pointer_cast(parity_gpu.data()),
+                thrust::raw_pointer_cast(parity_gpu.data()),
+                count,
+                nalfa_strs_,
+                nbeta_strs_,
+                one,
+                zero,
+                d_accum);
+        }
+
+        const cuDoubleComplex value = d_accum_vec[0];
+        return {value.x, value.y};
+    };
+
+    std::vector<std::vector<std::complex<double>>> gamma(
+        norb_, std::vector<std::complex<double>>(norb_, 0.0));
+
+    for (size_t p = 0; p < norb_; p++) {
+        for (size_t q = 0; q < norb_; q++) {
+            gamma[p][q] = one_body_element(true, p, q) + one_body_element(false, p, q);
+        }
+    }
+
+    std::vector<std::vector<double>> gamma_real(
+        norb_, std::vector<double>(norb_, 0.0));
+    for (size_t p = 0; p < norb_; p++) {
+        for (size_t q = 0; q < norb_; q++) {
+            const std::complex<double> hermitian_avg =
+                0.5 * (gamma[p][q] + std::conj(gamma[q][p]));
+            gamma_real[p][q] = std::real(hermitian_avg) / norm_sq;
+        }
+    }
+
+    return symmetric_jacobi_eigenvalues_gpu(gamma_real);
+}
+
 std::complex<double> FCIComputerGPU::get_exp_val_tensor_gpu(
     const std::complex<double> h0e,
     const TensorGPU& h1e,
@@ -3572,16 +3844,15 @@ double FCIComputerGPU::dot_sqop_from_pool_gpu_real(
     int counta_undag = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
     int countb_undag = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
 
-    bool dag_valid   = (counta_dag > 0 && countb_dag > 0);
-    bool undag_valid = (counta_undag > 0 && countb_undag > 0);
-
-    // --------------------------------------------
-
     DotKernelKind kind = pool.dot_kernel_kinds()[mu];
 
     if (kind == DotKernelKind::Easy) {
         const int counta_easy = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
         const int countb_easy = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
+
+        if (counta_easy <= 0 || countb_easy <= 0) {
+            return dot_sqop_gpu_real(sigma, pool.terms()[mu].second);
+        }
 
         const double coeff_easy = pool.dot_coeff_dag_re()[mu] + pool.dot_coeff_undag_re()[mu];
 
@@ -3597,6 +3868,9 @@ double FCIComputerGPU::dot_sqop_from_pool_gpu_real(
             d_accum);
     } else {
         if (kind == DotKernelKind::AlphaOnly) {
+            if (counta_dag <= 0 || counta_undag != counta_dag) {
+                return dot_sqop_gpu_real(sigma, pool.terms()[mu].second);
+            }
             // Alpha-only: beta is identity, run coalesced row-traversal kernel
             // source_a=undag, target_a=dag; parity_uv=parity_undag, parity_vu=parity_dag
             dot_alpha_only_dual_real_wrapper(
@@ -3610,6 +3884,9 @@ double FCIComputerGPU::dot_sqop_from_pool_gpu_real(
                 pool.dot_coeff_undag_re()[mu],
                 d_accum);
         } else if (kind == DotKernelKind::BetaOnly) {
+            if (countb_dag <= 0 || countb_undag != countb_dag) {
+                return dot_sqop_gpu_real(sigma, pool.terms()[mu].second);
+            }
             // Beta-only: alpha is identity, run beta-fast row-major kernel
             dot_beta_only_dual_real_wrapper(
                 psi_data, sigma_data,
@@ -3622,6 +3899,14 @@ double FCIComputerGPU::dot_sqop_from_pool_gpu_real(
                 pool.dot_coeff_undag_re()[mu],
                 d_accum);
         } else {
+            if (
+                counta_dag <= 0
+                || countb_dag <= 0
+                || counta_undag != counta_dag
+                || countb_undag != countb_dag
+            ) {
+                return dot_sqop_gpu_real(sigma, pool.terms()[mu].second);
+            }
             // Mixed: general tiled kernel with beta in fast dimension
             dot_mixed_dual_real_wrapper(
                 psi_data, sigma_data,
@@ -3678,16 +3963,15 @@ std::complex<double> FCIComputerGPU::dot_sqop_from_pool_gpu(
     int counta_undag = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
     int countb_undag = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
 
-    bool dag_valid   = (counta_dag > 0 && countb_dag > 0);
-    bool undag_valid = (counta_undag > 0 && countb_undag > 0);
-
-    // --------------------------------------------
-
     DotKernelKind kind = pool.dot_kernel_kinds()[mu];
 
     if (kind == DotKernelKind::Easy) {
         const int counta_easy = static_cast<int>(pool.terms_scale_indsa_dag_gpu()[mu].size());
         const int countb_easy = static_cast<int>(pool.terms_scale_indsb_dag_gpu()[mu].size());
+
+        if (counta_easy <= 0 || countb_easy <= 0) {
+            return dot_sqop_gpu(sigma, pool.terms()[mu].second);
+        }
 
         const cuDoubleComplex c0 = pool.dot_coeff_dag()[mu];
         const cuDoubleComplex c1 = pool.dot_coeff_undag()[mu];
@@ -3705,6 +3989,9 @@ std::complex<double> FCIComputerGPU::dot_sqop_from_pool_gpu(
             d_accum);
     } else {
         if (kind == DotKernelKind::AlphaOnly) {
+            if (counta_dag <= 0 || counta_undag != counta_dag) {
+                return dot_sqop_gpu(sigma, pool.terms()[mu].second);
+            }
             dot_alpha_only_dual_wrapper(
                 psi_data, sigma_data,
                 thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),
@@ -3716,6 +4003,9 @@ std::complex<double> FCIComputerGPU::dot_sqop_from_pool_gpu(
                 pool.dot_coeff_undag()[mu],
                 d_accum);
         } else if (kind == DotKernelKind::BetaOnly) {
+            if (countb_dag <= 0 || countb_undag != countb_dag) {
+                return dot_sqop_gpu(sigma, pool.terms()[mu].second);
+            }
             dot_beta_only_dual_wrapper(
                 psi_data, sigma_data,
                 thrust::raw_pointer_cast(pool.terms_scale_indsb_undag_gpu()[mu].data()),
@@ -3727,6 +4017,14 @@ std::complex<double> FCIComputerGPU::dot_sqop_from_pool_gpu(
                 pool.dot_coeff_undag()[mu],
                 d_accum);
         } else {
+            if (
+                counta_dag <= 0
+                || countb_dag <= 0
+                || counta_undag != counta_dag
+                || countb_undag != countb_dag
+            ) {
+                return dot_sqop_gpu(sigma, pool.terms()[mu].second);
+            }
             dot_mixed_dual_wrapper(
                 psi_data, sigma_data,
                 thrust::raw_pointer_cast(pool.terms_scale_indsa_undag_gpu()[mu].data()),

@@ -372,6 +372,10 @@ class FCIComputerGPU {
     /// GPU only version.
     std::complex<double> get_exp_val(const SQOperator& sqop);
 
+    double get_spin_squared_expectation() const;
+
+    std::vector<double> get_natural_orbital_occupation_numbers() const;
+
     std::complex<double> get_exp_val_tensor_gpu(
       const std::complex<double> h0e,
       const TensorGPU& h1e,
