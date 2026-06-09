@@ -27,8 +27,12 @@ except Exception:
 _CUSV_AVAILABLE = True
 try:
     import cuquantum  # type: ignore
-    # cuStateVec bindings live under cuquantum.custatevec in cuQuantum Python
-    from cuquantum import custatevec  # type: ignore
+    # Match the runtime handle path below: some installs expose cuStateVec under
+    # cuquantum.custatevec, while others only expose cuquantum.bindings.custatevec.
+    try:
+        import cuquantum.custatevec as custatevec  # type: ignore
+    except Exception:
+        from cuquantum.bindings import custatevec  # type: ignore
 
     # Optional: most cusv workflows will likely want CuPy for device arrays.
     # Keep soft as well.

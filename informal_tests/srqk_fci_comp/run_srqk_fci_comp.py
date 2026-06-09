@@ -9,7 +9,8 @@ To intentionally refresh the reference data after reviewing expected changes:
     conda run -n qfe_env_v1 python informal_tests/srqk_fci_comp/run_srqk_fci_comp.py --write-expected
 
 This is intentionally not a pytest test.  It keeps compact reference data for
-H4/STO-3G SRQK FCIComputer runs covering several QK time-grid/Trotter schedules
+linear-H4/STO-3G SRQK FCIComputer runs in both c1 and d2h symmetry, covering
+several QK time-grid/Trotter schedules
 for first- and second-order Trotterization.
 """
 
@@ -81,8 +82,11 @@ def main():
             print(f"  - {item['backend']}.{item['case']}: {item['reason']}")
         raise AssertionError("FCIComputer SRQK reference runs should not be skipped.")
 
-    fci_energy = observed["cases"][0]["system"]["fci_energy"]
-    common.print_case_summary(observed["cases"], fci_energy)
+    systems = {
+        record["system"]["symmetry"]: type("SystemInfo", (), {"fci_energy": record["system"]["fci_energy"]})()
+        for record in observed["cases"]
+    }
+    common.print_case_summary(observed["cases"], systems)
 
     if args.write_expected:
         common.write_json(common.EXPECTED_PATH, observed)

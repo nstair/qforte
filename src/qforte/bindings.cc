@@ -306,6 +306,8 @@ PYBIND11_MODULE(qforte, m) {
         .def("coeff", &Computer::coeff)
         .def("get_coeff_vec", &Computer::get_coeff_vec)
         .def("get_nqubit", &Computer::get_nqubit)
+        .def("get_fci_comp_state_diff", &Computer::get_fci_comp_state_diff,
+             py::arg("fci_comp"), py::arg("do_phase_compare") = true)
         .def("set_coeff_vec", &Computer::set_coeff_vec)
         .def("set_state", &Computer::set_state)
         .def("zero_state", &Computer::zero_state)

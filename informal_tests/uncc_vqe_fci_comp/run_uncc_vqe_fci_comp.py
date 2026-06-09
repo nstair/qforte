@@ -9,7 +9,7 @@ To intentionally refresh the reference data after reviewing expected changes:
     conda run -n qfe_env_v1 python informal_tests/uncc_vqe_fci_comp/run_uncc_vqe_fci_comp.py --write-expected
 
 This is intentionally not a pytest test.  It keeps compact reference data for a
-small set of H4/C1 and H4/D2h UCCN-VQE FCIComputer runs.
+small set of HF/C1 and HF/C2v UCCN-VQE FCIComputer runs.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-os.environ.setdefault("MPLCONFIGDIR", "/private/tmp")
+os.environ.setdefault("MPLCONFIGDIR", "/tmp")
 
 import numpy as np
 import qforte as qf
@@ -101,8 +101,8 @@ CASE_MATRIX = [
         "hdiag_method": "analytic",
     },
     {
-        "label": "d2h_sd_lbfgs_zero_hdiag_analytic",
-        "symmetry": "d2h",
+        "label": "c2v_sd_lbfgs_zero_hdiag_analytic",
+        "symmetry": "c2v",
         "pool_type": "SD",
         "optimizer": "lbfgs_qf",
         "init_amps": "zero",
@@ -110,16 +110,16 @@ CASE_MATRIX = [
         "hdiag_method": "analytic",
     },
     {
-        "label": "d2h_sd_jacobi_mp2",
-        "symmetry": "d2h",
+        "label": "c2v_sd_jacobi_mp2",
+        "symmetry": "c2v",
         "pool_type": "SD",
         "optimizer": "jacobi",
         "init_amps": "mp2",
         "primary_pool_order": "mp2_amps",
     },
     {
-        "label": "d2h_gsd_bfgs_batch_hdiag_analytic",
-        "symmetry": "d2h",
+        "label": "c2v_gsd_bfgs_batch_hdiag_analytic",
+        "symmetry": "c2v",
         "pool_type": "GSD",
         "optimizer": "bfgs_qf",
         "init_amps": "zero",
@@ -129,8 +129,8 @@ CASE_MATRIX = [
         "hdiag_method": "analytic",
     },
     {
-        "label": "d2h_1up_lbfgs_mp2_batch",
-        "symmetry": "d2h",
+        "label": "c2v_1up_lbfgs_mp2_batch",
+        "symmetry": "c2v",
         "pool_type": "1-UpCCGSD",
         "optimizer": "lbfgs_qf",
         "init_amps": "mp2",
@@ -141,8 +141,8 @@ CASE_MATRIX = [
         "hdiag_method": "analytic",
     },
     {
-        "label": "d2h_2up_jacobi_zero",
-        "symmetry": "d2h",
+        "label": "c2v_2up_jacobi_zero",
+        "symmetry": "c2v",
         "pool_type": "2-UpCCGSD",
         "optimizer": "jacobi",
         "init_amps": "zero",
@@ -151,22 +151,20 @@ CASE_MATRIX = [
 ]
 
 
-def h4_geometry():
-    rhh = 1.5
+def hf_geometry():
+    rhf = 1.0
     return [
-        ("H", (0.0, -rhh / 2.0, -rhh / 2.0)),
-        ("H", (0.0, -rhh / 2.0, +rhh / 2.0)),
-        ("H", (0.0, +rhh / 2.0, -rhh / 2.0)),
-        ("H", (0.0, +rhh / 2.0, +rhh / 2.0)),
+        ("H", (0.0, 0.0, 0.0)),
+        ("F", (0.0, 0.0, rhf)),
     ]
 
 
-def build_h4(symmetry: str):
+def build_hf(symmetry: str):
     return qf.system_factory(
         system_type="molecule",
         build_type="psi4",
         basis="sto-6g",
-        mol_geometry=h4_geometry(),
+        mol_geometry=hf_geometry(),
         symmetry=symmetry,
         multiplicity=1,
         charge=0,
@@ -465,9 +463,9 @@ def run_all(cases: list[dict[str, Any]]):
     systems = {}
 
     for symmetry in symmetries:
-        log_path = LOG_DIR / f"build_h4_{symmetry}.log"
+        log_path = LOG_DIR / f"build_hf_{symmetry}.log"
         with log_path.open("w") as log, contextlib.redirect_stdout(log):
-            systems[symmetry] = build_h4(symmetry)
+            systems[symmetry] = build_hf(symmetry)
 
     records = []
     for index, case in enumerate(cases, start=1):
@@ -477,7 +475,7 @@ def run_all(cases: list[dict[str, Any]]):
             records.append(run_case(case, systems))
 
     return json_safe({
-        "description": "Informal H4 UCCN-VQE FCIComputer consistency data",
+        "description": "Informal HF UCCN-VQE FCIComputer consistency data",
         "maxiter": MAXITER,
         "tolerances": TOLERANCES,
         "cases": records,

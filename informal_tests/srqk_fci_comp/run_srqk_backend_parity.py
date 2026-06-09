@@ -4,7 +4,7 @@ Run from the repository root with qfe_env_v1:
 
     conda run -n qfe_env_v1 python informal_tests/srqk_fci_comp/run_srqk_backend_parity.py
 
-This is intentionally not a pytest test.  It reuses the H4/STO-3G cases in
+This is intentionally not a pytest test.  It reuses the linear-H4/STO-3G cases in
 run_srqk_fci_comp.py, runs them with alternate computer backends, and compares
 SRQK matrices and diagnostics against expected_srqk_fci_comp.json.
 Unavailable optional CUDA/CUSV/FQE backends are skipped with clear output.
@@ -30,14 +30,11 @@ def run_backend_cases(cases, backend, expected_cases):
     log_root = common.BACKEND_LOG_DIR / backend
     log_root.mkdir(parents=True, exist_ok=True)
 
-    build_log = log_root / "build_h4_sto3g.log"
-    with build_log.open("w") as log:
-        with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
-            mol = common.build_h4()
-
     print(f"\n==> backend={backend} <==")
-    print(f"  build log: {build_log}")
-    print(f"  FCI reference energy: {mol.fci_energy:+18.12f}")
+    systems, build_logs = common.build_systems(cases, log_root)
+    for symmetry in sorted(systems):
+        print(f"  {symmetry:<4s} build log: {build_logs[symmetry]}")
+        print(f"       FCI reference energy: {systems[symmetry].fci_energy:+18.12f}")
 
     passed = []
     skipped = []
@@ -49,7 +46,7 @@ def run_backend_cases(cases, backend, expected_cases):
                 with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
                     try:
                         alg = common.run_srqk_case(
-                            mol,
+                            systems[case["symmetry"]],
                             case,
                             backend=backend,
                             low_memory=False,
@@ -59,7 +56,7 @@ def run_backend_cases(cases, backend, expected_cases):
                         raise
             record = common.result_record(
                 case,
-                mol,
+                systems[case["symmetry"]],
                 alg,
                 backend=backend,
                 low_memory=False,

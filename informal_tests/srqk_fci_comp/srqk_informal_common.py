@@ -10,7 +10,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-os.environ.setdefault("MPLCONFIGDIR", "/private/tmp")
+os.environ.setdefault("MPLCONFIGDIR", "/tmp")
 
 import numpy as np
 import qforte as qf
@@ -55,6 +55,9 @@ PARITY_TOLERANCES = {
 }
 
 
+SYMMETRIES = ("c1", "d2h")
+
+
 CASE_STYLES = [
     {
         "style": "manual_linear_old_behavior",
@@ -84,34 +87,34 @@ CASE_STYLES = [
 ]
 
 
-def h4_geometry():
-    rhh = 1.5
+def linear_h4_geometry():
     return [
-        ("H", (0.0, -rhh / 2.0, -rhh / 2.0)),
-        ("H", (0.0, -rhh / 2.0, +rhh / 2.0)),
-        ("H", (0.0, +rhh / 2.0, -rhh / 2.0)),
-        ("H", (0.0, +rhh / 2.0, +rhh / 2.0)),
+        ("H", (0.0, 0.0, 1.0)),
+        ("H", (0.0, 0.0, 2.0)),
+        ("H", (0.0, 0.0, 3.0)),
+        ("H", (0.0, 0.0, 4.0)),
     ]
 
 
-def print_molecule_header():
-    print("\n==> Molecule <==")
-    print("  system: H4")
+def print_molecule_header(symmetries=SYMMETRIES):
+    print("\n==> Molecule Systems <==")
+    print("  system: linear H4")
     print("  basis:  sto-3g")
+    print(f"  symmetries: {', '.join(symmetries)}")
     print("  geometry:")
     print(f"{'atom':>6s} {'x':>14s} {'y':>14s} {'z':>14s}")
     print("-" * 52)
-    for atom, xyz in h4_geometry():
+    for atom, xyz in linear_h4_geometry():
         print(f"{atom:>6s} {xyz[0]:14.8f} {xyz[1]:14.8f} {xyz[2]:14.8f}")
 
 
-def build_h4():
+def build_linear_h4(symmetry):
     return qf.system_factory(
         system_type="molecule",
         build_type="psi4",
         basis="sto-3g",
-        mol_geometry=h4_geometry(),
-        symmetry="c1",
+        mol_geometry=linear_h4_geometry(),
+        symmetry=symmetry,
         multiplicity=1,
         charge=0,
         num_frozen_docc=0,
@@ -127,12 +130,14 @@ def build_h4():
 
 def case_matrix():
     cases = []
-    for order in TROTTER_ORDERS:
-        for style in CASE_STYLES:
-            case = dict(style)
-            case["trotter_order"] = order
-            case["label"] = f"rho{order}_{style['style']}"
-            cases.append(case)
+    for symmetry in SYMMETRIES:
+        for order in TROTTER_ORDERS:
+            for style in CASE_STYLES:
+                case = dict(style)
+                case["symmetry"] = symmetry
+                case["trotter_order"] = order
+                case["label"] = f"{symmetry}_rho{order}_{style['style']}"
+                cases.append(case)
     return cases
 
 
@@ -266,11 +271,14 @@ def result_record(case, mol, alg, backend="fci", low_memory=False):
 
     record = {
         "case": case["label"],
+        "symmetry": case["symmetry"],
         "style": case["style"],
         "backend": backend,
         "low_memory": bool(low_memory),
         "trotter_order": int(case["trotter_order"]),
         "system": {
+            "name": "linear H4",
+            "symmetry": case["symmetry"],
             "fci_energy": round_float(mol.fci_energy),
             "hf_energy": round_float(getattr(mol, "hf_energy", None)),
         },
@@ -438,6 +446,11 @@ def print_comparison_table(case_label, rows):
 
 
 def compare_records(observed, expected, tolerances, display_label):
+    if observed.get("symmetry") != expected.get("symmetry"):
+        raise AssertionError(
+            f"SRQK informal comparison failed for {display_label}: "
+            f"symmetry {observed.get('symmetry')!r} != {expected.get('symmetry')!r}"
+        )
     rows = comparison_rows(observed, expected, tolerances)
     print_comparison_table(display_label, rows)
     failures = [row for row in rows if row[1] is False]
@@ -462,20 +475,32 @@ def load_expected(cases):
     return {label: expected_cases[label] for label in sorted(wanted)}
 
 
+def build_systems(cases, log_root):
+    systems = {}
+    build_logs = {}
+    for symmetry in sorted({case["symmetry"] for case in cases}):
+        build_log = log_root / f"build_linear_h4_{symmetry}_sto3g.log"
+        with build_log.open("w") as log:
+            with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
+                systems[symmetry] = build_linear_h4(symmetry)
+        build_logs[symmetry] = build_log
+    return systems, build_logs
+
+
 def run_all_cases(cases, backend="fci", low_memory=False, log_root=LOG_DIR):
     log_root.mkdir(parents=True, exist_ok=True)
-    build_log = log_root / "build_h4_sto3g.log"
-    with build_log.open("w") as log:
-        with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
-            mol = build_h4()
+    systems, build_logs = build_systems(cases, log_root)
 
-    print_molecule_header()
-    print(f"\n  FCI reference energy: {mol.fci_energy:+18.12f}")
-    print(f"  build log:            {build_log}")
+    print_molecule_header(sorted(systems))
+    print("\n  Reference systems:")
+    for symmetry in sorted(systems):
+        print(f"    {symmetry:<4s} FCI energy: {systems[symmetry].fci_energy:+18.12f}")
+        print(f"         build log: {build_logs[symmetry]}")
 
     records = []
     skipped = []
     for index, case in enumerate(cases, start=1):
+        mol = systems[case["symmetry"]]
         log_path = log_root / f"{backend}_{'lowmem_' if low_memory else ''}{case['label']}.log"
         print(
             f"\n[{index:02d}/{len(cases):02d}] "
@@ -505,7 +530,9 @@ def run_all_cases(cases, backend="fci", low_memory=False, log_root=LOG_DIR):
                 raise
 
     return {
-        "description": "Informal H4/STO-3G SRQK FCIComputer consistency data",
+        "description": "Informal linear-H4/STO-3G SRQK FCIComputer consistency data",
+        "system_name": "linear H4",
+        "symmetries": list(sorted(systems)),
         "s": S,
         "dt": DT,
         "trotter_number": TROTTER_NUMBER,
@@ -515,12 +542,14 @@ def run_all_cases(cases, backend="fci", low_memory=False, log_root=LOG_DIR):
     }, skipped
 
 
-def print_case_summary(records, fci_energy):
+def print_case_summary(records, systems):
     print("\n\n==> Case summary <==")
-    print(f"  FCI reference energy:          {fci_energy:+16.10f}")
+    print("  FCI reference energies:")
+    for symmetry in sorted(systems):
+        print(f"    {symmetry:<4s} {systems[symmetry].fci_energy:+16.10f}")
 
     header = (
-        f"{'case':42s} {'final E':>16s} {'|E-FCI|':>12s} "
+        f"{'case':46s} {'final E':>16s} {'|E-FCI|':>12s} "
         f"{'Tmax':>12s} {'max macro dt':>14s} {'m(max dt)':>10s} "
         f"{'max CNOT':>12s} {'final RR':>9s}"
     )
@@ -528,7 +557,7 @@ def print_case_summary(records, fci_energy):
     print("-" * len(header))
     for record in records:
         print(
-            f"{record['case']:42s} "
+            f"{record['case']:46s} "
             f"{record['energy']:+16.10f} "
             f"{record['abs_error_vs_fci']:12.4e} "
             f"{record['qk_tmax']:12.4e} "

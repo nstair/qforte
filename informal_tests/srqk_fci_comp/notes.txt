@@ -24,7 +24,7 @@ micro time steps
 
 nuber of trotter steps
 
-for a small molecule (H4, sto-3g) running computer_type = 'fci', 
+for a small molecule (linear H4, sto-3g, c1 and d2h symmetry variants) running computer_type = 'fci', 
 
 Future runs read this and verify outputs have not changed (mirrors informal_tests/uncc_vqe_fci_comp/run_uncc_vqe_fci_comp.py). 
 I'd like the various run styles (manual_linear_old_behavior (with dt = 'lambda_inv'), 
