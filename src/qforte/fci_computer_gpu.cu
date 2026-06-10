@@ -568,28 +568,31 @@ void FCIComputerGPU::apply_tensor_spat_012bdy_gpu(
     );
 }
 
-void FCIComputerGPU::apply_tensor_spat_12bdy_gpu_v2(
+void FCIComputerGPU::build_tensor_spat_12bdy_gpu_v2(
+    TensorGPU& out,
     const TensorGPU& h1e,
     const TensorGPU& h2e,
     TensorGPU& h2e_einsum,
-    size_t norb)
+    size_t norb,
+    const char* caller)
 {
     gpu_error();
 
-    if(h1e.size() != (norb) * (norb)){
-        throw std::invalid_argument("Expecting h1e to be nmo x nmo for apply_tensor_spat_12bdy_gpu_v2");
+    if (h1e.size() != norb * norb) {
+        throw std::invalid_argument(
+            std::string("Expecting h1e to be nmo x nmo for ") + caller);
     }
 
-    if(h2e.size() != (norb) * (norb) * (norb) * (norb) ){
-        throw std::invalid_argument("Expecting h2e to be nso x nso x nso x nso for apply_tensor_spat_12bdy_gpu_v2");
+    if (h2e.size() != norb * norb * norb * norb) {
+        throw std::invalid_argument(
+            std::string("Expecting h2e to be nso x nso x nso x nso for ") + caller);
     }
 
-    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew_v2", true, data_type_, true);
-    Cnew.zero_gpu();
+    out.zero_gpu();
 
     timer_.acc_begin("=> same spin alpha outer");
     lm_apply_array12_same_spin_opt_gpu(
-        Cnew,
+        out,
         graph_.read_dexca_vec(),
         nalfa_strs_,
         nbeta_strs_,
@@ -602,14 +605,14 @@ void FCIComputerGPU::apply_tensor_spat_12bdy_gpu_v2(
 
     timer_.acc_begin("=> same spin beta outer transposed");
     C_.fineGrainedTranspose();
-    Cnew.fineGrainedTranspose();
+    out.fineGrainedTranspose();
 
     // Experimental v2 beta same-spin path: after transposing the CI tensors,
-    // beta strings are laid out as contiguous rows.  Reuse the same row-major
+    // beta strings are laid out as contiguous rows. Reuse the same row-major
     // same-spin SpMM path as alpha by passing the beta excitation table with
-    // is_alpha=true.  Both tensors are transposed back before mixed-spin.
+    // is_alpha=true. Both tensors are transposed back before mixed-spin.
     lm_apply_array12_same_spin_opt_gpu(
-        Cnew,
+        out,
         graph_.read_dexcb_vec(),
         nbeta_strs_,
         nalfa_strs_,
@@ -620,12 +623,12 @@ void FCIComputerGPU::apply_tensor_spat_12bdy_gpu_v2(
         true);
 
     C_.fineGrainedTranspose();
-    Cnew.fineGrainedTranspose();
+    out.fineGrainedTranspose();
     timer_.acc_end("=> same spin beta outer transposed");
 
     timer_.acc_begin("=> diff spin outer v2 tiled");
     lm_apply_array12_diff_spin_opt_gpu_v2_tiled(
-        Cnew,
+        out,
         graph_.read_dexca_vec(),
         graph_.read_dexcb_vec(),
         nalfa_strs_,
@@ -635,8 +638,26 @@ void FCIComputerGPU::apply_tensor_spat_12bdy_gpu_v2(
         h2e_einsum,
         norb_);
     timer_.acc_end("=> diff spin outer v2 tiled");
+}
 
-    C_ = Cnew;
+void FCIComputerGPU::apply_tensor_spat_12bdy_gpu_v2(
+    const TensorGPU& h1e,
+    const TensorGPU& h2e,
+    TensorGPU& h2e_einsum,
+    size_t norb)
+{
+    gpu_error();
+
+    TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew_v2", true, data_type_, true);
+    build_tensor_spat_12bdy_gpu_v2(
+        Cnew,
+        h1e,
+        h2e,
+        h2e_einsum,
+        norb,
+        "apply_tensor_spat_12bdy_gpu_v2");
+
+    C_.copy_in_gpu(Cnew);
 }
 
 void FCIComputerGPU::apply_tensor_spat_012bdy_gpu_v2(
@@ -648,65 +669,14 @@ void FCIComputerGPU::apply_tensor_spat_012bdy_gpu_v2(
 {
     gpu_error();
 
-    if(h1e.size() != (norb) * (norb)){
-        throw std::invalid_argument("Expecting h1e to be nmo x nmo for apply_tensor_spat_012bdy_gpu_v2");
-    }
-
-    if(h2e.size() != (norb) * (norb) * (norb) * (norb) ){
-        throw std::invalid_argument("Expecting h2e to be nso x nso x nso x nso for apply_tensor_spat_012bdy_gpu_v2");
-    }
-
     TensorGPU Cnew({nalfa_strs_, nbeta_strs_}, "Cnew_v2", true, data_type_, true);
-    Cnew.zero_gpu();
-
-    timer_.acc_begin("=> same spin alpha outer");
-    lm_apply_array12_same_spin_opt_gpu(
+    build_tensor_spat_12bdy_gpu_v2(
         Cnew,
-        graph_.read_dexca_vec(),
-        nalfa_strs_,
-        nbeta_strs_,
-        graph_.get_ndexca(),
         h1e,
         h2e,
-        norb_,
-        true);
-    timer_.acc_end("=> same spin alpha outer");
-
-    timer_.acc_begin("=> same spin beta outer transposed");
-    C_.fineGrainedTranspose();
-    Cnew.fineGrainedTranspose();
-
-    // Experimental v2 beta same-spin path: after transposing the CI tensors,
-    // beta strings are laid out as contiguous rows.  Reuse the same row-major
-    // same-spin SpMM path as alpha by passing the beta excitation table with
-    // is_alpha=true.  Both tensors are transposed back before mixed-spin.
-    lm_apply_array12_same_spin_opt_gpu(
-        Cnew,
-        graph_.read_dexcb_vec(),
-        nbeta_strs_,
-        nalfa_strs_,
-        graph_.get_ndexcb(),
-        h1e,
-        h2e,
-        norb_,
-        true);
-
-    C_.fineGrainedTranspose();
-    Cnew.fineGrainedTranspose();
-    timer_.acc_end("=> same spin beta outer transposed");
-
-    timer_.acc_begin("=> diff spin outer v2 tiled");
-    lm_apply_array12_diff_spin_opt_gpu_v2_tiled(
-        Cnew,
-        graph_.read_dexca_vec(),
-        graph_.read_dexcb_vec(),
-        nalfa_strs_,
-        nbeta_strs_,
-        graph_.get_ndexca(),
-        graph_.get_ndexcb(),
         h2e_einsum,
-        norb_);
-    timer_.acc_end("=> diff spin outer v2 tiled");
+        norb,
+        "apply_tensor_spat_012bdy_gpu_v2");
 
     C_.zaxpby(
         Cnew,
@@ -3629,23 +3599,18 @@ std::complex<double> FCIComputerGPU::get_exp_val_tensor_gpu(
     TensorGPU& h2e_einsum,
     size_t norb)
 {
-    // Save C_ into a gpu_only temporary to avoid host memory overhead
-    TensorGPU Cin({nalfa_strs_, nbeta_strs_}, "Cin", true, data_type_, true);
-    Cin.copy_in_gpu(C_);
+    gpu_error();
 
-    apply_tensor_spat_012bdy_gpu_v2(
-        h0e,
+    TensorGPU sigma({nalfa_strs_, nbeta_strs_}, "sigma_exp_val", true, data_type_, true);
+    build_tensor_spat_12bdy_gpu_v2(
+        sigma,
         h1e,
         h2e,
         h2e_einsum,
-        norb
-    );
+        norb,
+        "get_exp_val_tensor_gpu");
 
-    std::complex<double> val = C_.vector_dot(Cin);
-
-    /// TODO: change to move opperation not deep copy
-    C_.copy_in_gpu(Cin);
-    return val;
+    return sigma.vector_dot(C_) + h0e;
 }
 
 void FCIComputerGPU::scale(const std::complex<double> a)

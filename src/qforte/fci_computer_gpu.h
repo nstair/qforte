@@ -507,6 +507,14 @@ class FCIComputerGPU {
 
   private:
 
+    void build_tensor_spat_12bdy_gpu_v2(
+      TensorGPU& out,
+      const TensorGPU& h1e,
+      const TensorGPU& h2e,
+      TensorGPU& h2e_einsum,
+      size_t norb,
+      const char* caller);
+
     bool on_gpu_;
     bool gpu_only_ = false;
 
