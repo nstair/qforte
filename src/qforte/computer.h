@@ -22,6 +22,7 @@ class QubitOperator;
 class SQOperator;
 class QubitOpPool;
 class SparseMatrix;
+class FCIComputer;
 
 class Computer {
   public:
@@ -152,6 +153,10 @@ class Computer {
 
     /// clear the timings
     void clear_timings() { timings_.clear(); }
+
+    /// compare this dense 2^n statevector to an FCIComputer state in the matching
+    /// particle/spin sector, correcting for the ab-block vs abab orbital ordering.
+    double get_fci_comp_state_diff(const FCIComputer& fci_comp, bool do_phase_compare = true) const;
 
   private:
     /// the number of qubits

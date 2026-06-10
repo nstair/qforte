@@ -5,15 +5,15 @@ import psi4
 import time
 
 import os
-os.environ["OMP_NUM_THREADS"] = "16"
-os.environ["OMP_DYNAMIC"] = "FALSE"
-os.environ["OMP_PROC_BIND"] = "true"
-os.environ["OMP_PLACES"] = "cores"
+# os.environ["OMP_NUM_THREADS"] = "16"
+# os.environ["OMP_DYNAMIC"] = "FALSE"
+# os.environ["OMP_PROC_BIND"] = "true"
+# os.environ["OMP_PLACES"] = "cores"
 
-print("PY sees OMP_NUM_THREADS =", os.environ.get("OMP_NUM_THREADS"))
-print("PY sees OMP_DYNAMIC =", os.environ.get("OMP_DYNAMIC"))
-print("PY sees OMP_PROC_BIND =", os.environ.get("OMP_PROC_BIND"))
-print("PY sees OMP_PLACES =", os.environ.get("OMP_PLACES"))
+# print("PY sees OMP_NUM_THREADS =", os.environ.get("OMP_NUM_THREADS"))
+# print("PY sees OMP_DYNAMIC =", os.environ.get("OMP_DYNAMIC"))
+# print("PY sees OMP_PROC_BIND =", os.environ.get("OMP_PROC_BIND"))
+# print("PY sees OMP_PLACES =", os.environ.get("OMP_PLACES"))
 
 # Define the reference and geometry lists.
 geom = [
@@ -31,8 +31,8 @@ geom = [
     ('H', (0., 0.,12.0)),
     ('H', (0., 0.,13.0)),
     ('H', (0., 0.,14.0)),
-    # ('H', (0., 0.,15.0)),
-    # ('H', (0., 0.,16.0)),
+    ('H', (0., 0.,15.0)),
+    ('H', (0., 0.,16.0)),
     ]
 
 # Get the molecule object that now contains both the fermionic and qubit Hamiltonians.
@@ -82,6 +82,9 @@ sqham = mol.sq_hamiltonian
 hermitian_pairs = qf.SQOpPool()
 hermitian_pairs.add_hermitian_pairs(1.0, sqham)
 
+num_threads = 8
+print(f"\n num threads: {num_threads}\n")
+
 time = 0.1
 r = 1
 order = 1
@@ -101,9 +104,9 @@ print(f" adjoint:   {adj}")
 print("\n")
 
 app_sqop = False
-app_tens = False
+app_tens = True
 app_exact_evo = False
-app_trot = True
+app_trot = False
 
 # Psi4 clamps num threads to 1 even for fqe precesses
 # if this is not explicitally set here!
@@ -165,7 +168,7 @@ if(app_tens):
     #     norb)
     # timer.record('FCI apply tensor')
 
-    psi4.core.set_num_threads(20)
+    psi4.core.set_num_threads(num_threads)
 
     timer.reset()
     fqe_comp1.apply_tensor_spat_012bdy(
@@ -230,7 +233,7 @@ if(app_exact_evo):
 # ===> evovle pool trotter <====
 
 if(app_trot):
-    psi4.core.set_num_threads(20)
+    psi4.core.set_num_threads(num_threads)
 
     # fci_comp1.hartree_fock()
     # fqe_comp1.hartree_fock()

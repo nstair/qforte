@@ -42,6 +42,7 @@ alg_fci = qf.UCCNVQE(
     apply_ham_as_tensor=True,
     computer_type = 'fci',
     verbose=False,
+    optimizer="jacobi"
     )
 timer.record("alg setup fci")
 
@@ -59,7 +60,9 @@ alg_fqe = qf.UCCNVQE(
     mol,
     apply_ham_as_tensor=True,
     computer_type = 'fqe',
-    verbose=False)
+    verbose=False,
+    optimizer="jacobi"
+    )
 timer.record("alg setup fqe")
 
 Eo_fci_comp = alg_fci.get_gs_energy()

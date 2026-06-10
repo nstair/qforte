@@ -6,6 +6,7 @@ The abstract base classes inherited by all algorithm subclasses.
 
 from abc import ABC, abstractmethod
 import qforte as qf
+import copy
 from qforte.utils.state_prep import *
 from qforte.utils.point_groups import sq_op_find_symmetry
 
@@ -62,6 +63,9 @@ class Algorithm(ABC):
 
     _res_m_evals : int
         The total number of times an individual residual element was evaluated.
+
+    _data_type : str
+        The data type for GPU computations; 'real' or 'complex'.
     """
 
     def __init__(self,
@@ -75,6 +79,7 @@ class Algorithm(ABC):
                  fast=True,
                  verbose=False,
                  print_summary_file=False,
+                 data_type='complex',
                  **kwargs):
 
         if isinstance(self, qf.QPE) and hasattr(system, 'frozen_core'):
@@ -156,12 +161,106 @@ class Algorithm(ABC):
                 self._mo_oeis = system.mo_oeis 
                 self._mo_teis = system.mo_teis 
                 self._mo_teis_einsum = system.mo_teis_einsum
+            
+            # Initialize FCI profiling timers
+            import time
+            self._fci_timers = {
+                'hartree_fock': 0.0,
+                'evolve_pool_trotter_basic': 0.0,
+                'get_state_deep': 0.0,
+                'set_state': 0.0,
+                'apply_tensor_spat_012bdy': 0.0,
+                'apply_sqop': 0.0,
+                'apply_sqop_evolution': 0.0,
+                'get_exp_val_tensor': 0.0,
+                'vector_dot': 0.0
+            }
+            self._fci_time = time
+        else:
+            self._fci_timers = None
+            self._fci_time = None
 
         if(computer_type=='fqe'):
             if(apply_ham_as_tensor):
                 self._mo_oeis_np = system.mo_oeis_np 
                 self._mo_teis_np = system.mo_teis_np
+            
+            # Initialize FQE profiling timers
+            import time
+            self._fqe_timers = {
+                'hartree_fock': 0.0,
+                'evolve_pool_trotter_basic': 0.0,
+                'get_state_deep': 0.0,
+                'set_state': 0.0,
+                'apply_tensor_spat_012bdy': 0.0,
+                'apply_sqop': 0.0,
+                'apply_sqop_evolution': 0.0,
+                'vector_dot': 0.0
+            }
+            self._fqe_time = time
+        else:
+            self._fqe_timers = None
+            self._fqe_time = None
+
+        if(computer_type=='fci_gpu'):
+            if(apply_ham_as_tensor):
+                # TODO: Refactor to use TensorGPU objects in system build
+
+                self._mo_oeis_gpu = qf.TensorGPU(system.mo_oeis.shape(), "mo_oeis_gpu", False, "real")
+                self._mo_teis_gpu = qf.TensorGPU(system.mo_teis.shape(), "mo_teis_gpu", False, "real")
+                self._mo_teis_einsum_gpu = qf.TensorGPU(system.mo_teis_einsum.shape(), "mo_teis_einsum_gpu", False, "real")
+                self._mo_oeis_gpu.fill_from_tensor_cpu(system.mo_oeis, system.mo_oeis.shape())
+                self._mo_teis_gpu.fill_from_tensor_cpu(system.mo_teis, system.mo_teis.shape())
+                self._mo_teis_einsum_gpu.fill_from_tensor_cpu(system.mo_teis_einsum, system.mo_teis_einsum.shape())
+
+                self._mo_oeis_gpu.to_gpu()
+                self._mo_teis_gpu.to_gpu()
+                self._mo_teis_einsum_gpu.to_gpu()
+            
+            # Initialize GPU profiling timers
+            import time
+            self._gpu_timers = {
+                'hartree_fock_gpu': 0.0,
+                'to_gpu': 0.0,
+                'set_state_from_other_gpu': 0.0,
+                'evolve_pool_trotter_basic_gpu': 0.0,
+                'get_state_deep': 0.0,
+                'set_state_gpu': 0.0,
+                'apply_tensor_spat_012bdy_gpu': 0.0,
+                'apply_sqop_gpu': 0.0,
+                'dot_sqop_gpu': 0.0,
+                'apply_sqop_evolution_gpu': 0.0,
+                'get_exp_val_tensor_gpu': 0.0,
+                'vector_dot': 0.0
+            }
+            self._gpu_time = time
+        else:
+            self._gpu_timers = None
+            self._gpu_time = None
+
+        if (computer_type == 'cusv'):
+            if (apply_ham_as_tensor):
+                # no tensor opperations for cusv, so throw error here
+                raise ValueError("CUSV computer type does not support apply_ham_as_tensor=True.")
                 
+            # Initialize CUSV profiling timers
+            import time
+            self._cusv_timers = {
+                'hartree_fock': 0.0,
+                'evolve_pool_trotter_basic': 0.0,
+                'get_exp_val_opt': 0.0,
+                'get_state_deep': 0.0,
+                'set_state': 0.0,
+                'apply_tensor_spat_012bdy': 0.0,
+                'apply_sqop': 0.0,
+                'apply_sqop_evolution': 0.0,
+                'get_exp_val_tensor': 0.0,
+                'vector_dot': 0.0
+            }
+            self._cusv_time = time
+        else:
+            self._cusv_timers = None
+            self._cusv_time = None
 
         if len(self._qb_ham.terms()) > 0 and self._qb_ham.num_qubits() != self._nqb:
             raise ValueError(f"The reference has {self._nqb} qubits, but the Hamiltonian has {self._qb_ham.num_qubits()}. This is inconsistent.")
@@ -187,6 +286,12 @@ class Algorithm(ABC):
 
         elif(computer_type=='fqe'):
             self._computer_type = 'fqe'
+
+        elif(computer_type=='fci_gpu'):
+            self._computer_type = 'fci_gpu'
+
+        elif(computer_type=='cusv'):
+            self._computer_type = 'cusv'
         
         else:
             raise ValueError(f"Computer type must be fci or fock.")
@@ -205,6 +310,9 @@ class Algorithm(ABC):
         self._n_cnot = None
         self._n_pauli_trm_measures = None
 
+        # Data type for GPU computations; 'real' or 'complex'
+        # Default is 'complex'
+        self.data_type = data_type
 
     @abstractmethod
     def print_options_banner(self):
@@ -335,31 +443,79 @@ class AnsatzAlgorithm(Algorithm):
         """
 
         timer2 = qforte.local_timer()
+        pool_type = self._pool_type
+        general_ex_pool_order = getattr(self, "_general_ex_pool_order", "default")
+        self._general_ex_pool_order_applied_in_fill = False
 
-        if self._pool_type in {'sa_SD', 'GSD', 'SD', 'SDT', 'SDTQ', 'SDTQP', 'SDTQPH'}:
-            self._pool_obj = qf.SQOpPool()
+        def set_pool_irreps_if_available():
+            """Pass spatial-orbital symmetry data into generated C++ pools."""
+            orb_irreps = getattr(self._sys, 'orb_irreps_to_int', None)
+            if orb_irreps is not None and hasattr(self._pool_obj, 'set_orb_irreps'):
+                self._pool_obj.set_orb_irreps(orb_irreps, self._irrep)
+
+        # Deprecated compatibility aliases.  The public way to request this
+        # product ordering is now general_ex_pool_order="particle_hole_first".
+        if pool_type == 'GSDx':
+            pool_type = 'GSD'
+            general_ex_pool_order = 'particle_hole_first'
+        elif (
+            isinstance(pool_type, str)
+            and pool_type.endswith('-UpCCGSDx')
+            and pool_type[:-len('-UpCCGSDx')].isdigit()
+        ):
+            pool_type = f"{pool_type[:-len('-UpCCGSDx')]}-UpCCGSD"
+            general_ex_pool_order = 'particle_hole_first'
+
+        if isinstance(pool_type, str) and pool_type in {'sa_SD', 'GSD', 'S', 'SD', 'SDT', 'SDTQ', 'SDTQP', 'SDTQPH', 'All'}:
+            if self._computer_type == 'fci_gpu':
+                self._pool_obj = qf.SQOpPoolGPU(data_type=self.data_type)
+            else:
+                self._pool_obj = qf.SQOpPool()
 
             timer2.reset()
             self._pool_obj.set_orb_spaces(self._ref)
+            set_pool_irreps_if_available()
             timer2.record("_pool_obj.set_orb_spaces")
 
             timer2.reset()
-            self._pool_obj.fill_pool(self._pool_type)
+            if pool_type == 'GSD' and general_ex_pool_order == 'particle_hole_first':
+                # Internally reuse the legacy x-constructor, but expose this
+                # only as an ordering option.  For GSD the desired order is a
+                # single particle-hole block followed by the generalized block.
+                self._pool_obj.fill_pool('GSDx')
+                self._general_ex_pool_order_applied_in_fill = True
+            else:
+                self._pool_obj.fill_pool(pool_type)
             timer2.record("_pool_obj.fill_pool")
 
-        elif (self._pool_type[0].isdigit() and self._pool_type[1:] == '-UpCCGSD'):
-            self._pool_obj = qf.SQOpPool()
+        elif (
+            isinstance(pool_type, str)
+            and pool_type.endswith('-UpCCGSD')
+            and pool_type[:-len('-UpCCGSD')].isdigit()
+        ):
+            if self._computer_type == 'fci_gpu':
+                self._pool_obj = qf.SQOpPoolGPU(data_type=self.data_type)
+            else:
+                self._pool_obj = qf.SQOpPool()
 
             timer2.reset()
             self._pool_obj.set_orb_spaces(self._ref)
+            set_pool_irreps_if_available()
             timer2.record("_pool_obj.set_orb_spaces")
 
             timer2.reset()
-            self._pool_obj.fill_pool_kUpCCGSD(int(self._pool_type[0]))
+            kmax = int(pool_type[:-len('-UpCCGSD')])
+            if general_ex_pool_order == 'particle_hole_first':
+                # k-UpCCGSD needs layered ordering, not one global grouping:
+                # PH(k0), GEN(k0), PH(k1), GEN(k1), ...
+                self._pool_obj.fill_pool_kUpCCGSDx(kmax)
+                self._general_ex_pool_order_applied_in_fill = True
+            else:
+                self._pool_obj.fill_pool_kUpCCGSD(kmax)
             timer2.record("_pool_obj.fill_pool")
 
-        elif isinstance(self._pool_type, qf.SQOpPool):
-            self._pool_obj = self._pool_type
+        elif isinstance(pool_type, qf.SQOpPool):
+            self._pool_obj = pool_type
         else:
             raise ValueError('Invalid operator pool type specified.')
 
@@ -367,7 +523,10 @@ class AnsatzAlgorithm(Algorithm):
         # Currently, symmetry is supported for system_type='molecule' and build_type='psi4'
         if hasattr(self._sys, 'point_group'):
             timer2.reset()
-            temp_sq_pool = qf.SQOpPool()
+            if self._computer_type == 'fci_gpu':
+                temp_sq_pool = qf.SQOpPoolGPU(data_type=self.data_type)
+            else:
+                temp_sq_pool = qf.SQOpPool()
             for sq_operator in self._pool_obj.terms():
                 create = sq_operator[1].terms()[0][1]
                 annihilate = sq_operator[1].terms()[0][2]
@@ -379,7 +538,7 @@ class AnsatzAlgorithm(Algorithm):
         timer2.reset()
         if(self._computer_type == 'fock'):
             self._Nm = [len(operator.jw_transform().terms()) for _, operator in self._pool_obj]
-        elif self._computer_type in ['fci', 'fqe']:
+        elif self._computer_type in ['fci', 'fqe', 'fci_gpu', 'cusv']:
             self._Nm = [0 for _, operator in self._pool_obj]
             print("\n ==> Warning: resource estimator needs to be implemented for fci computer type <==")
         else:
@@ -414,6 +573,16 @@ class AnsatzAlgorithm(Algorithm):
     def __init__(self, *args, qubit_excitations=False, compact_excitations=False, diis_max_dim=8,
             max_moment_rank = 0, moment_dt=None,
             **kwargs):
+        qf_optimizer_ctor_options = sorted(
+            key for key in kwargs
+            if key.startswith("lbfgs_qf") or key.startswith("bfgs_qf")
+        )
+        if qf_optimizer_ctor_options:
+            raise TypeError(
+                "lbfgs_qf/bfgs_qf optimizer options are run() options. Pass "
+                f"{qf_optimizer_ctor_options} to run(), not to the VQE constructor."
+            )
+
         super().__init__(*args, **kwargs)
         self._curr_energy = 0
         self._Nm = []
@@ -469,6 +638,10 @@ class AnsatzAlgorithm(Algorithm):
             return self.energy_feval_fci(params)
         elif(self._computer_type == 'fqe'):
             return self.energy_feval_fqe(params)
+        elif(self._computer_type == 'fci_gpu'):
+            return self.energy_feval_fci_gpu(params)
+        elif(self._computer_type == 'cusv'):
+            return self.energy_feval_cusv(params)
         else:
             raise ValueError(f"{self._computer_type} is an unrecognized computer type.") 
 
@@ -485,7 +658,18 @@ class AnsatzAlgorithm(Algorithm):
             the state preparation circuit.
         """
         Ucirc = self.build_Uvqc(amplitudes=params)
-        Energy = self.measure_energy(Ucirc)
+        if (
+            self._fast
+            and hasattr(self, "_ensure_reusable_ucc_objects")
+            and self._ensure_reusable_ucc_objects()
+            and hasattr(self, "_reusable_fock_zero_state")
+        ):
+            myQC = self._reusable_qc_psi
+            myQC.set_coeff_vec(copy.deepcopy(self._reusable_fock_zero_state))
+            myQC.apply_circuit(Ucirc)
+            Energy = np.real(myQC.direct_op_exp_val(self._qb_ham))
+        else:
+            Energy = self.measure_energy(Ucirc)
 
         self._curr_energy = Energy
         return Energy
@@ -496,27 +680,34 @@ class AnsatzAlgorithm(Algorithm):
         if not self._ref_from_hf:
             raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
         
-        temp_pool = qforte.SQOpPool()
+        temp_pool = None
+        if hasattr(self, "_active_reusable_pool"):
+            temp_pool = self._active_reusable_pool(params)
 
-        # NICK: Write a 'updatte_coeffs' type fucntion for the op-pool.
-        for param, top in zip(params, self._tops):
-            temp_pool.add(param, self._pool_obj[top][1])
-
+        if temp_pool is None:
+            temp_pool = qforte.SQOpPool()
+            for param, top in zip(params, self._tops):
+                temp_pool.add(param, self._pool_obj[top][1])
+            qc = qforte.FCIComputer(
+                self._nel,
+                self._2_spin,
+                self._norb)
+        else:
+            qc = self._reusable_qc_psi
         
-        qc = qforte.FCIComputer(
-            self._nel, 
-            self._2_spin, 
-            self._norb)
-        
+        t0 = self._fci_time.time()
         qc.hartree_fock()
+        self._fci_timers['hartree_fock'] += self._fci_time.time() - t0
 
+        t0 = self._fci_time.time()
         qc.evolve_pool_trotter_basic(
             temp_pool,
             antiherm=True,
             adjoint=False)
+        self._fci_timers['evolve_pool_trotter_basic'] += self._fci_time.time() - t0
         
         if(self._apply_ham_as_tensor):
-            
+            t0 = self._fci_time.time()
             self._curr_energy = np.real(
                 qc.get_exp_val_tensor(
                     self._zero_body_energy, 
@@ -525,6 +716,7 @@ class AnsatzAlgorithm(Algorithm):
                     self._mo_teis_einsum, 
                     self._norb)
             )
+            self._fci_timers['get_exp_val_tensor'] += self._fci_time.time() - t0
         else:   
             self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
 
@@ -536,24 +728,33 @@ class AnsatzAlgorithm(Algorithm):
         if not self._ref_from_hf:
             raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
         
-        temp_pool = qforte.SQOpPool()
+        temp_pool = None
+        if hasattr(self, "_active_reusable_pool"):
+            temp_pool = self._active_reusable_pool(params)
 
-        # NICK: Write a 'updatte_coeffs' type fucntion for the op-pool.
-        for param, top in zip(params, self._tops):
-            temp_pool.add(param, self._pool_obj[top][1])
-
+        if temp_pool is None:
+            temp_pool = qforte.SQOpPool()
+            for param, top in zip(params, self._tops):
+                temp_pool.add(param, self._pool_obj[top][1])
+            qc = qforte.FQEComputer(
+                self._nel,
+                self._2_spin,
+                self._norb)
+        else:
+            qc = self._reusable_qc_psi
         
-        qc = qforte.FQEComputer(
-            self._nel, 
-            self._2_spin, 
-            self._norb)
-        
+        t0 = self._fqe_time.time()
         qc.hartree_fock()
+        self._fqe_timers['hartree_fock'] += self._fqe_time.time() - t0
+        # state_norm_hf = np.linalg.norm(qc.get_state())
+        # print(f"[FQE] After HF: state norm = {state_norm_hf:.12f}")
 
         qc.evolve_pool_trotter_basic(
             temp_pool,
             antiherm=True,
             adjoint=False)
+        # state_norm_evolved = np.linalg.norm(qc.get_state())
+        # print(f"[FQE] After evolve_pool: state norm = {state_norm_evolved:.12f}")
         
         if(self._apply_ham_as_tensor):
             
@@ -564,8 +765,124 @@ class AnsatzAlgorithm(Algorithm):
                     self._mo_teis_np, 
                     )
                 )
+            # print(f"[FQE] Energy = {self._curr_energy:+16.12f}")
         else:   
             self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
+            # print(f"[FQE] Energy = {self._curr_energy:+16.12f}")
 
         
+        return self._curr_energy
+
+    def energy_feval_fci_gpu(self, params):
+        if not self._ref_from_hf:
+            raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
+        
+        # Use reusable infrastructure if available (avoids pool recreation + GPU overhead)
+        if hasattr(self, '_reusable_pool_gpu') and hasattr(self, '_reusable_qc_psi'):
+            # Update coefficients in existing pool (fast path)
+            complex_params = [complex(p, 0.0) for p in params]
+            self._reusable_pool_gpu.update_evolution_coeffs(complex_params)
+            
+            # Reset reusable computer to HF state
+            # Avoids GPU allocation/deallocation overhead
+            t0 = self._gpu_time.time()
+            self._reusable_qc_psi.hartree_fock_gpu()
+            self._gpu_timers['hartree_fock_gpu'] += self._gpu_time.time() - t0
+            
+            t0 = self._gpu_time.time()
+            self._reusable_qc_psi.evolve_pool_trotter_basic_gpu(
+                self._reusable_pool_gpu,
+                antiherm=True,
+                adjoint=False)
+            self._gpu_timers['evolve_pool_trotter_basic_gpu'] += self._gpu_time.time() - t0
+            
+            if(self._apply_ham_as_tensor):
+                t0 = self._gpu_time.time()
+                self._curr_energy = np.real(
+                    self._reusable_qc_psi.get_exp_val_tensor_gpu(
+                        self._zero_body_energy, 
+                        self._mo_oeis_gpu, 
+                        self._mo_teis_gpu, 
+                        self._mo_teis_einsum_gpu, 
+                        self._norb)
+                )
+                self._gpu_timers['get_exp_val_tensor_gpu'] += self._gpu_time.time() - t0
+            else:   
+                self._curr_energy = np.real(self._reusable_qc_psi.get_exp_val(self._sq_ham))
+                
+        else:
+            # Fallback to old behavior if reusable infrastructure not initialized
+            temp_pool = qforte.SQOpPoolGPU(data_type=self.data_type)
+            for param, top in zip(params, self._tops):
+                temp_pool.add(param, self._pool_obj[top][1])
+
+            qc = qforte.FCIComputerGPU(
+                self._nel, 
+                self._2_spin, 
+                self._norb,
+                on_gpu=True,
+                data_type=self.data_type)
+            
+            t0 = self._gpu_time.time()
+            qc.hartree_fock_gpu()
+            self._gpu_timers['hartree_fock_gpu'] += self._gpu_time.time() - t0
+
+            t0 = self._gpu_time.time()
+            qc.evolve_pool_trotter_basic_gpu(
+                temp_pool,
+                antiherm=True,
+                adjoint=False)
+            self._gpu_timers['evolve_pool_trotter_basic_gpu'] += self._gpu_time.time() - t0
+            
+            if(self._apply_ham_as_tensor):
+                t0 = self._gpu_time.time()
+                self._curr_energy = np.real(
+                    qc.get_exp_val_tensor_gpu(
+                        self._zero_body_energy, 
+                        self._mo_oeis_gpu, 
+                        self._mo_teis_gpu, 
+                        self._mo_teis_einsum_gpu, 
+                        self._norb)
+                )
+                self._gpu_timers['get_exp_val_tensor_gpu'] += self._gpu_time.time() - t0
+            else:   
+                self._curr_energy = np.real(qc.get_exp_val(self._sq_ham))
+        
+
+        return self._curr_energy
+    
+    def energy_feval_cusv(self, params):
+        if not self._ref_from_hf:
+            raise ValueError('get_residual_vector_fci_comp only compatible with hf reference at this time.')
+        
+        temp_pool = None
+        if hasattr(self, "_active_reusable_pool"):
+            temp_pool = self._active_reusable_pool(params)
+
+        if temp_pool is None:
+            temp_pool = qforte.SQOpPool()
+            for param, top in zip(params, self._tops):
+                temp_pool.add(param, self._pool_obj[top][1])
+            qc = qforte.CUSVComputer(
+                self._nel,
+                self._2_spin,
+                self._norb)
+        else:
+            qc = self._reusable_qc_psi
+        
+        t0 = self._cusv_time.time()
+        qc.hartree_fock()
+        self._cusv_timers['hartree_fock'] += self._cusv_time.time() - t0
+
+        t0 = self._cusv_time.time()
+        qc.evolve_pool_trotter_basic(
+            temp_pool,
+            antiherm=True,
+            adjoint=False)
+        self._cusv_timers['evolve_pool_trotter_basic'] += self._cusv_time.time() - t0
+        
+        t0 = self._cusv_time.time()
+        self._curr_energy = np.real(qc.get_exp_val_opt(self._sq_ham))
+        self._cusv_timers['get_exp_val_opt'] += self._cusv_time.time() - t0
+
         return self._curr_energy

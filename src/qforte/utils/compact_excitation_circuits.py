@@ -5,6 +5,11 @@ Functions for constructing compact quantum circuits for fermioninc/qubit excitat
 import qforte as qf
 import numpy as np
 
+def _controlled_gate(gate_type, target, control):
+    """Build a controlled gate with plain Python int indices."""
+    return qf.gate(gate_type, int(target), int(control), 0.0)
+
+
 def compact_excitation_circuit(theta, creation, annihilation, qubit_excitations):
     """
     This function constructs compact quantum circuits for fermionic/qubit
@@ -129,9 +134,9 @@ def fermion_sign_circuit(creation, annihilation):
         return CNOT_circ
 
     for i in range(len(CNOT_indices) - 1):
-        CNOT_circ.add(qf.gate('CNOT', CNOT_indices[i + 1], CNOT_indices[i]))
+        CNOT_circ.add(_controlled_gate('CNOT', CNOT_indices[i + 1], CNOT_indices[i]))
 
-    CNOT_circ.add(qf.gate('cZ', creation[0], CNOT_indices[-1]))
+    CNOT_circ.add(_controlled_gate('cZ', creation[0], CNOT_indices[-1]))
 
     return CNOT_circ
 
@@ -167,10 +172,10 @@ def qubit_excitation(theta, creation, annihilation, gsd_control, gsd_sign, qubit
     circ = qf.Circuit()
 
     for target in creation[1:]:
-        circ.add(qf.gate('CNOT', target, creation[0]))
+        circ.add(_controlled_gate('CNOT', target, creation[0]))
     for target in annihilation[1:]:
-        circ.add(qf.gate('CNOT', target, annihilation[0]))
-    circ.add(qf.gate('CNOT', annihilation[0], creation[0]))
+        circ.add(_controlled_gate('CNOT', target, annihilation[0]))
+    circ.add(_controlled_gate('CNOT', annihilation[0], creation[0]))
 
     CNOT_circ_adjoint = circ.adjoint()
 
@@ -246,11 +251,11 @@ def multi_qubit_controlled_Ry(theta, target, control_creation, control_annihilat
         for j, control in enumerate(control_qubits):
             if not (i+1)%(num_Ry_gates/(1<<j+1)):
                 if not (i+1)%(num_Ry_gates/2) or i == num_Ry_gates - 1:
-                    circ.add(qf.gate('CNOT', target, control))
+                    circ.add(_controlled_gate('CNOT', target, control))
                 elif gsd_control != []:
-                    circ.add(qf.gate('CNOT', target, control))
+                    circ.add(_controlled_gate('CNOT', target, control))
                 else:
-                    circ.add(qf.gate('aCNOT', target, control))
+                    circ.add(_controlled_gate('aCNOT', target, control))
                 break
 
     return circ

@@ -235,6 +235,8 @@ public:
 
     std::unordered_map<uint64_t, size_t> get_aind() const { return aind_; }
     std::unordered_map<uint64_t, size_t> get_bind() const { return bind_; }
+    const std::unordered_map<uint64_t, size_t>& read_aind() const { return aind_; }
+    const std::unordered_map<uint64_t, size_t>& read_bind() const { return bind_; }
 
     Spinmap get_alfa_map() const { return alfa_map_; }
     Spinmap get_beta_map() const { return beta_map_; }

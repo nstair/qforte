@@ -43,16 +43,17 @@ order = 2
 
 alg_fci = qf.SRQK(
     mol,
-    computer_type = 'fci',
+    computer_type = 'fqe',
     trotter_number=r,
     trotter_order=order,
     )
 
-alg_fqe = qf.SRQK(
+alg_cusv = qf.SRQK(
     mol,
-    computer_type = 'fqe',
+    computer_type = 'cusv',
     trotter_number=r,
     trotter_order=order,
+    apply_ham_as_tensor=False
     )
 
 
@@ -71,20 +72,20 @@ Sfci = alg_fci._S
 
 
 timer.reset()
-alg_fqe.run(
+alg_cusv.run(
     s=s,
     dt=dt,
     use_exact_evolution=False,
     )
-timer.record("run alg fqe")
+timer.record("run alg cusv")
 
-Eo_fqe_comp = alg_fqe.get_gs_energy()
+Eo_cusv_comp = alg_cusv.get_gs_energy()
 
-Hfqe = alg_fqe._Hbar
-Sfqe = alg_fqe._S
+Hcusv = alg_cusv._Hbar
+Scusv = alg_cusv._S
 
-dHbar = Hfci - Hfqe
-dS = Sfci - Sfqe
+dHbar = Hfci - Hcusv
+dS = Sfci - Scusv
 normdH = np.linalg.norm(dHbar)
 normdS = np.linalg.norm(dS)
 
@@ -93,14 +94,14 @@ print("===========================")
 qf.helper.printing.matprint(Sfci)
 
 print("\n")
-qf.helper.printing.matprint(Sfqe)
+qf.helper.printing.matprint(Scusv)
 print("\n")
 
 print("\n Check Final Energy \n")
 print("===========================")
 print(f' Efci_comp:  {Eo_fci_comp:+12.10f}')
-print(f' Efqe_comp:  {Eo_fqe_comp:+12.10f}')
-print(f' E diff:     {Eo_fci_comp - Eo_fqe_comp:+12.10f}')
+print(f' Ecusv_comp: {Eo_cusv_comp:+12.10f}')
+print(f' E diff:     {Eo_fci_comp - Eo_cusv_comp:+12.10f}')
 print(f' |dH|:       {normdH:+12.14f}')
 print(f' |dS|:       {normdS:+12.14f}')
 

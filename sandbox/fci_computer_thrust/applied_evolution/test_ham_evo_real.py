@@ -17,10 +17,10 @@ geom = [
     ('H', (0., 0.,10.0)),
     ('H', (0., 0.,11.0)),
     ('H', (0., 0.,12.0)),
-    ('H', (0., 0.,13.0)),
-    ('H', (0., 0.,14.0)),
-    ('H', (0., 0.,15.0)),
-    ('H', (0., 0.,16.0)),
+    # ('H', (0., 0.,13.0)),
+    # ('H', (0., 0.,14.0)),
+    # ('H', (0., 0.,15.0)),
+    # ('H', (0., 0.,16.0)),
     # ('H', (0., 0.,17.0)),
     # ('H', (0., 0.,18.0)),
     ]
@@ -53,21 +53,24 @@ norb = int(len(ref) / 2)
 print(f" nqbit:     {norb*2}")
 print(f" nel:       {nel}")
  
-# fci_comp1 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
+fci_comp1 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 # fci_comp2 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
+
+data_type = "real"
+# data_type = "complex"
 
 fci_comp_thrust = qf.FCIComputerGPU(
     nel=nel, 
     sz=sz, 
     norb=norb,
     on_gpu=False,
-    data_type="real")
+    data_type=data_type)
 
 # reference = 'random'
 reference = 'hf'
 
 if(reference == 'hf'):
-    # fci_comp1.hartree_fock()
+    fci_comp1.hartree_fock()
     # fci_comp2.hartree_fock()
     fci_comp_thrust.hartree_fock_cpu()
 
@@ -89,20 +92,20 @@ sqham = mol.sq_hamiltonian
 
 # timer.reset()
 
-# sd_pool = qf.SQOpPool()
-# sd_pool.set_orb_spaces(ref)
-# # sd_pool.fill_pool("SD")
+sd_pool = qf.SQOpPool()
+sd_pool.set_orb_spaces(ref)
+sd_pool.fill_pool("SD")
 # sd_pool.fill_pool_kUpCCGSD(1)
-# # print(sd_pool)
+# print(sd_pool)
 
 # timer.record('fill cpu pool')
 
 timer.reset()
 
-sd_gpu = qf.SQOpPoolGPU(data_type="real")
+sd_gpu = qf.SQOpPoolGPU(data_type=data_type)
 sd_gpu.set_orb_spaces(ref)
-# sd_gpu.fill_pool("SD")
-sd_gpu.fill_pool_kUpCCGSD(1)
+sd_gpu.fill_pool("SD")
+# sd_gpu.fill_pool_kUpCCGSD(1)
 
 
 fci_comp_thrust.populate_index_arrays_for_pool_evo(sd_gpu)
@@ -140,15 +143,15 @@ fci_comp_thrust.to_gpu()
 
 for _ in range(N):
 # Call Trotter for fci_comp1
-    # timer.reset()
-    # fci_comp1.evolve_pool_trotter(
-    #     sd_pool,
-    #     time,
-    #     r,
-    #     order,
-    #     antiherm=True,
-    #     adjoint=False)
-    # timer.record('trotter fci_comp1')
+    timer.reset()
+    fci_comp1.evolve_pool_trotter(
+        sd_pool,
+        time,
+        r,
+        order,
+        antiherm=True,
+        adjoint=False)
+    timer.record('trotter fci_comp1')
 
 
     # print(fci_comp1.str(print_complex=False))
@@ -176,16 +179,16 @@ for _ in range(N):
     # print(fci_comp2)
     # print(fci_comp2.get_state().norm())
 
-    # fci_comp_thrust.to_cpu()
+    fci_comp_thrust.to_cpu()
 
-    # C1 = fci_comp1.get_state_deep()
-    # C1_dup = fci_comp1.get_state_deep()
+    C1 = fci_comp1.get_state_deep()
+    C1_dup = fci_comp1.get_state_deep()
     # C2 = fci_comp2.get_state_deep()
 
     # print(" coppying to C3 ")
 
-    # C3 = qf.Tensor(C1.shape(), "C3")
-    # fci_comp_thrust.copy_to_tensor_cpu(C3)
+    C3 = qf.Tensor(C1.shape(), "C3")
+    fci_comp_thrust.copy_to_tensor_cpu(C3)
 
     # print(" done coppying to C3 ")
 
@@ -195,7 +198,7 @@ for _ in range(N):
 
     # C1.subtract(C2)
     # C2.subtract(C3)
-    # C1_dup.subtract(C3)
+    C1_dup.subtract(C3)
 
     
 
@@ -203,7 +206,7 @@ for _ in range(N):
     # print(C3)
     # print(f"deltaC.norm() {C1.norm()}")
     # print(f"deltaC_thrust.norm() {C2.norm()}")
-    # print(f"||C1 - C3|| {C1_dup.norm()}")
+    print(f"||C1 - C3|| {C1_dup.norm()}")
 
     # fci_comp_thrust.to_gpu()
 

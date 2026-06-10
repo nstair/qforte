@@ -10,6 +10,18 @@
 #include "qubit_operator.h"
 #include "sq_operator.h"
 
+namespace {
+    int count_cnot_for_pauli_rotation(const Circuit& pauli_string) {
+        int weight = 0;
+        for (const auto& gate : pauli_string.gates()) {
+            if (gate.gate_id() != "I") {
+                weight++;
+            }
+        }
+        return weight > 1 ? 2 * (weight - 1) : 0;
+    }
+}
+
 void SQOperator::add_term(std::complex<double> circ_coeff, const std::vector<size_t>& cre_ops, const std::vector<size_t>& ann_ops) {
     terms_.push_back(std::make_tuple(circ_coeff, cre_ops, ann_ops));
 }
@@ -437,6 +449,24 @@ int SQOperator::count_cnot_for_exponential_full() const {
 
     // 4) Total CNOTs = #strings × 2(r-1)
     return num_strings * (r > 1 ? 2*(r-1) : 0);
+}
+
+int SQOperator::count_cnot_for_jw_exponential(bool qubit_excitation, int trotter_number) const {
+    if (trotter_number < 1) {
+        throw std::invalid_argument("trotter_number must be at least 1.");
+    }
+
+    SQOperator op_copy = *this;
+    QubitOperator jw_op = op_copy.jw_transform(qubit_excitation);
+
+    int total = 0;
+    for (const auto& term : jw_op.terms()) {
+        if (std::abs(term.first) > 1.0e-12) {
+            total += count_cnot_for_pauli_rotation(term.second);
+        }
+    }
+
+    return trotter_number * total;
 }
 
 /**

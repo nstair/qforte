@@ -10,6 +10,196 @@
 
 #include <stdexcept>
 #include <algorithm>
+#include <iomanip>
+#include <set>
+#include <sstream>
+
+namespace {
+    double clean_signature_value(double value) {
+        return (std::abs(value) < 1.0e-14) ? 0.0 : value;
+    }
+
+    std::string signed_sq_operator_signature(const SQOperator& sq_op, double sign) {
+        std::ostringstream oss;
+        oss << std::setprecision(17);
+        for (const auto& term : sq_op.terms()) {
+            const auto& coeff = std::get<0>(term);
+            oss << clean_signature_value(sign * coeff.real()) << ","
+                << clean_signature_value(sign * coeff.imag()) << ":";
+            for (const auto idx : std::get<1>(term)) {
+                oss << idx << ",";
+            }
+            oss << "|";
+            for (const auto idx : std::get<2>(term)) {
+                oss << idx << ",";
+            }
+            oss << ";";
+        }
+        return oss.str();
+    }
+
+    std::string sq_operator_signature(SQOperator sq_op) {
+        sq_op.simplify();
+
+        // Match the CPU SQOpPool canonicalization so compatibility helpers
+        // like GSDx and k-UpCCGSDx reorder operators without changing the
+        // generated span when a helper emits the same generator with a global
+        // sign flip.
+        const std::string positive = signed_sq_operator_signature(sq_op, +1.0);
+        const std::string negative = signed_sq_operator_signature(sq_op, -1.0);
+        return std::min(positive, negative);
+    }
+
+    template <typename PoolType>
+    void add_unique_operator(PoolType& pool, SQOperator sq_op, std::set<std::string>& seen) {
+        sq_op.simplify();
+        if (sq_op.terms().empty()) {
+            return;
+        }
+
+        const std::string signature = sq_operator_signature(sq_op);
+        if (seen.insert(signature).second) {
+            pool.add_term(1.0, sq_op);
+        }
+    }
+
+    template <typename PoolType>
+    void append_unique_pool_terms(PoolType& target, const PoolType& source, std::set<std::string>& seen) {
+        for (const auto& term : source.terms()) {
+            const std::string signature = sq_operator_signature(term.second);
+            if (seen.insert(signature).second) {
+                target.add_term(term.first, term.second);
+            }
+        }
+    }
+
+    template <typename PoolType>
+    void fill_gsd_particle_hole_terms(PoolType& pool, const int nocc, const int nvir) {
+        std::set<std::string> seen;
+
+        for (size_t i = 0; i < static_cast<size_t>(nocc); i++) {
+            const size_t ia = 2 * i;
+            const size_t ib = 2 * i + 1;
+
+            for (size_t a = 0; a < static_cast<size_t>(nvir); a++) {
+                const size_t aa = 2 * static_cast<size_t>(nocc) + 2 * a;
+                const size_t ab = 2 * static_cast<size_t>(nocc) + 2 * a + 1;
+
+                SQOperator temp1a;
+                temp1a.add_term(+1.0, {aa}, {ia});
+                temp1a.add_term(-1.0, {ia}, {aa});
+                add_unique_operator(pool, temp1a, seen);
+
+                SQOperator temp1b;
+                temp1b.add_term(+1.0, {ab}, {ib});
+                temp1b.add_term(-1.0, {ib}, {ab});
+                add_unique_operator(pool, temp1b, seen);
+            }
+        }
+
+        for (size_t i = 0; i < static_cast<size_t>(nocc); i++) {
+            const size_t ia = 2 * i;
+            const size_t ib = 2 * i + 1;
+            for (size_t j = i; j < static_cast<size_t>(nocc); j++) {
+                const size_t ja = 2 * j;
+                const size_t jb = 2 * j + 1;
+                for (size_t a = 0; a < static_cast<size_t>(nvir); a++) {
+                    const size_t aa = 2 * static_cast<size_t>(nocc) + 2 * a;
+                    const size_t ab = 2 * static_cast<size_t>(nocc) + 2 * a + 1;
+                    for (size_t b = a; b < static_cast<size_t>(nvir); b++) {
+                        const size_t ba = 2 * static_cast<size_t>(nocc) + 2 * b;
+                        const size_t bb = 2 * static_cast<size_t>(nocc) + 2 * b + 1;
+
+                        if ((aa != ba) && (ia != ja)) {
+                            SQOperator temp2aaaa;
+                            temp2aaaa.add_term(+1.0, {aa, ba}, {ia, ja});
+                            temp2aaaa.add_term(-1.0, {ja, ia}, {ba, aa});
+                            add_unique_operator(pool, temp2aaaa, seen);
+                        }
+
+                        if ((ab != bb) && (ib != jb)) {
+                            SQOperator temp2bbbb;
+                            temp2bbbb.add_term(+1.0, {ab, bb}, {ib, jb});
+                            temp2bbbb.add_term(-1.0, {jb, ib}, {bb, ab});
+                            add_unique_operator(pool, temp2bbbb, seen);
+                        }
+
+                        if ((aa != bb) && (ia != jb)) {
+                            SQOperator temp2abab;
+                            temp2abab.add_term(+1.0, {aa, bb}, {ia, jb});
+                            temp2abab.add_term(-1.0, {jb, ia}, {bb, aa});
+                            add_unique_operator(pool, temp2abab, seen);
+                        }
+
+                        if ((ab != ba) && (ib != ja)) {
+                            SQOperator temp2baba;
+                            temp2baba.add_term(+1.0, {ab, ba}, {ib, ja});
+                            temp2baba.add_term(-1.0, {ja, ib}, {ba, ab});
+                            add_unique_operator(pool, temp2baba, seen);
+                        }
+
+                        if ((aa != bb) && (ib != ja)) {
+                            SQOperator temp2abba;
+                            temp2abba.add_term(+1.0, {aa, bb}, {ib, ja});
+                            temp2abba.add_term(-1.0, {ja, ib}, {bb, aa});
+                            add_unique_operator(pool, temp2abba, seen);
+                        }
+
+                        if ((ab != ba) && (ia != jb)) {
+                            SQOperator temp2baab;
+                            temp2baab.add_term(+1.0, {ab, ba}, {ia, jb});
+                            temp2baab.add_term(-1.0, {jb, ia}, {ba, ab});
+                            add_unique_operator(pool, temp2baab, seen);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    template <typename PoolType>
+    void fill_kupccgsd_particle_hole_terms(PoolType& pool, const int nocc, const int nvir) {
+        std::set<std::string> seen;
+
+        for (size_t i = 0; i < static_cast<size_t>(nocc); i++) {
+            const size_t ia = 2 * i;
+            const size_t ib = 2 * i + 1;
+
+            for (size_t a = 0; a < static_cast<size_t>(nvir); a++) {
+                const size_t aa = 2 * static_cast<size_t>(nocc) + 2 * a;
+                const size_t ab = 2 * static_cast<size_t>(nocc) + 2 * a + 1;
+
+                SQOperator temp1a;
+                temp1a.add_term(+1.0, {aa}, {ia});
+                temp1a.add_term(-1.0, {ia}, {aa});
+                add_unique_operator(pool, temp1a, seen);
+
+                SQOperator temp1b;
+                temp1b.add_term(+1.0, {ab}, {ib});
+                temp1b.add_term(-1.0, {ib}, {ab});
+                add_unique_operator(pool, temp1b, seen);
+            }
+        }
+
+        for (size_t p = static_cast<size_t>(nocc);
+             p < static_cast<size_t>(nocc + nvir);
+             ++p) {
+            const size_t pa = 2 * p;
+            const size_t pb = 2 * p + 1;
+            for (size_t q = 0; q < static_cast<size_t>(nocc); ++q) {
+                const size_t qa = 2 * q;
+                const size_t qb = 2 * q + 1;
+
+                if ((pa != qa) && (pb != qb)) {
+                    SQOperator temp2abab;
+                    temp2abab.add_term(-1.0, {pa, pb}, {qa, qb});
+                    temp2abab.add_term(+1.0, {qb, qa}, {pb, pa});
+                    add_unique_operator(pool, temp2abab, seen);
+                }
+            }
+        }
+    }
+}
 
 SQOpPoolGPU::~SQOpPoolGPU() {
     // Safe cleanup of device vectors to avoid segfaults during CUDA shutdown
@@ -104,6 +294,21 @@ void SQOpPoolGPU::set_coeffs(const std::vector<std::complex<double>>& new_coeffs
 void SQOpPoolGPU::set_coeffs_to_scaler(std::complex<double> new_coeff){
     for (size_t l = 0; l < terms_.size(); l++){
         terms_[l].first = new_coeff;
+    }
+}
+
+void SQOpPoolGPU::update_evolution_coeffs(const std::vector<std::complex<double>>& new_coeffs){
+    if (!device_vecs_populated_) {
+        throw std::runtime_error("Cannot update evolution coeffs before populate_index_arrays_for_pool_evo is called");
+    }
+    if (new_coeffs.size() != outer_coeffs_.size()) {
+        throw std::invalid_argument("Coefficient count mismatch in update_evolution_coeffs");
+    }
+    
+    // Update both storage locations
+    for (size_t i = 0; i < new_coeffs.size(); ++i) {
+        terms_[i].first = new_coeffs[i];
+        outer_coeffs_[i] = new_coeffs[i];
     }
 }
 
@@ -332,6 +537,18 @@ void SQOpPoolGPU::fill_pool(std::string pool_type){
                 }
             }
         }
+    } else if(pool_type=="GSDx"){
+        SQOpPoolGPU ph_pool(data_type_);
+        fill_gsd_particle_hole_terms(ph_pool, nocc_, nvir_);
+
+        SQOpPoolGPU gsd_pool(data_type_);
+        gsd_pool.nocc_ = nocc_;
+        gsd_pool.nvir_ = nvir_;
+        gsd_pool.fill_pool("GSD");
+
+        std::set<std::string> seen;
+        append_unique_pool_terms(*this, ph_pool, seen);
+        append_unique_pool_terms(*this, gsd_pool, seen);
     } else if ( (pool_type=="S") || (pool_type=="SD") || (pool_type=="SDT") || (pool_type=="SDTQ") || (pool_type=="SDTQP") || (pool_type=="SDTQPH") ) {
 
         int max_nbody = 0;
@@ -352,85 +569,195 @@ void SQOpPoolGPU::fill_pool(std::string pool_type){
             throw std::invalid_argument( "Qforte UCC only supports up to Hextuple excitations." );
         }
 
-        int nqb = 2 * (nocc_ + nvir_);
-        int nel = 2 * nocc_;
-
-        // TODO(Nick): incorporate more flexibility into this
-        int na_el = nocc_;
-        int nb_el = nocc_;
-
-        for (int I=0; I<std::pow(2, nqb); I++) {
-
-            // get the basis state (I) | 11001100 > or whatever..
-            QubitBasis basis_I(I);
-
-            if(basis_I.get_num_ones() != na_el + nb_el) {
-                continue;
+        // Optimized implementation: directly enumerate valid excitations
+        // instead of iterating over all 2^nqb bitstrings
+        
+        // ============================================
+        // Singles (1-body excitations): i -> a
+        // ============================================
+        if (max_nbody >= 1) {
+            for (size_t i = 0; i < static_cast<size_t>(nocc_); i++) {
+                size_t ia = 2 * i;      // alpha occupied spin-orbital
+                size_t ib = 2 * i + 1;  // beta occupied spin-orbital
+                
+                for (size_t a = 0; a < static_cast<size_t>(nvir_); a++) {
+                    size_t aa = 2 * nocc_ + 2 * a;      // alpha virtual spin-orbital
+                    size_t ab = 2 * nocc_ + 2 * a + 1;  // beta virtual spin-orbital
+                    
+                    // Alpha single: i_α -> a_α (parity: +1 * +1 = +1)
+                    SQOperator t_a;
+                    t_a.add_term(+1.0, {aa}, {ia});
+                    t_a.add_term(-1.0, {ia}, {aa});
+                    t_a.simplify();
+                    if (t_a.terms().size() > 0) {
+                        add_term(1.0, t_a);
+                    }
+                    
+                    // Beta single: i_β -> a_β (parity: -1 * -1 = +1)
+                    SQOperator t_b;
+                    t_b.add_term(+1.0, {ab}, {ib});
+                    t_b.add_term(-1.0, {ib}, {ab});
+                    t_b.simplify();
+                    if (t_b.terms().size() > 0) {
+                        add_term(1.0, t_b);
+                    }
+                }
             }
+        }
+        
+        // ============================================
+        // Doubles (2-body excitations): i,j -> a,b
+        // ============================================
+        if (max_nbody >= 2) {
+            for (size_t i = 0; i < static_cast<size_t>(nocc_); i++) {
+                size_t ia = 2 * i;
+                size_t ib = 2 * i + 1;
+                
+                for (size_t j = i; j < static_cast<size_t>(nocc_); j++) {
+                    size_t ja = 2 * j;
+                    size_t jb = 2 * j + 1;
+                    
+                    for (size_t a = 0; a < static_cast<size_t>(nvir_); a++) {
+                        size_t aa = 2 * nocc_ + 2 * a;
+                        size_t ab = 2 * nocc_ + 2 * a + 1;
+                        
+                        for (size_t b = a; b < static_cast<size_t>(nvir_); b++) {
+                            size_t ba = 2 * nocc_ + 2 * b;
+                            size_t bb = 2 * nocc_ + 2 * b + 1;
+                            
+                            // αα -> αα: (i_α, j_α) -> (a_α, b_α)
+                            // parity: (+1)(+1)(+1)(+1) = +1
+                            if (i != j && a != b) {
+                                SQOperator t_aaaa;
+                                t_aaaa.add_term(+1.0, {aa, ba}, {ia, ja});
+                                t_aaaa.add_term(-1.0, {ja, ia}, {ba, aa});
+                                t_aaaa.simplify();
+                                if (t_aaaa.terms().size() > 0) {
+                                    add_term(1.0, t_aaaa);
+                                }
+                            }
+                            
+                            // ββ -> ββ: (i_β, j_β) -> (a_β, b_β)
+                            // parity: (-1)(-1)(-1)(-1) = +1
+                            if (i != j && a != b) {
+                                SQOperator t_bbbb;
+                                t_bbbb.add_term(+1.0, {ab, bb}, {ib, jb});
+                                t_bbbb.add_term(-1.0, {jb, ib}, {bb, ab});
+                                t_bbbb.simplify();
+                                if (t_bbbb.terms().size() > 0) {
+                                    add_term(1.0, t_bbbb);
+                                }
+                            }
+                            
+                            // αβ -> αβ: (i_α, j_β) -> (a_α, b_β)
+                            // parity: (+1)(-1)(+1)(-1) = +1
+                            {
+                                SQOperator t_abab;
+                                t_abab.add_term(+1.0, {aa, bb}, {ia, jb});
+                                t_abab.add_term(-1.0, {jb, ia}, {bb, aa});
+                                t_abab.simplify();
+                                if (t_abab.terms().size() > 0) {
+                                    add_term(1.0, t_abab);
+                                }
+                            }
+                            
+                            // βα -> βα: (i_β, j_α) -> (a_β, b_α)
+                            // parity: (-1)(+1)(-1)(+1) = +1
+                            // Skip if same spatial orbitals to avoid duplicates with αβ->αβ
+                            if (i != j || a != b) {
+                                SQOperator t_baba;
+                                t_baba.add_term(+1.0, {ab, ba}, {ib, ja});
+                                t_baba.add_term(-1.0, {ja, ib}, {ba, ab});
+                                t_baba.simplify();
+                                if (t_baba.terms().size() > 0) {
+                                    add_term(1.0, t_baba);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // ============================================
+        // Triples and higher (3+ body excitations)
+        // Fall back to enumeration for these less common cases
+        // ============================================
+        if (max_nbody >= 3) {
+            int nqb = 2 * (nocc_ + nvir_);
+            int nel = 2 * nocc_;
+            int na_el = nocc_;
+            int nb_el = nocc_;
 
-            int nbody = 0;
-            int pn = 0;
-            int na_I = 0;
-            int nb_I = 0;
-            std::vector<size_t> holes; // i, j, k, ...
-            std::vector<size_t> particles; // a, b, c, ...
-            std::vector<int> parity;
+            for (int I = 0; I < std::pow(2, nqb); I++) {
+                QubitBasis basis_I(I);
 
-            for (size_t p=0; p<2*nocc_; p++) {
-                int bit_val = static_cast<int>(basis_I.get_bit(p));
-                nbody += ( 1 - bit_val);
-                pn += bit_val;
-                if(p%2==0){
-                    na_I += bit_val;
-                } else {
-                    nb_I += bit_val;
+                if (basis_I.get_num_ones() != na_el + nb_el) {
+                    continue;
                 }
 
-                if(bit_val-1){
-                    holes.push_back(p);
-                    if(p%2==0){
-                        parity.push_back(1);
+                int nbody = 0;
+                int pn = 0;
+                int na_I = 0;
+                int nb_I = 0;
+                std::vector<size_t> holes;
+                std::vector<size_t> particles;
+                std::vector<int> parity;
+
+                for (size_t p = 0; p < 2 * static_cast<size_t>(nocc_); p++) {
+                    int bit_val = static_cast<int>(basis_I.get_bit(p));
+                    nbody += (1 - bit_val);
+                    pn += bit_val;
+                    if (p % 2 == 0) {
+                        na_I += bit_val;
                     } else {
-                        parity.push_back(-1);
+                        nb_I += bit_val;
+                    }
+
+                    if (bit_val - 1) {
+                        holes.push_back(p);
+                        if (p % 2 == 0) {
+                            parity.push_back(1);
+                        } else {
+                            parity.push_back(-1);
+                        }
                     }
                 }
-            }
-            for (size_t q=2*nocc_; q<nqb; q++) {
-                int bit_val = static_cast<int>(basis_I.get_bit(q));
-                pn += bit_val;
-                if(q%2==0){
-                    na_I += bit_val;
-                } else {
-                    nb_I += bit_val;
-                }
-                if(bit_val){
-                    particles.push_back(q);
-                    if(q%2==0){
-                        parity.push_back(1);
+                for (size_t q = 2 * static_cast<size_t>(nocc_); q < static_cast<size_t>(nqb); q++) {
+                    int bit_val = static_cast<int>(basis_I.get_bit(q));
+                    pn += bit_val;
+                    if (q % 2 == 0) {
+                        na_I += bit_val;
                     } else {
-                        parity.push_back(-1);
+                        nb_I += bit_val;
+                    }
+                    if (bit_val) {
+                        particles.push_back(q);
+                        if (q % 2 == 0) {
+                            parity.push_back(1);
+                        } else {
+                            parity.push_back(-1);
+                        }
                     }
                 }
-            }
 
-            if(pn==nel && na_I == na_el && nb_I == nb_el){
+                if (pn == nel && na_I == na_el && nb_I == nb_el) {
+                    // Only process triples and higher (singles/doubles already handled)
+                    if (nbody >= 3 && nbody <= max_nbody) {
+                        int total_parity = 1;
+                        for (const auto& z : parity) {
+                            total_parity *= z;
+                        }
 
-                if (nbody != 0 && nbody <= max_nbody ) {
-
-                    int total_parity = 1;
-                    for (const auto& z: parity){
-                        total_parity *= z;
-                    }
-
-                    if(total_parity==1){
-                        // need i, j, a, b
-                        SQOperator t_temp;
-                        t_temp.add_term(+1.0, particles, holes);
-                        std::vector<size_t> rparticles(particles.rbegin(), particles.rend());
-                        std::vector<size_t> rholes(holes.rbegin(), holes.rend());
-                        t_temp.add_term(-1.0, rholes, rparticles);
-                        t_temp.simplify();
-                        add_term(1.0, t_temp);
+                        if (total_parity == 1) {
+                            SQOperator t_temp;
+                            t_temp.add_term(+1.0, particles, holes);
+                            std::vector<size_t> rparticles(particles.rbegin(), particles.rend());
+                            std::vector<size_t> rholes(holes.rbegin(), holes.rend());
+                            t_temp.add_term(-1.0, rholes, rparticles);
+                            t_temp.simplify();
+                            add_term(1.0, t_temp);
+                        }
                     }
                 }
             }
@@ -632,6 +959,23 @@ void SQOpPoolGPU::fill_pool_kUpCCGSD(int kmax)
                 }
             }
         }        
+    }
+}
+
+void SQOpPoolGPU::fill_pool_kUpCCGSDx(int kmax)
+{
+    for(int k=0; k < kmax; ++k){
+        SQOpPoolGPU ph_pool(data_type_);
+        fill_kupccgsd_particle_hole_terms(ph_pool, nocc_, nvir_);
+
+        SQOpPoolGPU generalized_pool(data_type_);
+        generalized_pool.nocc_ = nocc_;
+        generalized_pool.nvir_ = nvir_;
+        generalized_pool.fill_pool_kUpCCGSD(1);
+
+        std::set<std::string> seen;
+        append_unique_pool_terms(*this, ph_pool, seen);
+        append_unique_pool_terms(*this, generalized_pool, seen);
     }
 }
 

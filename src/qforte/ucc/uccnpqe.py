@@ -52,7 +52,21 @@ class UCCNPQE(UCCPQE):
             opt_thresh = 1.0e-5,
             opt_maxiter = 40,
             noise_factor = 0.0,
-            optimizer = 'jacobi'):
+            optimizer = 'jacobi',
+            **kwargs):
+
+        if kwargs:
+            qf_optimizer_options = sorted(
+                key for key in kwargs
+                if key.startswith("lbfgs_qf") or key.startswith("bfgs_qf")
+            )
+            if qf_optimizer_options:
+                raise ValueError(
+                    "lbfgs_qf/bfgs_qf and their acceleration protocols currently support "
+                    "gradient-based VQE classes UCCNVQE and ADAPTVQE only. "
+                    "UCCNPQE is residual-based."
+                )
+            raise TypeError(f"Unexpected run keyword option(s): {sorted(kwargs)}")
 
         if(self._state_prep_type != 'occupation_list'):
             raise ValueError("PQE implementation can only handle occupation_list Hartree-Fock reference.")
@@ -525,5 +539,8 @@ class UCCNPQE(UCCPQE):
 
 UCCNPQE.jacobi_solver = optimizer.jacobi_solver
 UCCNPQE.scipy_solver = optimizer.scipy_solver
+UCCNPQE.lbfgs_qf_solve = optimizer.lbfgs_qf_solve
+UCCNPQE.bfgs_qf_solve = optimizer.bfgs_qf_solve
+UCCNPQE.lbfgs_solver = optimizer.lbfgs_solver
 UCCNPQE.construct_moment_space = moment_energy_corrections.construct_moment_space
 UCCNPQE.compute_moment_energies = moment_energy_corrections.compute_moment_energies

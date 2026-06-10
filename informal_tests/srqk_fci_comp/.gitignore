@@ -1,0 +1,4 @@
+__pycache__/
+logs/
+backend_logs/
+low_memory_logs/

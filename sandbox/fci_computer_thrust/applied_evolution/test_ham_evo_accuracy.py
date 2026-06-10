@@ -17,8 +17,8 @@ geom = [
     ('H', (0., 0.,10.0)),
     ('H', (0., 0.,11.0)),
     ('H', (0., 0.,12.0)),
-    ('H', (0., 0.,13.0)),
-    ('H', (0., 0.,14.0)),
+    # ('H', (0., 0.,13.0)),
+    # ('H', (0., 0.,14.0)),
     # ('H', (0., 0.,15.0)),
     # ('H', (0., 0.,16.0))
     ]
@@ -46,7 +46,7 @@ norb = int(len(ref) / 2)
 print(f" nqbit:     {norb*2}")
 print(f" nel:       {nel}")
  
-# fci_comp1 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
+fci_comp1 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 # fci_comp2 = qf.FCIComputer(nel=nel, sz=sz, norb=norb)
 
 fci_comp_gpu = qf.FCIComputerGPU(
@@ -60,7 +60,7 @@ fci_comp_gpu = qf.FCIComputerGPU(
 reference = 'hf'
 
 if(reference == 'hf'):
-    # fci_comp1.hartree_fock()
+    fci_comp1.hartree_fock()
     # fci_comp2.hartree_fock()
     fci_comp_gpu.hartree_fock_cpu()
 
@@ -120,15 +120,15 @@ fci_comp_gpu.to_gpu()
 
 for _ in range(N):
 # Call Trotter for fci_comp1
-    # timer.reset()
-    # fci_comp1.evolve_pool_trotter(
-    #     hermitian_pairs,
-    #     time,
-    #     r,
-    #     order,
-    #     antiherm=False,
-    #     adjoint=False)
-    # timer.record('trotter fci_comp1')
+    timer.reset()
+    fci_comp1.evolve_pool_trotter(
+        hermitian_pairs,
+        time,
+        r,
+        order,
+        antiherm=False,
+        adjoint=False)
+    timer.record('trotter fci_comp1')
 
 
     # print(fci_comp1.str(print_complex=False))
@@ -156,21 +156,21 @@ for _ in range(N):
     # print(fci_comp2)
     # print(fci_comp2.get_state().norm())
 
-    # fci_comp_gpu.to_cpu()
+    fci_comp_gpu.to_cpu()
 
-    # C1 = fci_comp1.get_state_deep()
-    # C1_dup = fci_comp1.get_state_deep()
-    # # C2 = fci_comp2.get_state_deep()
-    # C3 = qf.Tensor(C1.shape(), "C3")
-    # fci_comp_gpu.copy_to_tensor_cpu(C3)
+    C1 = fci_comp1.get_state_deep()
+    C1_dup = fci_comp1.get_state_deep()
+    # C2 = fci_comp2.get_state_deep()
+    C3 = qf.Tensor(C1.shape(), "C3")
+    fci_comp_gpu.copy_to_tensor_cpu(C3)
 
-    # # print(f"C1: {C1}")
-    # # print(f"C2: {C2}")
-    # # print(f"C3: {C3}")
+    # print(f"C1: {C1}")
+    # print(f"C2: {C2}")
+    # print(f"C3: {C3}")
 
-    # # C1.subtract(C2)
-    # # C2.subtract(C3)
-    # C1_dup.subtract(C3)
+    # C1.subtract(C2)
+    # C2.subtract(C3)
+    C1_dup.subtract(C3)
 
     
 
@@ -178,7 +178,7 @@ for _ in range(N):
     # # print(C3)
     # # print(f"deltaC.norm() {C1.norm()}")
     # # print(f"deltaC_thrust.norm() {C2.norm()}")
-    # print(f"||C1 - C3|| {C1_dup.norm()}")
+    print(f"||C1 - C3|| {C1_dup.norm()}")
 
     # fci_comp_gpu.to_gpu()
 

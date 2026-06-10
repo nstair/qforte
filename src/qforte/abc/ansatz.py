@@ -49,6 +49,26 @@ class UCC:
             raise ValueError("Encountered phase change, phase not equal to (1.0 + 0.0i)")
         return U
 
+    def count_jw_cnot_ladders(self):
+        """Return the CNOT count for the selected tUCC pool operators.
+
+        This mirrors the standard JW transform plus Pauli-string exponential
+        decomposition used by trotterize(), without materializing the full
+        ansatz circuit.
+        """
+        n_cnot = self._Uprep.get_num_cnots()
+        qubit_excitations = getattr(self, "_qubit_excitations", False)
+        trotter_number = getattr(self, "_trotter_number", 1)
+
+        for top in self._tops:
+            n_cnot += self._pool_obj.count_cnot_for_term_jw_exponential(
+                int(top),
+                qubit_excitations,
+                trotter_number,
+            )
+
+        return n_cnot
+
     def build_orb_energies(self):
         """
         This code provides the spin-orbital energies used in
@@ -118,4 +138,3 @@ class UCC:
             resids_over_denoms.append(res_mu)
 
         return resids_over_denoms
-

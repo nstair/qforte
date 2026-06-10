@@ -1,0 +1,81 @@
+Ok I would like some new informal test cases.
+
+The goal is to mimic informal test behavior found in informal_tests/uncc_vqe_fci_comp but for SRQK methods.
+The new informal test files should be written as informal_tests/srqk_fci_comp and be appropriately.
+I would like the follwwing 3 
+
+# 1. a test that saves srqk run results (when a save results flag is passed, as is the case for the vqe test): 
+
+Energy for the target state, 
+
+H mats, 
+
+S mats, 
+
+final RR
+
+Cnot counts
+
+Tmax
+
+macro time steps
+
+micro time steps
+
+nuber of trotter steps
+
+for a small molecule (linear H4, sto-3g, c1 and d2h symmetry variants) running computer_type = 'fci', 
+
+Future runs read this and verify outputs have not changed (mirrors informal_tests/uncc_vqe_fci_comp/run_uncc_vqe_fci_comp.py). 
+I'd like the various run styles (manual_linear_old_behavior (with dt = 'lambda_inv'), 
+variance_linear_fixed_trotter, variance_linear_auto_trotter) to be tested as they are in 
+sandbox/srqk_fci_comp/test_srqk_time_grid_options.py. You may use the current settings in that file 
+as hyperparameters. Make sure to test 1st and 2nd order trotterization using s=5.
+
+ALL TESTS should have very clear, well formatted (spaced, tabulated, and alligned) outpt to make it obvious to the user
+what specifically is being tested, the current vqe test output is not super clear.
+i.e. "srqk H mat diff pass, Smat diff pass, etc.."
+If anyting is skipped or fails that should be noted obviously inthe outpt.
+
+The test should confirm with a table at the end akin to (obviously also printing the molecule iteslf):
+
+==> Case summary <==
+  FCI reference energy:           -107.5493009586
+
+case                                        final E      |E-FCI|         Tmax   max macro dt  m(max dt)     max CNOT  final RR
+------------------------------------------------------------------------------------------------------------------------------
+manual_linear_old_behavior          -107.5438493651   5.4516e-03   1.0018e-01     3.3392e-03          1     11060880         5
+variance_linear_fixed_trotter       -107.5487403763   5.6058e-04   3.5358e+00     1.1786e-01          1     11060880        28
+variance_linear_auto_trotter        -107.5492990209   1.9377e-06   3.5358e+00     1.1786e-01         37    409252560        28
+variance_power_auto_trotter         -107.5492970431   3.9154e-06   3.5358e+00     2.3179e-01         72    407777776        25
+
+# 2. a test that compares to the saved outputs from 1 using all avalible computer_types "fock" "fci_gpu" "fqe" and "cusv."
+In this test there should be stubs for "fci_gpu" and "cusv" (as there are for the vqe tests), but they should be skipped if
+qforte was not build with cuda capability. The skipp shuould be clearly noted in the output.
+
+# 3. a test that compares to the saved outputs from 1 for the "low memory" version for all computer types.
+
+
+
+# I would like a new option for srqk when running with computer_type = 'fock.' 
+Presently the srqk with with 'fock' builds the srqk mats in what I'd like to call a 'legacy' fashion.
+This is done by initializing a new QK for every timve evolved state and each evolved state is formed from 
+trotterization of an increasily long evolution. 
+The trotterization is also based directly on term-by-term evolution of the qubit hamiltonain, 
+rather than term-by-term evolution with hamiltonain gatherd into hermitan pairs.
+
+
+I'd like this routine preserved, but only if a new option:
+use_legacy_fock_srqk_protocal = True
+The default should be use_legacy_fock_srqk_protocal = False, and we should throw if that option is true but
+computer type is not equal to 'fock.'
+
+perhaps just re-name build_srqk_masts_fast_fock to build_srqk_masts_fast_fock_legacy 
+
+
+I would like the new default behavior with the fock computer to mirror all other computer types, where
+each new time evolved basis state is just an addtional macro-step evolution of the hermitian pairs organization
+of the hamiltonain. each hermitian pair will need to be JW transformed, and compiled into a trotter circuit
+as is done in the current srqk 'fock' path.
+
+Can you make that happen for me.

@@ -20,10 +20,10 @@ __global__ void apply_individual_nbody1_accumulate_kernel_atomic(
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
-    int tensor_size);
+    long long tensor_size);
 
 extern "C" void apply_individual_nbody1_accumulate_wrapper(
     const cuDoubleComplex coeff, 
@@ -35,10 +35,144 @@ extern "C" void apply_individual_nbody1_accumulate_wrapper(
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
-    int tensor_size);
+    long long tensor_size);
+
+// ==============================================
+// Givens-style tiled dot kernels (Real)
+// Beta-fast warp layout for coalesced row-major access.
+// Paired dual: each thread computes both dag and undag contributions.
+// ==============================================
+
+// ---- Alpha-only ----
+
+extern "C" void dot_alpha_only_dual_real_wrapper(
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const double* d_paritya_uv,
+    const double* d_paritya_vu,
+    int na_pairs,
+    long long nbeta_strs_,
+    double coeff_uv,
+    double coeff_vu,
+    double* d_accum);
+
+// ---- Beta-only ----
+
+extern "C" void dot_beta_only_dual_real_wrapper(
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const double* d_parityb_uv,
+    const double* d_parityb_vu,
+    int nb_pairs,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double coeff_uv,
+    double coeff_vu,
+    double* d_accum);
+
+// ---- Mixed alpha×beta ----
+
+extern "C" void dot_mixed_dual_real_wrapper(
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const double* d_paritya_uv,
+    const double* d_paritya_vu,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const double* d_parityb_uv,
+    const double* d_parityb_vu,
+    int na_pairs,
+    int nb_pairs,
+    long long nbeta_strs_,
+    double coeff_uv,
+    double coeff_vu,
+    double* d_accum);
+
+extern "C" void dot_easy_number_real_wrapper(
+    double coeff,
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_alpha,
+    int n_alpha,
+    const int* d_beta,
+    int n_beta,
+    long long nbeta_strs_,
+    double* d_accum);
+
+// ==============================================
+// Givens-style tiled dot kernels (Complex)
+// ==============================================
+
+// ---- Alpha-only ----
+
+extern "C" void dot_alpha_only_dual_wrapper(
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya_uv,
+    const cuDoubleComplex* d_paritya_vu,
+    int na_pairs,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* d_accum);
+
+// ---- Beta-only ----
+
+extern "C" void dot_beta_only_dual_wrapper(
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb_uv,
+    const cuDoubleComplex* d_parityb_vu,
+    int nb_pairs,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* d_accum);
+
+// ---- Mixed alpha×beta ----
+
+extern "C" void dot_mixed_dual_wrapper(
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya_uv,
+    const cuDoubleComplex* d_paritya_vu,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb_uv,
+    const cuDoubleComplex* d_parityb_vu,
+    int na_pairs,
+    int nb_pairs,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* d_accum);
+
+extern "C" void dot_easy_number_wrapper(
+    cuDoubleComplex coeff,
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_alpha,
+    int n_alpha,
+    const int* d_beta,
+    int n_beta,
+    long long nbeta_strs_,
+    cuDoubleComplex* d_accum);
 
 // ==============================================
 // Scale elements kernel and wrapper (Complex)
@@ -50,7 +184,7 @@ __global__ void scale_elements_kernel(
     int first_size,
     const int* d_second, 
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor);
 
 extern "C" void scale_elements_wrapper_complex(
@@ -59,7 +193,7 @@ extern "C" void scale_elements_wrapper_complex(
     int first_size,
     const int* d_second, 
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor);
 
 // ==============================================
@@ -72,7 +206,7 @@ __global__ void scale_elements_kernel_real(
     int first_size,
     const int* __restrict__ d_second,
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor);
 
 extern "C" void scale_elements_wrapper_real(
@@ -81,7 +215,7 @@ extern "C" void scale_elements_wrapper_real(
     int first_size,
     const int* d_second,
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor);
 
 // ==============================================
@@ -95,7 +229,7 @@ __global__ void inplace_givens_update_rows_kernel(
     const cuDoubleComplex* __restrict__ paritya1,
     const cuDoubleComplex* __restrict__ paritya2,
     int na,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
@@ -107,7 +241,7 @@ extern "C" void inplace_givens_update_complex_rows_wrapper(
     const cuDoubleComplex* paritya1,
     const cuDoubleComplex* paritya2,
     int na,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
@@ -124,7 +258,7 @@ __global__ void inplace_givens_update_cols_kernel(
     const cuDoubleComplex* __restrict__ parityb2,
     int nalpha, 
     int nb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
@@ -141,7 +275,7 @@ __global__ void inplace_givens_update_complex_tiled(
     const cuDoubleComplex* __restrict__ parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
@@ -159,7 +293,7 @@ extern "C" void inplace_givens_update_complex_tiled_wrapper(
     const cuDoubleComplex* parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,     // leading dimension (num columns)
+    long long nbeta_strs_,     // leading dimension (num columns)
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2);
@@ -175,7 +309,7 @@ __global__ void inplace_givens_update_rows_kernel_real(
     const double* __restrict__ paritya1,   // [na]  (g† leg, row)
     const double* __restrict__ paritya2,   // [na]  (g  leg, row)
     int na,
-    int nbeta_strs_,                        // number of columns
+    long long nbeta_strs_,                        // number of columns
     double factor,
     double acc_coeff1,
     double acc_coeff2);
@@ -187,7 +321,83 @@ extern "C" void inplace_givens_update_real_rows_wrapper(
     const double* paritya1,
     const double* paritya2,
     int na,
-    int nbeta_strs_,
+    long long nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
+template <int ROWS_PER_THREAD>
+__global__ void inplace_givens_update_cols_kernel_real(
+    double* __restrict__ d_Cout,
+    const int* __restrict__ sourceb1,      // [nb]
+    const int* __restrict__ targetb1,      // [nb]
+    const double* __restrict__ parityb1,   // [nb]  (g† leg, col)
+    const double* __restrict__ parityb2,   // [nb]  (g  leg, col)
+    int nb,
+    long long nalpha_strs_,                // number of rows
+    long long nbeta_strs_,                 // number of columns
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
+extern "C" void inplace_givens_update_real_cols_wrapper(
+    double* d_Cout,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nb,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
+// ==============================================
+// Beta-only row-major tiled Givens kernel (Real)
+// Keeps warps row-local: threadIdx.x walks beta pairs, threadIdx.y walks rows.
+// This gives coalesced (unit-stride) loads/stores within each warp and produces
+// more blocks than the column kernel when nb is small.
+// ==============================================
+
+template<int BX, int AY>
+__global__ void inplace_givens_update_beta_only_rowmajor_real(
+    double* __restrict__ d_Cout,
+    const int* __restrict__ sourceb1,      // [nb]  beta source indices
+    const int* __restrict__ targetb1,      // [nb]  beta target indices
+    const double* __restrict__ parityb1,   // [nb]  parity for source row (g† leg)
+    const double* __restrict__ parityb2,   // [nb]  parity for target row (g  leg)
+    int nb,                                // number of beta pairs
+    long long nalpha_strs_,                      // number of alpha strings (rows)
+    long long nbeta_strs_,                       // leading dimension (columns)
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
+// Internal template launcher for beta-only row-major kernel
+template<int BX, int AY>
+static void launch_inplace_givens_update_beta_only_rowmajor_real(
+    double* d_Cout,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nb,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2);
+
+extern "C" void inplace_givens_update_real_beta_only_rowmajor_wrapper(
+    double* d_Cout,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nb,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
     double factor,
     double acc_coeff1,
     double acc_coeff2);
@@ -204,7 +414,7 @@ __global__ void inplace_givens_update_real_tiled(
     const double* __restrict__ parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,     // leading dimension (num columns)
+    long long nbeta_strs_,     // leading dimension (num columns)
     double factor,
     double acc_coeff1,
     double acc_coeff2);
@@ -221,7 +431,7 @@ static void launch_inplace_givens_update_real_tiled(
     const double* parityb2,
     int nalpha,
     int nb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor,
     double acc_coeff1,
     double acc_coeff2);
@@ -239,7 +449,7 @@ extern "C" void inplace_givens_update_real_tiled_wrapper(
     const double* parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,     // leading dimension (num columns)
+    long long nbeta_strs_,     // leading dimension (num columns)
     double factor,
     double acc_coeff1,
     double acc_coeff2);
@@ -325,4 +535,57 @@ extern "C" void lm_apply_array12_diff_spin_wrapper_mixed(
     int beta_states,
     int nadexc,
     int nbdexc,
+    int norbs);
+
+// ===============================================
+// Diff Spin Implementation v2
+// Target/output-element-owned mixed-spin path.
+// ===============================================
+
+extern "C" void lm_apply_array12_diff_spin_v2_tiled_wrapper(
+    cuDoubleComplex* d_out,
+    const cuDoubleComplex* d_C,
+    const long long* d_alpha_offsets,
+    const int* d_alpha_sources,
+    const int* d_alpha_pairs,
+    const int* d_alpha_parities,
+    const long long* d_beta_offsets,
+    const int* d_beta_sources,
+    const int* d_beta_pairs,
+    const int* d_beta_parities,
+    const cuDoubleComplex* d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs);
+
+extern "C" void lm_apply_array12_diff_spin_v2_tiled_wrapper_real(
+    double* d_out,
+    const double* d_C,
+    const long long* d_alpha_offsets,
+    const int* d_alpha_sources,
+    const int* d_alpha_pairs,
+    const int* d_alpha_parities,
+    const long long* d_beta_offsets,
+    const int* d_beta_sources,
+    const int* d_beta_pairs,
+    const int* d_beta_parities,
+    const double* d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs);
+
+extern "C" void lm_apply_array12_diff_spin_v2_tiled_wrapper_mixed(
+    cuDoubleComplex* d_out,
+    const cuDoubleComplex* d_C,
+    const long long* d_alpha_offsets,
+    const int* d_alpha_sources,
+    const int* d_alpha_pairs,
+    const int* d_alpha_parities,
+    const long long* d_beta_offsets,
+    const int* d_beta_sources,
+    const int* d_beta_pairs,
+    const int* d_beta_parities,
+    const double* d_h2e,
+    long long alpha_states,
+    long long beta_states,
     int norbs);

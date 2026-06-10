@@ -6,6 +6,8 @@ the molecular info and properties (hamiltonian, rdms, etc...).
 # import itertools
 import numpy as np
 import copy
+import importlib.util
+import re
 from abc import ABC, abstractmethod
 from qforte.helper.df_ham_helper import *
 
@@ -18,19 +20,103 @@ from qforte.utils import transforms as tf
 
 import json
 
-try:
-    import psi4
-    use_psi4 = True
-except:
-    use_psi4 = False
+use_psi4 = importlib.util.find_spec("psi4") is not None
+use_pyscf = importlib.util.find_spec("pyscf") is not None
 
-try:
-    import pyscf
-    from pyscf import gto, scf, mp, fci, ao2mo, symm, mcscf
-    from pyscf.mcscf import avas
-    use_pyscf = True
-except:
-    use_pyscf = False
+
+def _as_fci_energy_list(energies):
+    """Return FCI energies as a plain Python list of floats."""
+    return [float(E) for E in np.atleast_1d(np.asarray(energies, dtype=float))]
+
+
+def _store_fci_energies(qforte_mol, energies):
+    """Store root-0 in fci_energy and all requested roots in fci_energy_list."""
+    fci_energies = _as_fci_energy_list(energies)
+    if not fci_energies:
+        return
+    qforte_mol.fci_energy_list = fci_energies
+
+
+def _print_fci_energy_list(fci_energies):
+    if len(fci_energies) <= 1:
+        return
+
+    print('\n  FCI Eigenstate Energies')
+    print('======================================:')
+    for i, Ei in enumerate(fci_energies):
+        print(f"  i: {i}  Ei:       {Ei:+10.10f}")
+
+
+def _psi4_fci_energy_list(
+        fci_energy,
+        fci_wfn,
+        nroots_fci,
+        extra_scalar_variables=None):
+    """Collect Psi4 DETCI/FCI root energies if more than one root was requested.
+
+    Psi4 returns the selected/root-0 energy from energy("FCI") directly. For
+    multi-root DETCI jobs, root energies are exposed as scalar variables on the
+    FCI wavefunction. We scan those variables defensively so the scalar
+    fci_energy behavior remains unchanged if Psi4 only reports one root.
+    """
+    fci_energies = []
+
+    scalar_variable_sources = []
+    try:
+        scalar_variable_sources.append(fci_wfn.scalar_variables())
+    except AttributeError:
+        pass
+    if extra_scalar_variables is not None:
+        scalar_variable_sources.append(extra_scalar_variables)
+
+    roots_by_index = {}
+    for scalar_variables in scalar_variable_sources:
+        for key, value in scalar_variables.items():
+            key_upper = key.upper()
+            if "ROOT" not in key_upper or "ENERGY" not in key_upper:
+                continue
+            if not any(label in key_upper for label in ["FCI", "DETCI", "CI"]):
+                continue
+
+            root_matches = re.findall(r"ROOT\s*(\d+)", key_upper)
+            if not root_matches:
+                continue
+
+            roots_by_index[int(root_matches[-1])] = float(value)
+
+    if roots_by_index:
+        fci_energies = [
+            roots_by_index[root] for root in sorted(roots_by_index)
+        ][:nroots_fci]
+
+    if not fci_energies:
+        fci_energies = [float(fci_energy)]
+
+    if nroots_fci > 1 and len(fci_energies) == 1:
+        print(
+            "\nWARNING: Requested multiple FCI roots from Psi4, but only "
+            "one root energy was exposed by the Psi4 wavefunction.\n"
+        )
+
+    return fci_energies
+
+
+def _import_psi4():
+    try:
+        import psi4
+    except ImportError as exc:
+        raise ImportError("Psi4 was not imported correctly.") from exc
+    return psi4
+
+
+def _import_pyscf():
+    try:
+        import pyscf
+        from pyscf import gto, scf, mp, fci, ao2mo, symm, mcscf
+        from pyscf.mcscf import avas
+    except ImportError as exc:
+        raise ImportError("PySCF was not imported correctly.") from exc
+    return pyscf, gto, scf, mp, fci, ao2mo, symm, mcscf, avas
 
 
 def create_psi_mol(**kwargs):
@@ -45,19 +131,23 @@ def create_psi_mol(**kwargs):
     kwargs.setdefault('symmetry', 'c1')
     kwargs.setdefault('charge', 0)
     kwargs.setdefault('multiplicity', 1)
+    kwargs.setdefault('nroots_fci', 1)
 
     mol_geometry = kwargs['mol_geometry']
     basis = kwargs['basis']
     multiplicity = kwargs['multiplicity']
     charge = kwargs['charge']
+    nroots_fci = int(kwargs['nroots_fci'])
+    if nroots_fci < 1:
+        raise ValueError("nroots_fci must be at least 1.")
 
     qforte_mol = Molecule(mol_geometry = mol_geometry,
                                basis = basis,
                                multiplicity = multiplicity,
-                               charge = charge)
+                               charge = charge,
+                               nroots_fci = nroots_fci)
 
-    if not use_psi4:
-        raise ImportError("Psi4 was not imported correctely.")
+    psi4 = _import_psi4()
 
     # By default, the number of frozen orbitals is set to zero
     kwargs.setdefault('num_frozen_docc', 0)
@@ -70,7 +160,7 @@ def create_psi_mol(**kwargs):
     kwargs.setdefault('run_fci', False)
 
     # Setup psi4 calculation(s)
-    # psi4.set_num_threads(2)
+    # psi4.set_num_threads(4)
     psi4.set_memory('2 GB')
     psi4.core.set_output_file(kwargs['filename']+'.out', False)
 
@@ -89,7 +179,7 @@ def create_psi_mol(**kwargs):
 
     scf_ref_type = "rhf" if multiplicity == 1 else "rohf"
 
-    psi4.set_options({'basis': basis,
+    psi4_options = {'basis': basis,
               'scf_type': 'pk',
               'reference' : scf_ref_type,
               'e_convergence': 1e-8,
@@ -97,7 +187,11 @@ def create_psi_mol(**kwargs):
               'ci_maxiter': 100,
               'num_frozen_docc' : kwargs['num_frozen_docc'],
               'num_frozen_uocc' : kwargs['num_frozen_uocc'],
-              'mp2_type': "conv"})
+              'mp2_type': "conv"}
+    if nroots_fci > 1:
+        psi4_options['num_roots'] = nroots_fci
+
+    psi4.set_options(psi4_options)
 
     # run psi4 caclulation
     p4_Escf, p4_wfn = psi4.energy('SCF', return_wfn=True)
@@ -114,7 +208,15 @@ def create_psi_mol(**kwargs):
 
     if kwargs['run_fci']:
         if kwargs['num_frozen_uocc'] == 0:
-            qforte_mol.fci_energy = psi4.energy('FCI')
+            fci_energy, fci_wfn = psi4.energy('FCI', return_wfn=True)
+            fci_energies = _psi4_fci_energy_list(
+                fci_energy,
+                fci_wfn,
+                nroots_fci,
+                psi4.core.variables(),
+            )
+            _store_fci_energies(qforte_mol, fci_energies)
+            _print_fci_energy_list(qforte_mol.fci_energy_list)
         else:
             print('\nWARNING: Skipping FCI computation due to a Psi4 bug related to FCI with frozen virtuals.\n')
 
@@ -497,7 +599,9 @@ def create_pyscf_mol(**kwargs):
     basis = kwargs['basis']
     multiplicity = kwargs['multiplicity']
     charge = kwargs['charge']
-    nroots_fci = kwargs['nroots_fci']
+    nroots_fci = int(kwargs['nroots_fci'])
+    if nroots_fci < 1:
+        raise ValueError("nroots_fci must be at least 1.")
 
     qforte_mol = Molecule(
         mol_geometry = mol_geometry,
@@ -506,8 +610,7 @@ def create_pyscf_mol(**kwargs):
         charge = charge,
         nroots_fci = nroots_fci)
 
-    if not use_pyscf:
-        raise ImportError("PySCF was not imported correctely.")
+    pyscf, gto, scf, mp, fci, ao2mo, symm, mcscf, avas = _import_pyscf()
 
     # By default, the number of frozen orbitals is set to zero
     kwargs.setdefault('num_frozen_docc', 0)
@@ -518,9 +621,6 @@ def create_pyscf_mol(**kwargs):
     kwargs.setdefault('run_ccsd', False)
     kwargs.setdefault('run_cisd', False)
     kwargs.setdefault('run_fci', False)
-
-    kwargs.setdefault('nroots_fci', 1)
-    nroots_fci = kwargs['nroots_fci']
 
     # ===> Run PySCF End <=== #
 
@@ -622,7 +722,7 @@ def create_pyscf_mol(**kwargs):
             casci_output = casci.kernel()
 
             # Store the FCI energy
-            qforte_mol.fci_energy = casci_output[0]
+            _store_fci_energies(qforte_mol, [casci_output[0]])
 
         elif (kwargs.get('use_avas', False)):
             # **Second Conditional**: Run CASCI using AVAS to select active space
@@ -688,7 +788,7 @@ def create_pyscf_mol(**kwargs):
             casci_total_energy = result[0]
 
             # Store the CASCI total energy
-            qforte_mol.fci_energy = casci_total_energy
+            _store_fci_energies(qforte_mol, [casci_total_energy])
 
             # ==> Obtain the one- and two-electron integrals in the active space <==
 
@@ -714,14 +814,8 @@ def create_pyscf_mol(**kwargs):
             cisolver.nroots = nroots_fci
 
             fci_energies, _ = cisolver.kernel()
-            qforte_mol.fci_energy = fci_energies[0]
-            qforte_mol.fci_energy_list = fci_energies
-
-            if(nroots_fci > 1):
-                print('\n  FCI Eigenstate Energies')
-                print('======================================:')
-                for i, Ei in enumerate(fci_energies):
-                    print(f"  i: {i}  Ei:       {Ei:+10.10f}")
+            _store_fci_energies(qforte_mol, fci_energies)
+            _print_fci_energy_list(qforte_mol.fci_energy_list)
 
 
     # Retrieve the number of frozen core and virtual orbitals
@@ -1122,6 +1216,232 @@ def create_external_mol(**kwargs):
 
     qforte_mol.hamiltonian = qforte_sq_hamiltonian.jw_transform()
 
+    return qforte_mol
+
+def _npz_scalar(data, key, default=None):
+    """Return a scalar value from an npz dump with a Python default."""
+    if key not in data:
+        return default
+    value = data[key]
+    if np.shape(value) == ():
+        return value.item()
+    return value
+
+def _metadata_float(metadata, key, default=0.0):
+    value = metadata.get(key, default)
+    if value is None:
+        return default
+    return float(value)
+
+def _metadata_int(metadata, key, default=0):
+    value = metadata.get(key, default)
+    if value is None:
+        return default
+    return int(value)
+
+def create_pyscf_dump_mol(**kwargs):
+    """Build a qforte Molecule object from a PySCF active-space dump.
+
+    The dump format is a NumPy .npz file containing active-space spatial
+    one- and two-electron integrals in the same raw PySCF layout consumed by
+    create_pyscf_mol/build_sq_hamiltonian, plus JSON metadata under the
+    ``metadata_json`` key.  This lets qforte run from saved PySCF/AVAS
+    integrals without importing PySCF.
+    """
+    dump_file = kwargs.get("dump_file", kwargs.get("filename", None))
+    if dump_file is None:
+        raise ValueError('build_type="pyscf_dump" requires dump_file or filename.')
+
+    with np.load(dump_file, allow_pickle=False) as loaded_data:
+        if "metadata_json" not in loaded_data:
+            raise ValueError(
+                f"PySCF dump {dump_file!r} is missing required metadata_json."
+            )
+        metadata = json.loads(str(_npz_scalar(loaded_data, "metadata_json")))
+        mo_oeis = np.asarray(loaded_data["mo_oeis"], dtype=float)
+        mo_teis = np.asarray(loaded_data["mo_teis"], dtype=float)
+
+    if mo_oeis.ndim != 2 or mo_oeis.shape[0] != mo_oeis.shape[1]:
+        raise ValueError("mo_oeis in a PySCF dump must be a square 2-D array.")
+    nmo = int(mo_oeis.shape[0])
+    if mo_teis.shape != (nmo, nmo, nmo, nmo):
+        raise ValueError(
+            "mo_teis in a PySCF dump must have shape "
+            f"({nmo}, {nmo}, {nmo}, {nmo}); got {mo_teis.shape}."
+        )
+
+    dump_norb = _metadata_int(metadata, "num_active_orbitals", nmo)
+    if dump_norb != nmo:
+        raise ValueError(
+            f"Dump metadata says num_active_orbitals={dump_norb}, "
+            f"but mo_oeis has dimension {nmo}."
+        )
+
+    multiplicity = _metadata_int(
+        metadata,
+        "multiplicity",
+        kwargs.get("multiplicity", 1),
+    )
+    charge = _metadata_int(metadata, "charge", kwargs.get("charge", 0))
+    nroots_fci = _metadata_int(
+        metadata,
+        "nroots_fci",
+        kwargs.get("nroots_fci", 1),
+    )
+    mol_geometry = metadata.get("mol_geometry", kwargs.get("mol_geometry", None))
+    basis = metadata.get("basis", kwargs.get("basis", ""))
+
+    qforte_mol = Molecule(
+        mol_geometry=mol_geometry,
+        basis=basis,
+        multiplicity=multiplicity,
+        charge=charge,
+        nroots_fci=nroots_fci,
+        filename=str(dump_file),
+    )
+
+    num_active_electrons = _metadata_int(metadata, "num_active_electrons", 0)
+    if num_active_electrons <= 0:
+        nalpha = _metadata_int(metadata, "num_alpha", 0)
+        nbeta = _metadata_int(metadata, "num_beta", 0)
+        num_active_electrons = nalpha + nbeta
+    if num_active_electrons <= 0:
+        raise ValueError(
+            "PySCF dump metadata must include num_active_electrons or "
+            "num_alpha/num_beta."
+        )
+
+    hf_reference = metadata.get("hf_reference")
+    if hf_reference is None:
+        hf_reference = [1] * num_active_electrons
+        hf_reference += [0] * (2 * nmo - num_active_electrons)
+    hf_reference = [int(occ) for occ in hf_reference]
+    if len(hf_reference) != 2 * nmo:
+        raise ValueError(
+            f"hf_reference length {len(hf_reference)} does not match "
+            f"2 * num_active_orbitals = {2 * nmo}."
+        )
+
+    nuclear_repulsion_energy = _metadata_float(
+        metadata,
+        "nuclear_repulsion_energy",
+        0.0,
+    )
+    scalar_energy = _metadata_float(
+        metadata,
+        "scalar_energy",
+        nuclear_repulsion_energy + _metadata_float(metadata, "frozen_core_energy", 0.0),
+    )
+    frozen_core_energy = _metadata_float(
+        metadata,
+        "frozen_core_energy",
+        scalar_energy - nuclear_repulsion_energy,
+    )
+
+    Hsq = build_sq_hamiltonian(
+        scalar_energy,
+        mo_oeis,
+        mo_teis,
+        nmo,
+        0,
+        0,
+    )
+
+    qforte_mol.nuclear_repulsion_energy = nuclear_repulsion_energy
+    qforte_mol.frozen_core_energy = frozen_core_energy
+    qforte_mol.frozen_core = 0
+    qforte_mol.frozen_virtual = 0
+    qforte_mol.hf_energy = _metadata_float(metadata, "hf_energy", 0.0)
+    if metadata.get("mp2_energy", None) is not None:
+        qforte_mol.mp2_energy = float(metadata["mp2_energy"])
+    if metadata.get("ccsd_energy", None) is not None:
+        qforte_mol.ccsd_energy = float(metadata["ccsd_energy"])
+    if metadata.get("cisd_energy", None) is not None:
+        qforte_mol.cisd_energy = float(metadata["cisd_energy"])
+    if metadata.get("fci_energy_list", None):
+        qforte_mol.fci_energy_list = metadata["fci_energy_list"]
+    elif metadata.get("fci_energy", None) is not None:
+        qforte_mol.fci_energy = float(metadata["fci_energy"])
+
+    qforte_mol.hf_reference = hf_reference
+    qforte_mol.sq_hamiltonian = Hsq
+    if kwargs["build_qb_ham"]:
+        qforte_mol.hamiltonian = Hsq.jw_transform()
+    else:
+        Hsq.simplify()
+        qforte_mol.hamiltonian = qforte.QubitOperator()
+
+    point_group = metadata.get("point_group", "c1")
+    irreps = metadata.get("irreps")
+    if irreps is None:
+        irreps = qforte.irreps_of_point_groups(point_group)
+    qforte_mol.point_group = [point_group, irreps]
+
+    orb_irreps_to_int = metadata.get("orb_irreps_to_int")
+    if orb_irreps_to_int is None:
+        orb_irreps_to_int = [0] * nmo
+    orb_irreps_to_int = [int(irrep) for irrep in orb_irreps_to_int]
+
+    orb_irreps = metadata.get("orb_irreps")
+    if orb_irreps is None:
+        orb_irreps = [irreps[i] for i in orb_irreps_to_int]
+
+    hf_orbital_energies = metadata.get("hf_orbital_energies")
+    if hf_orbital_energies is None:
+        hf_orbital_energies = [0.0] * nmo
+
+    if len(orb_irreps_to_int) != nmo:
+        raise ValueError("orb_irreps_to_int length must match num_active_orbitals.")
+    if len(orb_irreps) != nmo:
+        raise ValueError("orb_irreps length must match num_active_orbitals.")
+    if len(hf_orbital_energies) != nmo:
+        raise ValueError(
+            "hf_orbital_energies length must match num_active_orbitals."
+        )
+
+    qforte_mol.orb_irreps = list(orb_irreps)
+    qforte_mol.orb_irreps_to_int = orb_irreps_to_int
+    qforte_mol.hf_orbital_energies = [float(eps) for eps in hf_orbital_energies]
+
+    if kwargs["store_mo_ints_np"]:
+        qforte_mol.mo_oeis_np = copy.deepcopy(mo_oeis)
+        qforte_mol.mo_teis_np = copy.deepcopy(
+            np.asarray(mo_teis.transpose(0, 2, 3, 1), order="C")
+        )
+
+    if kwargs["store_mo_ints"]:
+        mo_teis_tensor_order = np.asarray(mo_teis.transpose(0, 2, 3, 1), order="C")
+        h2e_rest = copy.deepcopy(np.einsum("ijlk", -0.5 * mo_teis_tensor_order))
+        h1e = copy.deepcopy(mo_oeis)
+        h2e = np.moveaxis(copy.deepcopy(h2e_rest), 1, 2) * (-1.0)
+        h1e -= np.einsum("ikkj->ij", h2e)
+        h2e_einsum = copy.deepcopy(h2e + np.einsum("ijkl->klij", h2e))
+
+        qf_mo_oeis = qforte.Tensor(shape=np.shape(h1e), name="mo_oeis")
+        qf_mo_teis = qforte.Tensor(shape=np.shape(h2e), name="mo_teis")
+        qf_mo_teis_einsum = qforte.Tensor(
+            shape=np.shape(h2e_einsum),
+            name="mo_teis_einsum",
+        )
+
+        qf_mo_oeis.fill_from_nparray(h1e.ravel(), np.shape(h1e))
+        qf_mo_teis.fill_from_nparray(h2e.ravel(), np.shape(h2e))
+        qf_mo_teis_einsum.fill_from_nparray(
+            h2e_einsum.ravel(),
+            np.shape(h2e_einsum),
+        )
+
+        qforte_mol.mo_oeis = qf_mo_oeis
+        qforte_mol.mo_teis = qf_mo_teis
+        qforte_mol.mo_teis_einsum = qf_mo_teis_einsum
+
+    if kwargs["build_df_ham"]:
+        raise NotImplementedError(
+            'build_df_ham is not implemented for build_type="pyscf_dump".'
+        )
+
+    qforte_mol.pyscf_dump_metadata = metadata
+    qforte_mol.pyscf_dump_file = str(dump_file)
     return qforte_mol
 
 def build_sq_hamiltonian(

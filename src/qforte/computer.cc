@@ -15,6 +15,7 @@
 #include "timer.h"
 #include "sparse_tensor.h"
 #include "sq_operator.h"
+#include "fci_computer.h"
 
 #include "computer.h"
 
@@ -24,6 +25,48 @@ extern const bool parallelism_enabled = true;
 #else
 extern const bool parallelism_enabled = false;
 #endif
+
+namespace {
+
+int count_bits(uint64_t string) {
+    int count = 0;
+    while (string) {
+        string &= (string - 1);
+        ++count;
+    }
+    return count;
+}
+
+int phase_abblock_to_abab(uint64_t alpha_mask, uint64_t beta_mask) {
+    int parity = 0;
+    uint64_t bm = beta_mask;
+    while (bm) {
+        const uint64_t lsb = bm & (~bm + 1);
+        int beta_orb = 0;
+        uint64_t tmp = lsb;
+        while ((tmp >>= 1) != 0) {
+            ++beta_orb;
+        }
+        parity ^= (count_bits(alpha_mask >> (beta_orb + 1)) & 1);
+        bm ^= lsb;
+    }
+    return parity ? -1 : 1;
+}
+
+size_t masks_to_sv_idx(uint64_t alpha_mask, uint64_t beta_mask, size_t norb) {
+    size_t sv_idx = 0;
+    for (size_t i = 0; i < norb; ++i) {
+        if ((alpha_mask >> i) & 1ULL) {
+            sv_idx |= (static_cast<size_t>(1) << (2 * i));
+        }
+        if ((beta_mask >> i) & 1ULL) {
+            sv_idx |= (static_cast<size_t>(1) << (2 * i + 1));
+        }
+    }
+    return sv_idx;
+}
+
+} // namespace
 
 
 Computer::Computer(int nqubit, double print_threshold) : nqubit_(nqubit), print_threshold_(print_threshold) {
@@ -49,6 +92,95 @@ void Computer::set_state(std::vector<std::pair<QubitBasis, double_c>> state) {
 }
 
 void Computer::zero_state() { std::fill(coeff_.begin(), coeff_.end(), 0.0); }
+
+double Computer::get_fci_comp_state_diff(const FCIComputer& fci_comp, bool do_phase_compare) const {
+    if (nqubit_ % 2 != 0) {
+        throw std::invalid_argument(
+            "Computer.get_fci_comp_state_diff expects an even number of qubits.");
+    }
+
+    const size_t norb = nqubit_ / 2;
+    const FCIGraph graph = fci_comp.get_graph();
+    const size_t nalpha = graph.get_nalfa();
+    const size_t nbeta = graph.get_nbeta();
+    const size_t Na = graph.get_lena();
+    const size_t Nb = graph.get_lenb();
+
+    const Tensor ref_tensor = fci_comp.get_state_deep();
+    const std::vector<size_t> ref_shape = ref_tensor.shape();
+    if (ref_shape.size() != 2 || ref_shape[0] != Na || ref_shape[1] != Nb) {
+        throw std::invalid_argument(
+            "Computer.get_fci_comp_state_diff received an incompatible FCIComputer state shape.");
+    }
+
+    const std::vector<uint64_t>& alpha_strings = graph.get_astr();
+    const std::vector<uint64_t>& beta_strings = graph.get_bstr();
+
+    std::complex<double> global_phase = 1.0;
+    if (do_phase_compare && Na > 0 && Nb > 0) {
+        const uint64_t hf_alpha_mask = alpha_strings[0];
+        const uint64_t hf_beta_mask = beta_strings[0];
+        const size_t hf_sv_idx = masks_to_sv_idx(hf_alpha_mask, hf_beta_mask, norb);
+        if (hf_sv_idx >= coeff_.size()) {
+            throw std::invalid_argument(
+                "Computer.get_fci_comp_state_diff received an FCI reference with incompatible orbital count.");
+        }
+        const std::complex<double> c_hf = coeff_[hf_sv_idx];
+        const std::complex<double> t_hf = ref_tensor.get({0, 0});
+        const int det_phase_hf = phase_abblock_to_abab(hf_alpha_mask, hf_beta_mask);
+
+        if (std::abs(c_hf) > 0.0 && std::abs(t_hf) > 0.0) {
+            const std::complex<double> ratio =
+                c_hf / (static_cast<double>(det_phase_hf) * t_hf);
+            global_phase = ratio / std::abs(ratio);
+        }
+    }
+
+    double full_abs2 = 0.0;
+    for (const auto& coeff : coeff_) {
+        full_abs2 += std::norm(coeff);
+    }
+
+    double sector_abs2 = 0.0;
+    double diff_abs2 = 0.0;
+    for (size_t Ia = 0; Ia < Na; ++Ia) {
+        const uint64_t alpha_mask = alpha_strings[Ia];
+        for (size_t Ib = 0; Ib < Nb; ++Ib) {
+            const uint64_t beta_mask = beta_strings[Ib];
+            const size_t sv_idx = masks_to_sv_idx(alpha_mask, beta_mask, norb);
+            if (sv_idx >= coeff_.size()) {
+                throw std::invalid_argument(
+                    "Computer.get_fci_comp_state_diff received an FCI reference with incompatible orbital count.");
+            }
+
+            const std::complex<double> cval = coeff_[sv_idx];
+            std::complex<double> ref_val = ref_tensor.get({Ia, Ib});
+            sector_abs2 += std::norm(cval);
+
+            if (do_phase_compare) {
+                const int det_phase = phase_abblock_to_abab(alpha_mask, beta_mask);
+                ref_val *= global_phase * static_cast<double>(det_phase);
+            }
+
+            diff_abs2 += std::norm(cval - ref_val);
+        }
+    }
+
+    double outside_abs2 = full_abs2 - sector_abs2;
+    if (outside_abs2 < 0.0 && outside_abs2 > -1.0e-10) {
+        outside_abs2 = 0.0;
+    }
+    if (outside_abs2 < 0.0) {
+        throw std::runtime_error(
+            "Computer.get_fci_comp_state_diff computed a negative outside-sector norm.");
+    }
+    if (std::abs(outside_abs2) > 1.0e-10) {
+        throw std::runtime_error(
+            "Computer.get_fci_comp_state_diff found norm outside the target FCI sector.");
+    }
+
+    return std::sqrt(diff_abs2);
+}
 
 void Computer::apply_matrix(const std::vector<std::vector< std::complex<double> >>& Opmat){
     // std::vector<std::complex<double>> old_coeff = coeff_;

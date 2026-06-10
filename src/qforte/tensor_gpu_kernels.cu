@@ -4,12 +4,12 @@
 #include <stdexcept>
 
 // Optimized transpose kernel for double precision
-__global__ void transposeCoalescedDouble(double *odata, const double *idata, int width, int height)
+__global__ void transposeCoalescedDouble(double *odata, const double *idata, long long width, long long height)
 {
     __shared__ double tile[TILE_DIM][TILE_DIM + 1];  // +1 to avoid bank conflicts
 
-    int x = blockIdx.x * TILE_DIM + threadIdx.x;
-    int y = blockIdx.y * TILE_DIM + threadIdx.y;
+    long long x = (long long)blockIdx.x * TILE_DIM + threadIdx.x;
+    long long y = (long long)blockIdx.y * TILE_DIM + threadIdx.y;
 
     // Read from input with coalesced access
     for (int j = 0; j < TILE_DIM; j += BLOCK_ROWS) {
@@ -21,8 +21,8 @@ __global__ void transposeCoalescedDouble(double *odata, const double *idata, int
     __syncthreads();
 
     // Transpose block offset
-    x = blockIdx.y * TILE_DIM + threadIdx.x;
-    y = blockIdx.x * TILE_DIM + threadIdx.y;
+    x = (long long)blockIdx.y * TILE_DIM + threadIdx.x;
+    y = (long long)blockIdx.x * TILE_DIM + threadIdx.y;
 
     // Write to output with coalesced access
     for (int j = 0; j < TILE_DIM; j += BLOCK_ROWS) {
@@ -33,12 +33,12 @@ __global__ void transposeCoalescedDouble(double *odata, const double *idata, int
 }
 
 // Optimized transpose kernel for complex double precision
-__global__ void transposeCoalescedComplex(cuDoubleComplex *odata, const cuDoubleComplex *idata, int width, int height)
+__global__ void transposeCoalescedComplex(cuDoubleComplex *odata, const cuDoubleComplex *idata, long long width, long long height)
 {
     __shared__ cuDoubleComplex tile[TILE_DIM][TILE_DIM + 1];  // +1 to avoid bank conflicts
 
-    int x = blockIdx.x * TILE_DIM + threadIdx.x;
-    int y = blockIdx.y * TILE_DIM + threadIdx.y;
+    long long x = (long long)blockIdx.x * TILE_DIM + threadIdx.x;
+    long long y = (long long)blockIdx.y * TILE_DIM + threadIdx.y;
 
     // Read from input with coalesced access
     for (int j = 0; j < TILE_DIM; j += BLOCK_ROWS) {
@@ -50,8 +50,8 @@ __global__ void transposeCoalescedComplex(cuDoubleComplex *odata, const cuDouble
     __syncthreads();
 
     // Transpose block offset
-    x = blockIdx.y * TILE_DIM + threadIdx.x;
-    y = blockIdx.x * TILE_DIM + threadIdx.y;
+    x = (long long)blockIdx.y * TILE_DIM + threadIdx.x;
+    y = (long long)blockIdx.x * TILE_DIM + threadIdx.y;
 
     // Write to output with coalesced access
     for (int j = 0; j < TILE_DIM; j += BLOCK_ROWS) {
@@ -62,9 +62,10 @@ __global__ void transposeCoalescedComplex(cuDoubleComplex *odata, const cuDouble
 }
 
 // Wrapper function for double transpose
-void launchTransposeDouble(double *d_out, const double *d_in, int width, int height)
+void launchTransposeDouble(double *d_out, const double *d_in, long long width, long long height)
 {
-    dim3 dimGrid((width + TILE_DIM - 1) / TILE_DIM, (height + TILE_DIM - 1) / TILE_DIM, 1);
+    dim3 dimGrid((unsigned int)((width + TILE_DIM - 1) / TILE_DIM),
+                (unsigned int)((height + TILE_DIM - 1) / TILE_DIM), 1);
     dim3 dimBlock(TILE_DIM, BLOCK_ROWS, 1);
 
     transposeCoalescedDouble<<<dimGrid, dimBlock>>>(d_out, d_in, width, height);
@@ -76,9 +77,10 @@ void launchTransposeDouble(double *d_out, const double *d_in, int width, int hei
 }
 
 // Wrapper function for complex transpose
-void launchTransposeComplex(cuDoubleComplex *d_out, const cuDoubleComplex *d_in, int width, int height)
+void launchTransposeComplex(cuDoubleComplex *d_out, const cuDoubleComplex *d_in, long long width, long long height)
 {
-    dim3 dimGrid((width + TILE_DIM - 1) / TILE_DIM, (height + TILE_DIM - 1) / TILE_DIM, 1);
+    dim3 dimGrid((unsigned int)((width + TILE_DIM - 1) / TILE_DIM),
+                (unsigned int)((height + TILE_DIM - 1) / TILE_DIM), 1);
     dim3 dimBlock(TILE_DIM, BLOCK_ROWS, 1);
 
     transposeCoalescedComplex<<<dimGrid, dimBlock>>>(d_out, d_in, width, height);

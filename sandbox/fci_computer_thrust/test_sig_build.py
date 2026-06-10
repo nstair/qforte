@@ -9,14 +9,14 @@ geom = [
     ('H', (0., 0., 2.0)),
     ('H', (0., 0., 3.0)), 
     ('H', (0., 0., 4.0)),
-    ('H', (0., 0., 5.0)), 
-    ('H', (0., 0., 6.0)),
-    ('H', (0., 0., 7.0)), 
-    ('H', (0., 0., 8.0)),
-    ('H', (0., 0., 9.0)), 
-    ('H', (0., 0.,10.0)),
-    ('H', (0., 0.,11.0)), 
-    ('H', (0., 0.,12.0)),
+    # ('H', (0., 0., 5.0)), 
+    # ('H', (0., 0., 6.0)),
+    # ('H', (0., 0., 7.0)), 
+    # ('H', (0., 0., 8.0)),
+    # ('H', (0., 0., 9.0)), 
+    # ('H', (0., 0.,10.0)),
+    # ('H', (0., 0.,11.0)), 
+    # ('H', (0., 0.,12.0)),
     # ('H', (0., 0.,13.0)), 
     # ('H', (0., 0.,14.0)),
     # ('H', (0., 0.,15.0)), 
@@ -91,14 +91,14 @@ if(app_tens):
     fci_comp_cpu.hartree_fock()
     fci_comp_gpu.hartree_fock_cpu()
 
-    # timer.reset()
-    # fci_comp_cpu.apply_tensor_spat_012bdy(
-    #     mol.nuclear_repulsion_energy, 
-    #     mol.mo_oeis, 
-    #     mol.mo_teis, 
-    #     mol.mo_teis_einsum, 
-    #     norb)
-    # timer.record('FCI apply tensor')
+    timer.reset()
+    fci_comp_cpu.apply_tensor_spat_012bdy(
+        mol.nuclear_repulsion_energy, 
+        mol.mo_oeis, 
+        mol.mo_teis, 
+        mol.mo_teis_einsum, 
+        norb)
+    timer.record('FCI apply tensor')
 
     # TODO: ask nick how GPU tensor conversion should be handled 
     # should we add parts to system factory to convert to GPU tensors or make user handle it?
@@ -129,6 +129,11 @@ if(app_tens):
     Cfci_gpu = qf.Tensor(Cfci.shape(), "Cfci_gpu")
     fci_comp_gpu.copy_to_tensor_cpu(Cfci_gpu)
     Cfci.subtract(Cfci_gpu)
+
+    # fci_comp_gpu.to_cpu()
+    # Cfci = fci_comp_cpu.get_state_deep()
+    # Cfci_gpu = fci_comp_gpu.get_state_deep()
+    # Cfci.subtract(Cfci_gpu)
 
     print(f"\n |dC| apply tensor: {(Cfci.norm())} \n")
 

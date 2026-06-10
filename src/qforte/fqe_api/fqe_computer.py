@@ -560,7 +560,16 @@ class FQEComputer:
             # Use FQE's SparseHamiltonian explicitly (avoids dense build).
             # time_evolve accepts any fqe Hamiltonian object.
             Hs = SparseHamiltonian(H, conserve_spin=True)
-            self._wfn = self._wfn.time_evolve(theta, Hs, True)
+
+            # Guard: if the operator reduced to a pure scalar (e.g. a†a + aa†
+            # normal-orders to identity for diagonal number operators), FQE's
+            # _evolve_individual_nbody crashes trying to unpack an empty
+            # terms() list.  Handle this as a global phase directly.
+            if Hs.nterms() == 0:
+                phase = np.exp(-1j * theta * Hs.e_0())
+                self._wfn.scale(phase)
+            else:
+                self._wfn = self._wfn.time_evolve(theta, Hs, True)
 
 
     # ---------- diagonal & simple transforms ----------

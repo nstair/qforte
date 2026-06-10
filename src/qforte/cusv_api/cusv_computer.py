@@ -27,8 +27,12 @@ except Exception:
 _CUSV_AVAILABLE = True
 try:
     import cuquantum  # type: ignore
-    # cuStateVec bindings live under cuquantum.custatevec in cuQuantum Python
-    from cuquantum import custatevec  # type: ignore
+    # Match the runtime handle path below: some installs expose cuStateVec under
+    # cuquantum.custatevec, while others only expose cuquantum.bindings.custatevec.
+    try:
+        import cuquantum.custatevec as custatevec  # type: ignore
+    except Exception:
+        from cuquantum.bindings import custatevec  # type: ignore
 
     # Optional: most cusv workflows will likely want CuPy for device arrays.
     # Keep soft as well.
@@ -1419,6 +1423,25 @@ class CUSVComputer:
     def get_exp_val_tensor(self, h0e: complex, h1e: np.ndarray, h2e: np.ndarray) -> complex:
         raise NotImplementedError("CUSVComputer.get_exp_val_tensor(): stub.")
 
+    def get_spin_squared_expectation(self) -> float:
+        raise NotImplementedError(
+            "CUSVComputer.get_spin_squared_expectation(): implement final-state spin diagnostics."
+        )
+
+    def get_spin_squared(self) -> float:
+        return self.get_spin_squared_expectation()
+
+    def get_natural_orbital_occupation_numbers(self) -> List[float]:
+        raise NotImplementedError(
+            "CUSVComputer.get_natural_orbital_occupation_numbers(): implement final-state NOON diagnostics."
+        )
+
+    def get_noons(self) -> List[float]:
+        return self.get_natural_orbital_occupation_numbers()
+
+    def get_NOONs(self) -> List[float]:
+        return self.get_natural_orbital_occupation_numbers()
+
     # ---------- time evolution ----------
 
     def evolve_tensor_taylor(
@@ -1440,7 +1463,8 @@ class CUSVComputer:
         antiherm: bool = False,
         adjoint: bool = False,
     ) -> None:
-        raise NotImplementedError("CUSVComputer.apply_sqop_evolution(): stub.")
+        # TODO: ask Nick about this
+        self.evolve_individual_sqop_term(time, 1.0, sqop, antiherm, adjoint)
 
     def evolve_pool_trotter_basic(self, pool: Any, antiherm: bool = False, adjoint: bool = False) -> None:
         self.evolve_pool_trotter(pool, 1.0, 1, 1, antiherm, adjoint)

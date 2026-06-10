@@ -18,6 +18,7 @@
 #include <thrust/copy.h>
 
 #include "qforte-def.h"
+#include "qforte_globals.h"
 #include "tensor.h"
 
 class Tensor;
@@ -38,10 +39,17 @@ TensorGPU(
     const std::vector<size_t>& shape,
     const std::string& name = "T",
     const bool on_gpu = false,
-    const std::string& data_type = "complex"
+    const std::string& data_type = "complex",
+    const bool gpu_only = false
     );
 
 TensorGPU();
+
+// Copy constructor
+TensorGPU(const TensorGPU& other);
+
+// Copy assignment operator
+TensorGPU& operator=(const TensorGPU& other);
 
 ~TensorGPU();
 
@@ -50,6 +58,9 @@ void to_gpu();
 void to_cpu();
 
 bool on_gpu() const { return on_gpu_; }
+
+/// Whether this tensor was created in gpu_only mode (no host allocation)
+bool gpu_only() const { return gpu_only_; }
 
 void add(const TensorGPU&);
 
@@ -79,11 +90,16 @@ const thrust::device_vector<double>& read_d_im_data() const;
 
 void add_thrust(const TensorGPU& other);
 
+std::string data_type() const { return data_type_; }
+
 // Throw if not on GPU
 void gpu_error() const;
 
 // Throw if not on CPU
 void cpu_error() const;
+
+// Throw if gpu_only mode (no host data available)
+void gpu_only_error() const;
 
 // Throw if not "complex" data type OR
 // Throw if "all" data type but on_complex_ is false
@@ -102,8 +118,6 @@ void data_type_error(const std::string&) const;
 
 std::string name() const { return name_; }
 
-std::string data_type() const { return data_type_; }
-
 /// The number of dimensions of this Tensor, inferred from shape
 size_t ndim() const { return shape_.size(); }
 
@@ -118,6 +132,10 @@ const std::vector<size_t>& shape() const { return shape_; }
 void set(const std::vector<size_t>& idxs,
          const std::complex<double> val
          );
+
+void set_gpu(const std::vector<size_t>& idxs,
+             const std::complex<double> val
+             );
 
 void ndim_error(size_t) const;
 
@@ -148,7 +166,12 @@ const bool initialized() const { return initialized_; }
  *
  * @return a reference to the vector data of this tensor
  **/
-thrust::host_vector<std::complex<double>>& data() { return h_data_; }
+thrust::host_vector<std::complex<double>>& data() {
+    if (gpu_only_) {
+        throw std::runtime_error("Cannot access host data on a gpu_only TensorGPU.");
+    }
+    return h_data_;
+}
 
 // => Setters <= //
 
@@ -162,7 +185,8 @@ void set_strides(const std::vector<size_t> strides) { strides_ = strides; }
 void zero_with_shape(
     const std::vector<size_t>& shape, 
     bool on_gpu,
-    const std::string& data_type = "complex"
+    const std::string& data_type = "complex",
+    bool gpu_only = false
     );
 
 // => Clone Actions <= //
@@ -411,6 +435,9 @@ thrust::device_vector<double> d_re_data_;
 bool on_gpu_;
 
 bool on_complex_;
+
+// Whether this tensor is gpu_only (no host allocation)
+bool gpu_only_ = false;
 
 // => Ed's special total memory thing <= //
 

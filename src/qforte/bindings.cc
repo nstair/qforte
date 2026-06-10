@@ -39,6 +39,7 @@
 #include "fci_computer_gpu.h"
 #include "fci_graph_gpu.h"
 #include "sq_op_pool_gpu.h"
+#include "qforte_globals.h"
 #endif
 
 namespace py = pybind11;
@@ -83,6 +84,9 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("B") = nullptr)
         .def("count_cnot_for_exponential", &SQOperator::count_cnot_for_exponential)
         .def("count_cnot_for_exponential_full", &SQOperator::count_cnot_for_exponential_full)
+        .def("count_cnot_for_jw_exponential", &SQOperator::count_cnot_for_jw_exponential,
+            py::arg("qubit_excitation") = false,
+            py::arg("trotter_number") = 1)
         .def("count_T_for_exponential_full", &SQOperator::count_T_for_exponential_full)
         .def("str", &SQOperator::str)
         .def("__str__", &SQOperator::str)
@@ -161,12 +165,23 @@ PYBIND11_MODULE(qforte, m) {
         .def("set_coeffs_to_scaler", &SQOpPool::set_coeffs_to_scaler)
         .def("terms", &SQOpPool::terms)
         .def("set_orb_spaces", &SQOpPool::set_orb_spaces)
+        .def("set_orb_irreps", &SQOpPool::set_orb_irreps,
+             py::arg("orb_irreps_to_int"), py::arg("target_irrep") = 0)
+        .def("excitation_irrep_allowed", &SQOpPool::excitation_irrep_allowed)
         .def("get_qubit_op_pool", &SQOpPool::get_qubit_op_pool)
         .def("get_qubit_operator", &SQOpPool::get_qubit_operator, py::arg("order_type"),
              py::arg("combine_like_terms") = true, py::arg("qubit_excitations") = false)
         .def("get_count_pauli_terms_ex_deex", &SQOpPool::get_count_pauli_terms_ex_deex)
+        .def("count_cnot_for_jw_exponential", &SQOpPool::count_cnot_for_jw_exponential,
+             py::arg("qubit_excitations") = false,
+             py::arg("trotter_number") = 1)
+        .def("count_cnot_for_term_jw_exponential", &SQOpPool::count_cnot_for_term_jw_exponential,
+             py::arg("term_index"),
+             py::arg("qubit_excitations") = false,
+             py::arg("trotter_number") = 1)
         .def("fill_pool", &SQOpPool::fill_pool)
         .def("fill_pool_kUpCCGSD", &SQOpPool::fill_pool_kUpCCGSD)
+        .def("fill_pool_kUpCCGSDx", &SQOpPool::fill_pool_kUpCCGSDx)
         .def("fill_pool_sq_hva", &SQOpPool::fill_pool_sq_hva)
         .def("fill_pool_df_trotter", &SQOpPool::fill_pool_df_trotter)
         .def("append_givens_ops_sector", &SQOpPool::append_givens_ops_sector)
@@ -190,6 +205,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("add_hermitian_pairs", &SQOpPoolGPU::add_hermitian_pairs)
         .def("add_term", &SQOpPoolGPU::add_term)
         .def("set_coeffs", &SQOpPoolGPU::set_coeffs)
+        .def("update_evolution_coeffs", &SQOpPoolGPU::update_evolution_coeffs)
         .def("set_coeffs_to_scaler", &SQOpPoolGPU::set_coeffs_to_scaler)
         .def("terms", &SQOpPoolGPU::terms)
         .def("set_orb_spaces", &SQOpPoolGPU::set_orb_spaces)
@@ -198,6 +214,7 @@ PYBIND11_MODULE(qforte, m) {
              py::arg("combine_like_terms") = true, py::arg("qubit_excitations") = false)
         .def("fill_pool", &SQOpPoolGPU::fill_pool)
         .def("fill_pool_kUpCCGSD", &SQOpPoolGPU::fill_pool_kUpCCGSD)
+        .def("fill_pool_kUpCCGSDx", &SQOpPoolGPU::fill_pool_kUpCCGSDx)
         .def("check_mu_tuple_container_sizes", &SQOpPoolGPU::check_mu_tuple_container_sizes)
         .def("print_mu_tuple_dims", &SQOpPoolGPU::print_mu_tuple_dims)
         .def("print_mu_tuple_elements", &SQOpPoolGPU::print_mu_tuple_elements)
@@ -289,6 +306,8 @@ PYBIND11_MODULE(qforte, m) {
         .def("coeff", &Computer::coeff)
         .def("get_coeff_vec", &Computer::get_coeff_vec)
         .def("get_nqubit", &Computer::get_nqubit)
+        .def("get_fci_comp_state_diff", &Computer::get_fci_comp_state_diff,
+             py::arg("fci_comp"), py::arg("do_phase_compare") = true)
         .def("set_coeff_vec", &Computer::set_coeff_vec)
         .def("set_state", &Computer::set_state)
         .def("zero_state", &Computer::zero_state)
@@ -312,6 +331,8 @@ PYBIND11_MODULE(qforte, m) {
         .def("apply_tensor_spin_012bdy", &FCIComputer::apply_tensor_spin_012bdy)
         .def("apply_tensor_spat_12bdy", &FCIComputer::apply_tensor_spat_12bdy)
         .def("apply_tensor_spat_012bdy", &FCIComputer::apply_tensor_spat_012bdy)
+        .def("apply_tensor_spat_12bdy_debug_elementwise", &FCIComputer::apply_tensor_spat_12bdy_debug_elementwise)
+        .def("apply_tensor_spat_012bdy_debug_elementwise", &FCIComputer::apply_tensor_spat_012bdy_debug_elementwise)
         .def("apply_individual_sqop_term", &FCIComputer::apply_individual_sqop_term)
         .def("apply_sqop", &FCIComputer::apply_sqop)
         .def("apply_diagonal_of_sqop", &FCIComputer::apply_diagonal_of_sqop, 
@@ -320,6 +341,11 @@ PYBIND11_MODULE(qforte, m) {
             )
         .def("apply_sqop_pool", &FCIComputer::apply_sqop_pool)
         .def("get_exp_val", &FCIComputer::get_exp_val)
+        .def("get_spin_squared_expectation", &FCIComputer::get_spin_squared_expectation)
+        .def("get_spin_squared", &FCIComputer::get_spin_squared_expectation)
+        .def("get_natural_orbital_occupation_numbers", &FCIComputer::get_natural_orbital_occupation_numbers)
+        .def("get_noons", &FCIComputer::get_natural_orbital_occupation_numbers)
+        .def("get_NOONs", &FCIComputer::get_natural_orbital_occupation_numbers)
         .def("get_exp_val_tensor", &FCIComputer::get_exp_val_tensor)
         .def("scale", &FCIComputer::scale)
         .def("evolve_op_taylor", &FCIComputer::evolve_op_taylor)
@@ -523,6 +549,12 @@ PYBIND11_MODULE(qforte, m) {
         .def("__str__", &local_timer::str_table);
 
 #ifdef QFORTE_CUDA_ENABLED
+    // Global gpu_only flag
+    m.def("set_gpu_only", &qforte_globals::set_gpu_only, py::arg("val"),
+          "Set the global gpu_only flag. When True, new TensorGPU objects skip host allocation.");
+    m.def("get_gpu_only", &qforte_globals::get_gpu_only,
+          "Get the current global gpu_only flag.");
+
     py::class_<TensorGPU>(m, "TensorGPU")
         .def(py::init<>())
         .def(py::init<const std::vector<size_t>&, const std::string&, bool>(),
@@ -534,13 +566,26 @@ PYBIND11_MODULE(qforte, m) {
              py::arg("name") = "T",
              py::arg("on_gpu") = false,
              py::arg("data_type") = "complex")
+        .def(py::init<const std::vector<size_t>&, const std::string&, bool, const std::string&, bool>(),
+             py::arg("shape"),
+             py::arg("name") = "T",
+             py::arg("on_gpu") = false,
+             py::arg("data_type") = "complex",
+             py::arg("gpu_only") = false)
+        .def("gpu_only", &TensorGPU::gpu_only)
+        .def("gpu_only_error", &TensorGPU::gpu_only_error)
+        .def("on_gpu", &TensorGPU::on_gpu)
+        .def("data_type", &TensorGPU::data_type)
         .def("to_gpu", &TensorGPU::to_gpu)
         .def("to_cpu", &TensorGPU::to_cpu)
+        .def("norm", &TensorGPU::norm)
         .def("add", &TensorGPU::add, py::arg("other"))
         .def("zero", &TensorGPU::zero)
         .def("set", &TensorGPU::set, "idx"_a, "value"_a)
+        .def("copy_to_tensor", &TensorGPU::copy_to_tensor)
         .def("fill_from_nparray", &TensorGPU::fill_from_nparray, "array"_a, "shape"_a)
         .def("fill_from_tensor_cpu", &TensorGPU::fill_from_tensor_cpu, "other"_a, "shape"_a)
+        .def("vector_dot", &TensorGPU::vector_dot)
         .def("__repr__", &TensorGPU::str,
             py::arg("print_data") = true, 
             py::arg("print_complex") = false, 
@@ -549,11 +594,15 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("header_format") = "%12zu");
 
     py::class_<FCIComputerGPU>(m, "FCIComputerGPU")
-        .def(py::init<int, int, int, bool, std::string>(), "nel"_a, "sz"_a, "norb"_a, "on_gpu"_a, "data_type"_a, "Make a FCIComputerGPU with nel, sz, and norb")
+        .def(py::init<int, int, int, bool, std::string, bool>(),
+             "nel"_a, "sz"_a, "norb"_a, "on_gpu"_a = false, "data_type"_a = "complex", "gpu_only"_a = false,
+             "Make a FCIComputerGPU with nel, sz, and norb")
         .def("hartree_fock_cpu", &FCIComputerGPU::hartree_fock_cpu)
+        .def("hartree_fock_gpu", &FCIComputerGPU::hartree_fock_gpu)
         .def("get_hf_dot", &FCIComputerGPU::get_hf_dot)
         .def("set_element", &FCIComputerGPU::set_element)
         .def("get_element", &FCIComputerGPU::get_element)
+        .def("on_gpu", &FCIComputerGPU::on_gpu)
         .def("to_gpu", &FCIComputerGPU::to_gpu)
         .def("to_cpu", &FCIComputerGPU::to_cpu)
         .def("gpu_error", &FCIComputerGPU::gpu_error)
@@ -571,6 +620,8 @@ PYBIND11_MODULE(qforte, m) {
         // .def("apply_tensor_spin_012bdy", &FCIComputerGPU::apply_tensor_spin_012bdy)
         .def("apply_tensor_spat_12bdy_gpu", &FCIComputerGPU::apply_tensor_spat_12bdy_gpu)
         .def("apply_tensor_spat_012bdy_gpu", &FCIComputerGPU::apply_tensor_spat_012bdy_gpu)
+        .def("apply_tensor_spat_12bdy_gpu_v2", &FCIComputerGPU::apply_tensor_spat_12bdy_gpu_v2)
+        .def("apply_tensor_spat_012bdy_gpu_v2", &FCIComputerGPU::apply_tensor_spat_012bdy_gpu_v2)
         .def("apply_individual_sqop_term_gpu", &FCIComputerGPU::apply_individual_sqop_term_gpu)
         .def("apply_sqop_gpu", &FCIComputerGPU::apply_sqop_gpu)
         .def("apply_diagonal_of_sqop_cpu", &FCIComputerGPU::apply_diagonal_of_sqop_cpu, 
@@ -580,11 +631,25 @@ PYBIND11_MODULE(qforte, m) {
         .def("apply_sqop_pool_cpu", &FCIComputerGPU::apply_sqop_pool_cpu)
         .def("get_exp_val_cpu", &FCIComputerGPU::get_exp_val_cpu)
         .def("get_exp_val", &FCIComputerGPU::get_exp_val)
-        .def("get_exp_val_tensor_cpu", &FCIComputerGPU::get_exp_val_tensor_cpu)
+        .def("get_spin_squared_expectation", &FCIComputerGPU::get_spin_squared_expectation)
+        .def("get_spin_squared", &FCIComputerGPU::get_spin_squared_expectation)
+        .def(
+            "get_natural_orbital_occupation_numbers",
+            &FCIComputerGPU::get_natural_orbital_occupation_numbers)
+        .def("get_noons", &FCIComputerGPU::get_natural_orbital_occupation_numbers)
+        .def("get_NOONs", &FCIComputerGPU::get_natural_orbital_occupation_numbers)
+        .def("get_exp_val_tensor_gpu", &FCIComputerGPU::get_exp_val_tensor_gpu)
         .def("evolve_op_taylor_cpu", &FCIComputerGPU::evolve_op_taylor_cpu)
         .def("apply_sqop_evolution_gpu", &FCIComputerGPU::apply_sqop_evolution_gpu, 
             py::arg("time"),
             py::arg("sqop"),
+            py::arg("antiherm") = false,
+            py::arg("adjoint") = false
+            )
+        .def("apply_sqop_evolution_from_pool_gpu", &FCIComputerGPU::apply_sqop_evolution_from_pool_gpu,
+            py::arg("time"),
+            py::arg("pool"),
+            py::arg("mu"),
             py::arg("antiherm") = false,
             py::arg("adjoint") = false
             )
@@ -601,9 +666,26 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("antiherm") = false,
             py::arg("adjoint") = false
             )
+        .def("state_vector_dot_gpu", &FCIComputerGPU::state_vector_dot_gpu)
+        .def("dot_sqop_gpu", &FCIComputerGPU::dot_sqop_gpu)
+        .def("dot_sqop_gpu_real", &FCIComputerGPU::dot_sqop_gpu_real)
+        .def("dot_sqop_from_pool_gpu", &FCIComputerGPU::dot_sqop_from_pool_gpu,
+            py::arg("sigma"),
+            py::arg("pool"),
+            py::arg("mu")
+            )
+        .def("dot_sqop_from_pool_gpu_real", &FCIComputerGPU::dot_sqop_from_pool_gpu_real,
+            py::arg("sigma"),
+            py::arg("pool"),
+            py::arg("mu")
+            )
         .def("set_state_cpu", &FCIComputerGPU::set_state_cpu)
-        //.def("get_state", &FCIComputerGPU::get_state)
-        //.def("get_state_deep", &FCIComputerGPU::get_state_deep)
+        .def("set_state_from_other_cpu", &FCIComputerGPU::set_state_from_other_cpu)
+        .def("set_state_from_other_gpu", &FCIComputerGPU::set_state_from_other_gpu)
+        .def("set_state", &FCIComputerGPU::set_state_cpu)  // alias for compatibility
+        .def("get_state", &FCIComputerGPU::get_state)
+        .def("get_state_deep", &FCIComputerGPU::get_state_deep)
+        .def("copy_state_into", &FCIComputerGPU::copy_state_into)
         .def("populate_index_arrays_for_pool_evo", &FCIComputerGPU::populate_index_arrays_for_pool_evo)
         .def("copy_to_tensor_cpu", &FCIComputerGPU::copy_to_tensor_cpu)
         .def("copy_to_tensor_thrust_gpu", &FCIComputerGPU::copy_to_tensor_thrust_gpu)

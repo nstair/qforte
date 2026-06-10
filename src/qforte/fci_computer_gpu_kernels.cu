@@ -15,6 +15,7 @@
 #include <thrust/sort.h>
 #include <thrust/reduce.h>
 #include <thrust/scan.h>
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
 
@@ -81,17 +82,17 @@ __global__ void apply_individual_nbody1_accumulate_kernel_atomic(
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
-    int tensor_size) 
+    long long tensor_size)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int idy = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (idx < targeta_size) {
-        int ta_idx = d_targeta[idx] * nbeta_strs_;
-        int sa_idx = d_sourcea[idx] * nbeta_strs_;
+        long long ta_idx = (long long)d_targeta[idx] * nbeta_strs_;
+        long long sa_idx = (long long)d_sourcea[idx] * nbeta_strs_;
         
         cuDoubleComplex pref = cuCmul(coeff, d_paritya[idx]);
 
@@ -100,7 +101,7 @@ __global__ void apply_individual_nbody1_accumulate_kernel_atomic(
             term = cuCmul(term, d_Cin[sa_idx + d_sourceb[idy]]);
 
             // Thread-safe atomic accumulation
-            int output_idx = ta_idx + d_targetb[idy];
+            long long output_idx = ta_idx + d_targetb[idy];
             atomicAdd_double(&d_Cout[output_idx].x, term.x);
             atomicAdd_double(&d_Cout[output_idx].y, term.y);
         }
@@ -117,10 +118,10 @@ void apply_individual_nbody1_accumulate_wrapper(
     const int* d_sourceb,
     const int* d_targetb,
     const cuDoubleComplex* d_parityb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     int targeta_size,
     int targetb_size,
-    int tensor_size) 
+    long long tensor_size)
 {
     // 2D grid configuration for the atomic kernel
     dim3 blockSize(16, 16);  // 16x16 = 256 threads per block
@@ -149,6 +150,978 @@ void apply_individual_nbody1_accumulate_wrapper(
 }
 
 // ==============================================
+// Givens-style tiled dot kernels (Real)
+// Beta-fast warp layout for coalesced row-major access.
+// Paired dual: each thread computes both dag and undag contributions.
+// ==============================================
+
+// Easy/diagonal SQOp dot, real path.
+template<int BX, int AY>
+__global__ void dot_easy_number_real_kernel(
+    double coeff,
+    const double* __restrict__ d_psi,
+    const double* __restrict__ d_sigma,
+    const int* __restrict__ d_alpha,
+    int n_alpha,
+    const int* __restrict__ d_beta,
+    int n_beta,
+    long long nbeta_strs_,
+    double* __restrict__ d_accum)
+{
+    static_assert(((BX * AY) & (BX * AY - 1)) == 0,
+                  "BX*AY must be a power of two for this reduction");
+
+    constexpr int NT = BX * AY;
+    __shared__ double sh[NT];
+
+    const int tx  = threadIdx.x;
+    const int ty  = threadIdx.y;
+    const int tid = ty * BX + tx;
+
+    const long long beta_tiles = ((long long)n_beta + BX - 1) / BX;
+    const long long tile       = (long long)blockIdx.x;
+
+    const int ib = (int)((tile % beta_tiles) * BX + tx);
+    const int ia = (int)((tile / beta_tiles) * AY + ty);
+
+    double acc = 0.0;
+
+    if (ia < n_alpha && ib < n_beta) {
+        const int a = d_alpha[ia];
+        const int b = d_beta[ib];
+        const long long idx = (long long)a * nbeta_strs_ + b;
+        acc = coeff * d_sigma[idx] * d_psi[idx];
+    }
+
+    sh[tid] = acc;
+    __syncthreads();
+
+    #pragma unroll
+    for (int s = NT / 2; s > 0; s >>= 1) {
+        if (tid < s) sh[tid] += sh[tid + s];
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd(d_accum, sh[0]);
+    }
+}
+
+extern "C" void dot_easy_number_real_wrapper(
+    double coeff,
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_alpha,
+    int n_alpha,
+    const int* d_beta,
+    int n_beta,
+    long long nbeta_strs_,
+    double* d_accum)
+{
+    if (n_alpha <= 0 || n_beta <= 0 || nbeta_strs_ <= 0) return;
+    if (coeff == 0.0) return;
+
+    constexpr int BX = 32;
+    constexpr int AY = 8;
+
+    const long long alpha_tiles = ((long long)n_alpha + AY - 1) / AY;
+    const long long beta_tiles  = ((long long)n_beta  + BX - 1) / BX;
+    const long long nblocks     = alpha_tiles * beta_tiles;
+
+    if (nblocks > (long long)std::numeric_limits<int>::max()) {
+        throw std::runtime_error("dot_easy_number_real_wrapper: grid too large");
+    }
+
+    dim3 blockSize(BX, AY);
+    dim3 gridSize((unsigned int)nblocks);
+
+    dot_easy_number_real_kernel<BX, AY><<<gridSize, blockSize>>>(
+        coeff, d_psi, d_sigma,
+        d_alpha, n_alpha,
+        d_beta, n_beta,
+        nbeta_strs_, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_easy_number_real_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_easy_number_real_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ---- Alpha-only paired dual dot kernel (Real) ----
+// For operators that only excite alpha spin (beta is identity-like).
+// Each alpha map entry connects source_row -> target_row; thread walks beta columns.
+// block: (BX=128, 1), grid: (ceil(nbeta/BX), na_pairs)
+template <int BX>
+__global__ void dot_alpha_only_dual_real_kernel(
+    const double* __restrict__ d_psi,
+    const double* __restrict__ d_sigma,
+    const int* __restrict__ d_sourcea,    // source for dag direction (= scale_inds_undag)
+    const int* __restrict__ d_targeta,    // target for dag direction (= scale_inds_dag)
+    const double* __restrict__ d_paritya_uv,  // parity for dag direction
+    const double* __restrict__ d_paritya_vu,  // parity for undag direction
+    int na_pairs,
+    long long nbeta_strs_,
+    double coeff_uv,    // dot_coeff_dag
+    double coeff_vu,    // dot_coeff_undag
+    double* __restrict__ d_accum)
+{
+    extern __shared__ double sh[];
+
+    int b  = blockIdx.x * BX + threadIdx.x;
+    int ia = blockIdx.y;
+    int tid = threadIdx.x;
+
+    double acc = 0.0;
+
+    if (ia < na_pairs && b < nbeta_strs_) {
+        int sa = d_sourcea[ia];
+        int ta = d_targeta[ia];
+
+        long long u_idx = (long long)sa * nbeta_strs_ + b;
+        long long v_idx = (long long)ta * nbeta_strs_ + b;
+
+        double psi_u  = d_psi[u_idx];
+        double psi_v  = d_psi[v_idx];
+        double sig_u  = d_sigma[u_idx];
+        double sig_v  = d_sigma[v_idx];
+
+        double puv = coeff_uv * d_paritya_uv[ia];
+        double pvu = coeff_vu * d_paritya_vu[ia];
+
+        // dag:   sigma[target] * psi[source] = sig_v * psi_u
+        // undag: sigma[source] * psi[target] = sig_u * psi_v
+        acc = puv * sig_v * psi_u + pvu * sig_u * psi_v;
+    }
+
+    sh[tid] = acc;
+    __syncthreads();
+
+    for (int s = BX / 2; s > 0; s >>= 1) {
+        if (tid < s) sh[tid] += sh[tid + s];
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd(d_accum, sh[0]);
+    }
+}
+
+extern "C" void dot_alpha_only_dual_real_wrapper(
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const double* d_paritya_uv,
+    const double* d_paritya_vu,
+    int na_pairs,
+    long long nbeta_strs_,
+    double coeff_uv,
+    double coeff_vu,
+    double* d_accum)
+{
+    constexpr int BX = 128;
+    dim3 blockSize(BX);
+    dim3 gridSize(
+        (static_cast<int>(nbeta_strs_) + BX - 1) / BX,
+        na_pairs);
+
+    size_t sharedMemSize = BX * sizeof(double);
+
+    dot_alpha_only_dual_real_kernel<BX><<<gridSize, blockSize, sharedMemSize>>>(
+        d_psi, d_sigma,
+        d_sourcea, d_targeta, d_paritya_uv, d_paritya_vu,
+        na_pairs, nbeta_strs_, coeff_uv, coeff_vu, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_alpha_only_dual_real_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_alpha_only_dual_real_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ---- Beta-only paired dual dot kernel (Real) ----
+// For operators that only excite beta spin (alpha is identity-like).
+// All alpha rows contribute; each beta map entry connects source_col -> target_col.
+// block: (BX=32, AY=8), grid: (ceil(nb_pairs/BX), ceil(nalpha/AY))
+template <int BX, int AY>
+__global__ void dot_beta_only_dual_real_kernel(
+    const double* __restrict__ d_psi,
+    const double* __restrict__ d_sigma,
+    const int* __restrict__ d_sourceb,    // source for dag direction
+    const int* __restrict__ d_targetb,    // target for dag direction
+    const double* __restrict__ d_parityb_uv,  // parity for dag direction
+    const double* __restrict__ d_parityb_vu,  // parity for undag direction
+    int nb_pairs,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double coeff_uv,
+    double coeff_vu,
+    double* __restrict__ d_accum)
+{
+    __shared__ int    s_sb[BX], s_tb[BX];
+    __shared__ double s_cuv[BX], s_cvu[BX];
+    // Reduction shared memory
+    __shared__ double s_red[BX * AY];
+
+    int tx = threadIdx.x;  // beta pair lane
+    int ty = threadIdx.y;  // alpha row lane
+    int tid = ty * BX + tx;
+
+    int ib = blockIdx.x * BX + tx;
+    long long a = (long long)blockIdx.y * AY + ty;
+
+    // Load beta metadata into shared memory (one row of threads does it)
+    if (ty == 0) {
+        if (ib < nb_pairs) {
+            s_sb[tx]  = d_sourceb[ib];
+            s_tb[tx]  = d_targetb[ib];
+            s_cuv[tx] = coeff_uv * d_parityb_uv[ib];
+            s_cvu[tx] = coeff_vu * d_parityb_vu[ib];
+        } else {
+            s_sb[tx] = 0;
+            s_tb[tx] = 0;
+            s_cuv[tx] = 0.0;
+            s_cvu[tx] = 0.0;
+        }
+    }
+    __syncthreads();
+
+    double acc = 0.0;
+
+    if (a < nalpha_strs_ && ib < nb_pairs) {
+        long long base = a * nbeta_strs_;
+
+        long long u_idx = base + s_sb[tx];
+        long long v_idx = base + s_tb[tx];
+
+        double psi_u = d_psi[u_idx];
+        double psi_v = d_psi[v_idx];
+        double sig_u = d_sigma[u_idx];
+        double sig_v = d_sigma[v_idx];
+
+        acc = s_cuv[tx] * sig_v * psi_u + s_cvu[tx] * sig_u * psi_v;
+    }
+
+    // Block reduction
+    s_red[tid] = acc;
+    __syncthreads();
+
+    int block_threads = BX * AY;
+    for (int s = block_threads / 2; s > 0; s >>= 1) {
+        if (tid < s) s_red[tid] += s_red[tid + s];
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd(d_accum, s_red[0]);
+    }
+}
+
+extern "C" void dot_beta_only_dual_real_wrapper(
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const double* d_parityb_uv,
+    const double* d_parityb_vu,
+    int nb_pairs,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double coeff_uv,
+    double coeff_vu,
+    double* d_accum)
+{
+    constexpr int BX = 32;
+    constexpr int AY = 8;
+    dim3 blockSize(BX, AY);  // 256 threads/block
+    dim3 gridSize(
+        (nb_pairs + BX - 1) / BX,
+        (static_cast<int>(nalpha_strs_) + AY - 1) / AY);
+
+    dot_beta_only_dual_real_kernel<BX, AY><<<gridSize, blockSize>>>(
+        d_psi, d_sigma,
+        d_sourceb, d_targetb, d_parityb_uv, d_parityb_vu,
+        nb_pairs, nalpha_strs_, nbeta_strs_,
+        coeff_uv, coeff_vu, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_beta_only_dual_real_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_beta_only_dual_real_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ---- Mixed alpha×beta paired dual tiled dot kernel (Real) ----
+// For operators exciting both alpha and beta spin.
+// block: (BX=32, AY=8), grid: (ceil(nb_pairs/BX), ceil(na_pairs/AY))
+// threadIdx.x walks beta pairs (fast/coalesced), threadIdx.y walks alpha pairs.
+// Metadata is loaded into shared memory for reuse across the opposing dimension.
+template <int BX, int AY>
+__global__ void dot_mixed_dual_real_kernel(
+    const double* __restrict__ d_psi,
+    const double* __restrict__ d_sigma,
+    const int* __restrict__ d_sourcea,
+    const int* __restrict__ d_targeta,
+    const double* __restrict__ d_paritya_uv,
+    const double* __restrict__ d_paritya_vu,
+    const int* __restrict__ d_sourceb,
+    const int* __restrict__ d_targetb,
+    const double* __restrict__ d_parityb_uv,
+    const double* __restrict__ d_parityb_vu,
+    int na_pairs,
+    int nb_pairs,
+    long long nbeta_strs_,
+    double coeff_uv,
+    double coeff_vu,
+    double* __restrict__ d_accum)
+{
+    // Shared memory for metadata
+    __shared__ int    s_sa[AY], s_ta[AY];
+    __shared__ double s_pauv[AY], s_pavu[AY];
+
+    __shared__ int    s_sb[BX], s_tb[BX];
+    __shared__ double s_pbuv[BX], s_pbvu[BX];
+
+    // Reduction shared memory
+    __shared__ double s_red[BX * AY];
+
+    int tx = threadIdx.x;  // beta-pair lane
+    int ty = threadIdx.y;  // alpha-pair lane
+    int tid = ty * BX + tx;
+
+    int ia = blockIdx.y * AY + ty;
+    int ib = blockIdx.x * BX + tx;
+
+    // Load alpha metadata (one column of threads)
+    if (tx == 0) {
+        if (ia < na_pairs) {
+            s_sa[ty]   = d_sourcea[ia];
+            s_ta[ty]   = d_targeta[ia];
+            s_pauv[ty] = d_paritya_uv[ia];
+            s_pavu[ty] = d_paritya_vu[ia];
+        } else {
+            s_sa[ty] = 0; s_ta[ty] = 0;
+            s_pauv[ty] = 0.0; s_pavu[ty] = 0.0;
+        }
+    }
+
+    // Load beta metadata (one row of threads)
+    if (ty == 0) {
+        if (ib < nb_pairs) {
+            s_sb[tx]   = d_sourceb[ib];
+            s_tb[tx]   = d_targetb[ib];
+            s_pbuv[tx] = d_parityb_uv[ib];
+            s_pbvu[tx] = d_parityb_vu[ib];
+        } else {
+            s_sb[tx] = 0; s_tb[tx] = 0;
+            s_pbuv[tx] = 0.0; s_pbvu[tx] = 0.0;
+        }
+    }
+    __syncthreads();
+
+    double acc = 0.0;
+
+    if (ia < na_pairs && ib < nb_pairs) {
+        long long u_idx = (long long)s_sa[ty] * nbeta_strs_ + s_sb[tx];
+        long long v_idx = (long long)s_ta[ty] * nbeta_strs_ + s_tb[tx];
+
+        double psi_u = d_psi[u_idx];
+        double psi_v = d_psi[v_idx];
+        double sig_u = d_sigma[u_idx];
+        double sig_v = d_sigma[v_idx];
+
+        double cuv = coeff_uv * s_pauv[ty] * s_pbuv[tx];
+        double cvu = coeff_vu * s_pavu[ty] * s_pbvu[tx];
+
+        acc = cuv * sig_v * psi_u + cvu * sig_u * psi_v;
+    }
+
+    // Block reduction
+    s_red[tid] = acc;
+    __syncthreads();
+
+    int block_threads = BX * AY;
+    for (int s = block_threads / 2; s > 0; s >>= 1) {
+        if (tid < s) s_red[tid] += s_red[tid + s];
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd(d_accum, s_red[0]);
+    }
+}
+
+extern "C" void dot_mixed_dual_real_wrapper(
+    const double* d_psi,
+    const double* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const double* d_paritya_uv,
+    const double* d_paritya_vu,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const double* d_parityb_uv,
+    const double* d_parityb_vu,
+    int na_pairs,
+    int nb_pairs,
+    long long nbeta_strs_,
+    double coeff_uv,
+    double coeff_vu,
+    double* d_accum)
+{
+    constexpr int BX = 32;
+    constexpr int AY = 8;
+    dim3 blockSize(BX, AY);  // 256 threads/block
+    dim3 gridSize(
+        (nb_pairs + BX - 1) / BX,
+        (na_pairs + AY - 1) / AY);
+
+    dot_mixed_dual_real_kernel<BX, AY><<<gridSize, blockSize>>>(
+        d_psi, d_sigma,
+        d_sourcea, d_targeta, d_paritya_uv, d_paritya_vu,
+        d_sourceb, d_targetb, d_parityb_uv, d_parityb_vu,
+        na_pairs, nb_pairs, nbeta_strs_,
+        coeff_uv, coeff_vu, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_mixed_dual_real_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_mixed_dual_real_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ---- Alpha-only paired dual dot kernel (Complex) ----
+template <int BX>
+__global__ void dot_alpha_only_dual_kernel(
+    const cuDoubleComplex* __restrict__ d_psi,
+    const cuDoubleComplex* __restrict__ d_sigma,
+    const int* __restrict__ d_sourcea,
+    const int* __restrict__ d_targeta,
+    const cuDoubleComplex* __restrict__ d_paritya_uv,
+    const cuDoubleComplex* __restrict__ d_paritya_vu,
+    int na_pairs,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* __restrict__ d_accum)
+{
+    extern __shared__ double sh[];
+    double* sh_real = sh;
+    double* sh_imag = sh + BX;
+
+    int b  = blockIdx.x * BX + threadIdx.x;
+    int ia = blockIdx.y;
+    int tid = threadIdx.x;
+
+    double acc_re = 0.0, acc_im = 0.0;
+
+    if (ia < na_pairs && b < nbeta_strs_) {
+        int sa = d_sourcea[ia];
+        int ta = d_targeta[ia];
+
+        long long u_idx = (long long)sa * nbeta_strs_ + b;
+        long long v_idx = (long long)ta * nbeta_strs_ + b;
+
+        cuDoubleComplex psi_u = d_psi[u_idx];
+        cuDoubleComplex psi_v = d_psi[v_idx];
+        cuDoubleComplex sig_u = d_sigma[u_idx];
+        cuDoubleComplex sig_v = d_sigma[v_idx];
+
+        // dag: conj(sigma[target]) * coeff * parity * psi[source]
+        cuDoubleComplex puv = cuCmul(coeff_uv, d_paritya_uv[ia]);
+        cuDoubleComplex val_dag = cuCmul(cuCmul(puv, cuConj(sig_v)), psi_u);
+
+        // undag: conj(sigma[source]) * coeff * parity * psi[target]
+        cuDoubleComplex pvu = cuCmul(coeff_vu, d_paritya_vu[ia]);
+        cuDoubleComplex val_undag = cuCmul(cuCmul(pvu, cuConj(sig_u)), psi_v);
+
+        acc_re = val_dag.x + val_undag.x;
+        acc_im = val_dag.y + val_undag.y;
+    }
+
+    sh_real[tid] = acc_re;
+    sh_imag[tid] = acc_im;
+    __syncthreads();
+
+    for (int s = BX / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            sh_real[tid] += sh_real[tid + s];
+            sh_imag[tid] += sh_imag[tid + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd_double(&d_accum->x, sh_real[0]);
+        atomicAdd_double(&d_accum->y, sh_imag[0]);
+    }
+}
+
+extern "C" void dot_alpha_only_dual_wrapper(
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya_uv,
+    const cuDoubleComplex* d_paritya_vu,
+    int na_pairs,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* d_accum)
+{
+    constexpr int BX = 128;
+    dim3 blockSize(BX);
+    dim3 gridSize(
+        (static_cast<int>(nbeta_strs_) + BX - 1) / BX,
+        na_pairs);
+
+    size_t sharedMemSize = 2 * BX * sizeof(double);
+
+    dot_alpha_only_dual_kernel<BX><<<gridSize, blockSize, sharedMemSize>>>(
+        d_psi, d_sigma,
+        d_sourcea, d_targeta, d_paritya_uv, d_paritya_vu,
+        na_pairs, nbeta_strs_, coeff_uv, coeff_vu, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_alpha_only_dual_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_alpha_only_dual_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ---- Beta-only paired dual dot kernel (Complex) ----
+template <int BX, int AY>
+__global__ void dot_beta_only_dual_kernel(
+    const cuDoubleComplex* __restrict__ d_psi,
+    const cuDoubleComplex* __restrict__ d_sigma,
+    const int* __restrict__ d_sourceb,
+    const int* __restrict__ d_targetb,
+    const cuDoubleComplex* __restrict__ d_parityb_uv,
+    const cuDoubleComplex* __restrict__ d_parityb_vu,
+    int nb_pairs,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* __restrict__ d_accum)
+{
+    __shared__ int    s_sb[BX], s_tb[BX];
+    __shared__ double s_cuv_re[BX], s_cuv_im[BX];
+    __shared__ double s_cvu_re[BX], s_cvu_im[BX];
+    __shared__ double s_red_re[BX * AY];
+    __shared__ double s_red_im[BX * AY];
+
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int tid = ty * BX + tx;
+
+    int ib = blockIdx.x * BX + tx;
+    long long a = (long long)blockIdx.y * AY + ty;
+
+    if (ty == 0) {
+        if (ib < nb_pairs) {
+            s_sb[tx] = d_sourceb[ib];
+            s_tb[tx] = d_targetb[ib];
+            cuDoubleComplex cuv = cuCmul(coeff_uv, d_parityb_uv[ib]);
+            cuDoubleComplex cvu = cuCmul(coeff_vu, d_parityb_vu[ib]);
+            s_cuv_re[tx] = cuv.x; s_cuv_im[tx] = cuv.y;
+            s_cvu_re[tx] = cvu.x; s_cvu_im[tx] = cvu.y;
+        } else {
+            s_sb[tx] = 0; s_tb[tx] = 0;
+            s_cuv_re[tx] = 0.0; s_cuv_im[tx] = 0.0;
+            s_cvu_re[tx] = 0.0; s_cvu_im[tx] = 0.0;
+        }
+    }
+    __syncthreads();
+
+    double acc_re = 0.0, acc_im = 0.0;
+
+    if (a < nalpha_strs_ && ib < nb_pairs) {
+        long long base = a * nbeta_strs_;
+        long long u_idx = base + s_sb[tx];
+        long long v_idx = base + s_tb[tx];
+
+        cuDoubleComplex psi_u = d_psi[u_idx];
+        cuDoubleComplex psi_v = d_psi[v_idx];
+        cuDoubleComplex sig_u = d_sigma[u_idx];
+        cuDoubleComplex sig_v = d_sigma[v_idx];
+
+        cuDoubleComplex cuv_coeff = make_cuDoubleComplex(s_cuv_re[tx], s_cuv_im[tx]);
+        cuDoubleComplex cvu_coeff = make_cuDoubleComplex(s_cvu_re[tx], s_cvu_im[tx]);
+
+        cuDoubleComplex val_dag   = cuCmul(cuCmul(cuv_coeff, cuConj(sig_v)), psi_u);
+        cuDoubleComplex val_undag = cuCmul(cuCmul(cvu_coeff, cuConj(sig_u)), psi_v);
+
+        acc_re = val_dag.x + val_undag.x;
+        acc_im = val_dag.y + val_undag.y;
+    }
+
+    s_red_re[tid] = acc_re;
+    s_red_im[tid] = acc_im;
+    __syncthreads();
+
+    int block_threads = BX * AY;
+    for (int s = block_threads / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            s_red_re[tid] += s_red_re[tid + s];
+            s_red_im[tid] += s_red_im[tid + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd_double(&d_accum->x, s_red_re[0]);
+        atomicAdd_double(&d_accum->y, s_red_im[0]);
+    }
+}
+
+extern "C" void dot_beta_only_dual_wrapper(
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb_uv,
+    const cuDoubleComplex* d_parityb_vu,
+    int nb_pairs,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* d_accum)
+{
+    constexpr int BX = 32;
+    constexpr int AY = 8;
+    dim3 blockSize(BX, AY);
+    dim3 gridSize(
+        (nb_pairs + BX - 1) / BX,
+        (static_cast<int>(nalpha_strs_) + AY - 1) / AY);
+
+    dot_beta_only_dual_kernel<BX, AY><<<gridSize, blockSize>>>(
+        d_psi, d_sigma,
+        d_sourceb, d_targetb, d_parityb_uv, d_parityb_vu,
+        nb_pairs, nalpha_strs_, nbeta_strs_,
+        coeff_uv, coeff_vu, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_beta_only_dual_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_beta_only_dual_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ---- Mixed alpha×beta paired dual tiled dot kernel (Complex) ----
+template <int BX, int AY>
+__global__ void dot_mixed_dual_kernel(
+    const cuDoubleComplex* __restrict__ d_psi,
+    const cuDoubleComplex* __restrict__ d_sigma,
+    const int* __restrict__ d_sourcea,
+    const int* __restrict__ d_targeta,
+    const cuDoubleComplex* __restrict__ d_paritya_uv,
+    const cuDoubleComplex* __restrict__ d_paritya_vu,
+    const int* __restrict__ d_sourceb,
+    const int* __restrict__ d_targetb,
+    const cuDoubleComplex* __restrict__ d_parityb_uv,
+    const cuDoubleComplex* __restrict__ d_parityb_vu,
+    int na_pairs,
+    int nb_pairs,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* __restrict__ d_accum)
+{
+    __shared__ int    s_sa[AY], s_ta[AY];
+    __shared__ double s_pauv_re[AY], s_pauv_im[AY];
+    __shared__ double s_pavu_re[AY], s_pavu_im[AY];
+
+    __shared__ int    s_sb[BX], s_tb[BX];
+    __shared__ double s_pbuv_re[BX], s_pbuv_im[BX];
+    __shared__ double s_pbvu_re[BX], s_pbvu_im[BX];
+
+    __shared__ double s_red_re[BX * AY];
+    __shared__ double s_red_im[BX * AY];
+
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int tid = ty * BX + tx;
+
+    int ia = blockIdx.y * AY + ty;
+    int ib = blockIdx.x * BX + tx;
+
+    if (tx == 0) {
+        if (ia < na_pairs) {
+            s_sa[ty] = d_sourcea[ia];
+            s_ta[ty] = d_targeta[ia];
+            cuDoubleComplex pa_uv = d_paritya_uv[ia];
+            cuDoubleComplex pa_vu = d_paritya_vu[ia];
+            s_pauv_re[ty] = pa_uv.x; s_pauv_im[ty] = pa_uv.y;
+            s_pavu_re[ty] = pa_vu.x; s_pavu_im[ty] = pa_vu.y;
+        } else {
+            s_sa[ty] = 0; s_ta[ty] = 0;
+            s_pauv_re[ty] = 0.0; s_pauv_im[ty] = 0.0;
+            s_pavu_re[ty] = 0.0; s_pavu_im[ty] = 0.0;
+        }
+    }
+
+    if (ty == 0) {
+        if (ib < nb_pairs) {
+            s_sb[tx] = d_sourceb[ib];
+            s_tb[tx] = d_targetb[ib];
+            cuDoubleComplex pb_uv = d_parityb_uv[ib];
+            cuDoubleComplex pb_vu = d_parityb_vu[ib];
+            s_pbuv_re[tx] = pb_uv.x; s_pbuv_im[tx] = pb_uv.y;
+            s_pbvu_re[tx] = pb_vu.x; s_pbvu_im[tx] = pb_vu.y;
+        } else {
+            s_sb[tx] = 0; s_tb[tx] = 0;
+            s_pbuv_re[tx] = 0.0; s_pbuv_im[tx] = 0.0;
+            s_pbvu_re[tx] = 0.0; s_pbvu_im[tx] = 0.0;
+        }
+    }
+    __syncthreads();
+
+    double acc_re = 0.0, acc_im = 0.0;
+
+    if (ia < na_pairs && ib < nb_pairs) {
+        long long u_idx = (long long)s_sa[ty] * nbeta_strs_ + s_sb[tx];
+        long long v_idx = (long long)s_ta[ty] * nbeta_strs_ + s_tb[tx];
+
+        cuDoubleComplex psi_u = d_psi[u_idx];
+        cuDoubleComplex psi_v = d_psi[v_idx];
+        cuDoubleComplex sig_u = d_sigma[u_idx];
+        cuDoubleComplex sig_v = d_sigma[v_idx];
+
+        // cuv = coeff_uv * parity_a_uv * parity_b_uv
+        cuDoubleComplex pa_uv = make_cuDoubleComplex(s_pauv_re[ty], s_pauv_im[ty]);
+        cuDoubleComplex pb_uv = make_cuDoubleComplex(s_pbuv_re[tx], s_pbuv_im[tx]);
+        cuDoubleComplex cuv = cuCmul(coeff_uv, cuCmul(pa_uv, pb_uv));
+
+        // cvu = coeff_vu * parity_a_vu * parity_b_vu
+        cuDoubleComplex pa_vu = make_cuDoubleComplex(s_pavu_re[ty], s_pavu_im[ty]);
+        cuDoubleComplex pb_vu = make_cuDoubleComplex(s_pbvu_re[tx], s_pbvu_im[tx]);
+        cuDoubleComplex cvu = cuCmul(coeff_vu, cuCmul(pa_vu, pb_vu));
+
+        cuDoubleComplex val_dag   = cuCmul(cuv, cuCmul(cuConj(sig_v), psi_u));
+        cuDoubleComplex val_undag = cuCmul(cvu, cuCmul(cuConj(sig_u), psi_v));
+
+        acc_re = val_dag.x + val_undag.x;
+        acc_im = val_dag.y + val_undag.y;
+    }
+
+    s_red_re[tid] = acc_re;
+    s_red_im[tid] = acc_im;
+    __syncthreads();
+
+    int block_threads = BX * AY;
+    for (int s = block_threads / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            s_red_re[tid] += s_red_re[tid + s];
+            s_red_im[tid] += s_red_im[tid + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd_double(&d_accum->x, s_red_re[0]);
+        atomicAdd_double(&d_accum->y, s_red_im[0]);
+    }
+}
+
+extern "C" void dot_mixed_dual_wrapper(
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_sourcea,
+    const int* d_targeta,
+    const cuDoubleComplex* d_paritya_uv,
+    const cuDoubleComplex* d_paritya_vu,
+    const int* d_sourceb,
+    const int* d_targetb,
+    const cuDoubleComplex* d_parityb_uv,
+    const cuDoubleComplex* d_parityb_vu,
+    int na_pairs,
+    int nb_pairs,
+    long long nbeta_strs_,
+    cuDoubleComplex coeff_uv,
+    cuDoubleComplex coeff_vu,
+    cuDoubleComplex* d_accum)
+{
+    constexpr int BX = 32;
+    constexpr int AY = 8;
+    dim3 blockSize(BX, AY);
+    dim3 gridSize(
+        (nb_pairs + BX - 1) / BX,
+        (na_pairs + AY - 1) / AY);
+
+    dot_mixed_dual_kernel<BX, AY><<<gridSize, blockSize>>>(
+        d_psi, d_sigma,
+        d_sourcea, d_targeta, d_paritya_uv, d_paritya_vu,
+        d_sourceb, d_targetb, d_parityb_uv, d_parityb_vu,
+        na_pairs, nb_pairs, nbeta_strs_,
+        coeff_uv, coeff_vu, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_mixed_dual_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_mixed_dual_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// Easy/diagonal SQOp dot, complex path.
+// Computes coeff * sum_{ia in alpha_mask, ib in beta_mask}
+//     conj(sigma[alpha[ia], beta[ib]]) * psi[alpha[ia], beta[ib]].
+// No source/target/parity arrays are used because the operator is diagonal.
+template<int BX, int AY>
+__global__ void dot_easy_number_kernel(
+    cuDoubleComplex coeff,
+    const cuDoubleComplex* __restrict__ d_psi,
+    const cuDoubleComplex* __restrict__ d_sigma,
+    const int* __restrict__ d_alpha,
+    int n_alpha,
+    const int* __restrict__ d_beta,
+    int n_beta,
+    long long nbeta_strs_,
+    cuDoubleComplex* __restrict__ d_accum)
+{
+    static_assert(((BX * AY) & (BX * AY - 1)) == 0,
+                  "BX*AY must be a power of two for this reduction");
+
+    constexpr int NT = BX * AY;
+    __shared__ double sh_re[NT];
+    __shared__ double sh_im[NT];
+
+    const int tx  = threadIdx.x;
+    const int ty  = threadIdx.y;
+    const int tid = ty * BX + tx;
+
+    const long long beta_tiles = ((long long)n_beta + BX - 1) / BX;
+    const long long tile       = (long long)blockIdx.x;
+
+    const int ib = (int)((tile % beta_tiles) * BX + tx);
+    const int ia = (int)((tile / beta_tiles) * AY + ty);
+
+    double acc_re = 0.0;
+    double acc_im = 0.0;
+
+    if (ia < n_alpha && ib < n_beta) {
+        const int a = d_alpha[ia];
+        const int b = d_beta[ib];
+        const long long idx = (long long)a * nbeta_strs_ + b;
+
+        const cuDoubleComplex s = d_sigma[idx];
+        const cuDoubleComplex p = d_psi[idx];
+
+        // z = conj(sigma) * psi
+        const double z_re = s.x * p.x + s.y * p.y;
+        const double z_im = s.x * p.y - s.y * p.x;
+
+        // coeff * z
+        acc_re = coeff.x * z_re - coeff.y * z_im;
+        acc_im = coeff.x * z_im + coeff.y * z_re;
+    }
+
+    sh_re[tid] = acc_re;
+    sh_im[tid] = acc_im;
+    __syncthreads();
+
+    #pragma unroll
+    for (int s = NT / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            sh_re[tid] += sh_re[tid + s];
+            sh_im[tid] += sh_im[tid + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        atomicAdd_double(&d_accum->x, sh_re[0]);
+        atomicAdd_double(&d_accum->y, sh_im[0]);
+    }
+}
+
+extern "C" void dot_easy_number_wrapper(
+    cuDoubleComplex coeff,
+    const cuDoubleComplex* d_psi,
+    const cuDoubleComplex* d_sigma,
+    const int* d_alpha,
+    int n_alpha,
+    const int* d_beta,
+    int n_beta,
+    long long nbeta_strs_,
+    cuDoubleComplex* d_accum)
+{
+    if (n_alpha <= 0 || n_beta <= 0 || nbeta_strs_ <= 0) return;
+    if (coeff.x == 0.0 && coeff.y == 0.0) return;
+
+    constexpr int BX = 32;  // beta lanes; keeps threadIdx.x beta-fast
+    constexpr int AY = 8;   // alpha rows per block
+
+    const long long alpha_tiles = ((long long)n_alpha + AY - 1) / AY;
+    const long long beta_tiles  = ((long long)n_beta  + BX - 1) / BX;
+    const long long nblocks     = alpha_tiles * beta_tiles;
+
+    if (nblocks > (long long)std::numeric_limits<int>::max()) {
+        throw std::runtime_error("dot_easy_number_wrapper: grid too large");
+    }
+
+    dim3 blockSize(BX, AY);
+    dim3 gridSize((unsigned int)nblocks);
+
+    dot_easy_number_kernel<BX, AY><<<gridSize, blockSize>>>(
+        coeff, d_psi, d_sigma,
+        d_alpha, n_alpha,
+        d_beta, n_beta,
+        nbeta_strs_, d_accum);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_easy_number_kernel launch failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        throw std::runtime_error("dot_easy_number_kernel sync failed: " +
+                                 std::string(cudaGetErrorString(err)));
+    }
+}
+
+// ==============================================
 // Scale elements kernel and wrapper (Complex)
 // ==============================================
 
@@ -158,14 +1131,14 @@ __global__ void scale_elements_kernel(
     int first_size,
     const int* d_second, 
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor) 
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (i < first_size && j < second_size) {
-        int idx = d_first[i] * nbeta_strs_ + d_second[j];
+        long long idx = (long long)d_first[i] * nbeta_strs_ + d_second[j];
         d_Cout[idx] = cuCmul(d_Cout[idx], factor);
     }
 }
@@ -176,7 +1149,7 @@ extern "C" void scale_elements_wrapper_complex(
     int first_size,
     const int* d_second, 
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor) 
 {
     if (first_size <= 0 || second_size <= 0 || nbeta_strs_ <= 0) return;
@@ -214,14 +1187,14 @@ __global__ void scale_elements_kernel_real(
     int first_size,
     const int* __restrict__ d_second,
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor)
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     const int j = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (i < first_size && j < second_size) {
-        const int idx = d_first[i] * nbeta_strs_ + d_second[j];
+        const long long idx = (long long)d_first[i] * nbeta_strs_ + d_second[j];
         d_Cout[idx] *= factor;
     }
 }
@@ -232,7 +1205,7 @@ extern "C" void scale_elements_wrapper_real(
     int first_size,
     const int* d_second,
     int second_size,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor)
 {
     if (first_size <= 0 || second_size <= 0 || nbeta_strs_ <= 0) return;
@@ -273,7 +1246,7 @@ __global__ void inplace_givens_update_rows_kernel(
     const cuDoubleComplex* __restrict__ paritya1, // [na]  (g† leg, row)
     const cuDoubleComplex* __restrict__ paritya2, // [na]  (g  leg, row)
     int na,
-    int nbeta_strs_,                        // number of columns
+    long long nbeta_strs_,                        // number of columns
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2)
@@ -294,12 +1267,12 @@ __global__ void inplace_givens_update_rows_kernel(
 
     const int sa1 = s_sa1, ta1 = s_ta1;
     const cuDoubleComplex pa1 = s_pa1, pa2 = s_pa2;
-    const int base_u = sa1 * nbeta_strs_;
-    const int base_v = ta1 * nbeta_strs_;
+    const long long base_u = (long long)sa1 * nbeta_strs_;
+    const long long base_v = (long long)ta1 * nbeta_strs_;
 
-    for (int col = threadIdx.x; col < nbeta_strs_; col += blockDim.x) {
-        const int idx_u = base_u + col;   // (sa1, col)
-        const int idx_v = base_v + col;   // (ta1, col)
+    for (long long col = threadIdx.x; col < nbeta_strs_; col += blockDim.x) {
+        const long long idx_u = base_u + col;   // (sa1, col)
+        const long long idx_v = base_v + col;   // (ta1, col)
 
         const cuDoubleComplex u0 = d_Cout[idx_u];
         const cuDoubleComplex v0 = d_Cout[idx_v];
@@ -320,7 +1293,7 @@ extern "C" void inplace_givens_update_complex_rows_wrapper(
     const cuDoubleComplex* paritya1,
     const cuDoubleComplex* paritya2,
     int na,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2)
@@ -329,7 +1302,7 @@ extern "C" void inplace_givens_update_complex_rows_wrapper(
 
     // Choose threads per block: cover columns with good occupancy.
     // Clamp to device limits if you prefer; 256 is a good default.
-    int threads = std::min(256, nbeta_strs_);
+    int threads = static_cast<int>(std::min<long long>(256, nbeta_strs_));
     // Keep at least one warp
     if (threads < 32) threads = 32;
 
@@ -370,7 +1343,7 @@ __global__ void inplace_givens_update_complex_tiled(
     const cuDoubleComplex* __restrict__ parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2)
@@ -432,11 +1405,11 @@ __global__ void inplace_givens_update_complex_tiled(
             const cuDoubleComplex pb1 = s_pb1[tx];
             const cuDoubleComplex pb2 = s_pb2[tx];
 
-            const int base_u = sa1 * nbeta_strs_;
-            const int base_v = ta1 * nbeta_strs_;
+            const long long base_u = (long long)sa1 * nbeta_strs_;
+            const long long base_v = (long long)ta1 * nbeta_strs_;
 
-            const int idx_u  = base_u + sb1;  // (sa1, sb1)
-            const int idx_v  = base_v + tb1;  // (ta1, tb1)
+            const long long idx_u  = base_u + sb1;  // (sa1, sb1)
+            const long long idx_v  = base_v + tb1;  // (ta1, tb1)
 
             // Within a warp, tx varies ⇒ idx_* vary by +1 (contiguous) if sb1/tb1 are consecutive.
             // To ensure that, store column-pairs for a tile as consecutive sb1/tb1 (typical).
@@ -470,7 +1443,7 @@ static void launch_inplace_givens_update_complex_tiled(
     const cuDoubleComplex* parityb2,
     int nalpha,
     int nb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2)
@@ -530,7 +1503,7 @@ extern "C" void inplace_givens_update_complex_tiled_wrapper(
     const cuDoubleComplex* parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,     // leading dimension (num columns)
+    long long nbeta_strs_,     // leading dimension (num columns)
     cuDoubleComplex factor,
     cuDoubleComplex acc_coeff1,
     cuDoubleComplex acc_coeff2)
@@ -570,7 +1543,7 @@ extern "C" void inplace_givens_update_complex_tiled_wrapper(
 // ==============================================
 
 /// One block processes one (sa1, ta1) pair; threads iterate j across nbeta_strs_.
-/// pa1, pa2 are row-scoped real parities/scalings (often ±1).
+/// pa1, pa2 are row-scoped real parities (±1).
 __global__ void inplace_givens_update_rows_kernel_real(
     double* __restrict__ d_Cout,
     const int* __restrict__ sourcea1,      // [na]
@@ -578,7 +1551,7 @@ __global__ void inplace_givens_update_rows_kernel_real(
     const double* __restrict__ paritya1,   // [na]  (g† leg, row)
     const double* __restrict__ paritya2,   // [na]  (g  leg, row)
     int na,
-    int nbeta_strs_,                        // number of columns
+    long long nbeta_strs_,                        // number of columns
     double factor,
     double acc_coeff1,
     double acc_coeff2)
@@ -600,17 +1573,17 @@ __global__ void inplace_givens_update_rows_kernel_real(
     const int sa1 = s_sa1, ta1 = s_ta1;
     const double pa1 = s_pa1, pa2 = s_pa2;
 
-    const int base_u = sa1 * nbeta_strs_;
-    const int base_v = ta1 * nbeta_strs_;
+    const long long base_u = (long long)sa1 * nbeta_strs_;
+    const long long base_v = (long long)ta1 * nbeta_strs_;
 
     // Precompute per-row scalings to save a couple MULs in the loop
     const double a_row = acc_coeff2 * pa2;
     const double b_row = acc_coeff1 * pa1;
 
     // Each thread walks columns with stride blockDim.x (coalesced)
-    for (int col = threadIdx.x; col < nbeta_strs_; col += blockDim.x) {
-        const int idx_u = base_u + col;   // (sa1, col)
-        const int idx_v = base_v + col;   // (ta1, col)
+    for (long long col = threadIdx.x; col < nbeta_strs_; col += blockDim.x) {
+        const long long idx_u = base_u + col;   // (sa1, col)
+        const long long idx_v = base_v + col;   // (ta1, col)
 
         const double u0 = d_Cout[idx_u];
         const double v0 = d_Cout[idx_v];
@@ -630,7 +1603,7 @@ extern "C" void inplace_givens_update_real_rows_wrapper(
     const double* paritya1,
     const double* paritya2,
     int na,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor,
     double acc_coeff1,
     double acc_coeff2)
@@ -638,7 +1611,7 @@ extern "C" void inplace_givens_update_real_rows_wrapper(
     if (na == 0 || nbeta_strs_ == 0) return;
 
     // Choose threads per block: cover columns with good occupancy.
-    int threads = std::min(256, nbeta_strs_);
+    int threads = static_cast<int>(std::min<long long>(256, nbeta_strs_));
     if (threads < 32) threads = 32;  // keep at least one warp
 
     dim3 block(threads);
@@ -665,6 +1638,129 @@ extern "C" void inplace_givens_update_real_rows_wrapper(
     }
 }
 
+template <int ROWS_PER_THREAD>
+__global__ void inplace_givens_update_cols_kernel_real(
+    double* __restrict__ d_Cout,
+    const int* __restrict__ sourceb1,      // [nb]
+    const int* __restrict__ targetb1,      // [nb]
+    const double* __restrict__ parityb1,   // [nb]
+    const double* __restrict__ parityb2,   // [nb]
+    int nb,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2)
+{
+    const int ib = blockIdx.y;   // beta-pair index
+    if (ib >= nb) return;
+
+    // Pair-scoped data: one read per block
+    __shared__ int s_sb1, s_tb1;
+    __shared__ double s_pb1, s_pb2;
+
+    if (threadIdx.x == 0) {
+        s_sb1 = sourceb1[ib];
+        s_tb1 = targetb1[ib];
+        s_pb1 = parityb1[ib];
+        s_pb2 = parityb2[ib];
+    }
+    __syncthreads();
+
+    const int sb1 = s_sb1;
+    const int tb1 = s_tb1;
+
+    const double a_col = acc_coeff2 * s_pb2;
+    const double b_col = acc_coeff1 * s_pb1;
+
+    // Tile rows across grid.x, and give each thread multiple rows
+    long long row0 =
+        static_cast<long long>(blockIdx.x) * (blockDim.x * ROWS_PER_THREAD)
+        + threadIdx.x;
+
+    const long long grid_stride =
+        static_cast<long long>(gridDim.x) * (blockDim.x * ROWS_PER_THREAD);
+
+    for (long long row = row0; row < nalpha_strs_; row += grid_stride) {
+
+        #pragma unroll
+        for (int k = 0; k < ROWS_PER_THREAD; ++k) {
+            const long long r = row + static_cast<long long>(k) * blockDim.x;
+            if (r < nalpha_strs_) {
+                const long long base  = r * nbeta_strs_;
+                const long long idx_u = base + sb1;
+                const long long idx_v = base + tb1;
+
+                const double u0 = d_Cout[idx_u];
+                const double v0 = d_Cout[idx_v];
+                
+                d_Cout[idx_u] = factor * u0 + a_col * v0;
+                d_Cout[idx_v] = factor * v0 + b_col * u0;
+            }
+        }
+    }
+}
+
+extern "C" void inplace_givens_update_real_cols_wrapper(
+    double* d_Cout,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nb,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2)
+{
+    if (nb == 0 || nalpha_strs_ == 0 || nbeta_strs_ == 0) return;
+
+    // Good default for a latency-bound strided kernel.
+    constexpr int threads = 256;
+    constexpr int rows_per_thread = 4;
+
+    const long long rows_per_block =
+        static_cast<long long>(threads) * rows_per_thread;
+
+    long long grid_x_ll =
+        (nalpha_strs_ + rows_per_block - 1) / rows_per_block;
+
+    // Clamp to CUDA's 1D grid-x limit for ordinary launches.
+    int grid_x = static_cast<int>(std::min<long long>(grid_x_ll, 65535));
+
+    dim3 block(threads);
+    dim3 grid(grid_x, nb);
+
+    inplace_givens_update_cols_kernel_real<rows_per_thread><<<grid, block>>>(
+        d_Cout,
+        sourceb1,
+        targetb1,
+        parityb1,
+        parityb2,
+        nb,
+        nalpha_strs_,
+        nbeta_strs_,
+        factor,
+        acc_coeff1,
+        acc_coeff2);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Failed to launch inplace_givens_update_cols_kernel_real ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("inplace_givens_update_cols_kernel_real launch failed");
+    }
+
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "inplace_givens_update_cols_kernel_real execution failed ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("inplace_givens_update_cols_kernel_real execution failed");
+    }
+}
+
+
 template<int BX>  // number of column-pairs handled per block (e.g., 32 or 64)
 __global__ void inplace_givens_update_real_tiled(
     double* __restrict__ d_Cout,
@@ -678,7 +1774,7 @@ __global__ void inplace_givens_update_real_tiled(
     const double* __restrict__ parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,     // leading dimension (num columns)
+    long long nbeta_strs_,     // leading dimension (num columns)
     double factor,
     double acc_coeff1,
     double acc_coeff2)
@@ -739,11 +1835,11 @@ __global__ void inplace_givens_update_real_tiled(
             const double pb1 = s_pb1[tx];
             const double pb2 = s_pb2[tx];
 
-            const int base_u = sa1 * nbeta_strs_;
-            const int base_v = ta1 * nbeta_strs_;
+            const long long base_u = (long long)sa1 * nbeta_strs_;
+            const long long base_v = (long long)ta1 * nbeta_strs_;
 
-            const int idx_u  = base_u + sb1;  // (sa1, sb1)
-            const int idx_v  = base_v + tb1;  // (ta1, tb1)
+            const long long idx_u  = base_u + sb1;  // (sa1, sb1)
+            const long long idx_v  = base_v + tb1;  // (ta1, tb1)
 
             const double u0 = d_Cout[idx_u];
             const double v0 = d_Cout[idx_v];
@@ -777,7 +1873,7 @@ static void launch_inplace_givens_update_real_tiled(
     const double* parityb2,
     int nalpha,
     int nb,
-    int nbeta_strs_,
+    long long nbeta_strs_,
     double factor,
     double acc_coeff1,
     double acc_coeff2)
@@ -837,7 +1933,7 @@ extern "C" void inplace_givens_update_real_tiled_wrapper(
     const double* parityb2,
     int nalpha,          // rows
     int nb,              // number of column-pairs
-    int nbeta_strs_,     // leading dimension (num columns)
+    long long nbeta_strs_,     // leading dimension (num columns)
     double factor,
     double acc_coeff1,
     double acc_coeff2)
@@ -869,6 +1965,164 @@ extern "C" void inplace_givens_update_real_tiled_wrapper(
                 factor, acc_coeff1, acc_coeff2);
             break;
     }
+}
+
+// ==============================================
+// Beta-only row-major tiled Givens kernel (Real)
+//
+// Memory layout rationale
+// -----------------------
+// d_Cout is row-major: element (row, col) lives at row * nbeta_strs_ + col.
+//
+// OLD column kernel: one block owns one beta pair; threads vary over rows.
+//   Lane l touches row_base + l*nbeta_strs_ + sb1  → stride = nbeta_strs_ across lanes.
+//   On a row-major matrix this is the worst possible access pattern for coalescing.
+//
+// THIS kernel: threadIdx.x selects a beta column-pair; threadIdx.y selects a row.
+//   All threads in a warp share the same row and touch adjacent columns:
+//     base = row * nbeta_strs_;
+//     lane l accesses base + sourceb1[ib0 + l]
+//   When the sourceb1 array is sorted, neighbouring lanes access nearly-contiguous
+//   columns → close to unit-stride, coalesced global loads/stores.
+//
+// Launch shape: block(BX, AY), grid((nb+BX-1)/BX, (na+AY-1)/AY)
+//   BX = 32  → one warp in x (ideal for row-major coalescing)
+//   AY = 8   → 256 threads per block (good occupancy target)
+//   Grid produces ceil(nb/32) * ceil(na/8) blocks, which is much more than
+//   the column kernel's nb * ceil(na/1024) blocks when nb is small.
+// ==============================================
+
+template<int BX, int AY>
+__global__ void inplace_givens_update_beta_only_rowmajor_real(
+    double* __restrict__ d_Cout,
+    const int* __restrict__ sourceb1,   // [nb]
+    const int* __restrict__ targetb1,   // [nb]
+    const double* __restrict__ parityb1, // [nb]  g† parity
+    const double* __restrict__ parityb2, // [nb]  g  parity
+    int nb,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2)
+{
+    static_assert(BX % 32 == 0, "BX must be a warp multiple for coalescing");
+
+    const int tx  = threadIdx.x;          // beta-pair lane within block
+    const int ty  = threadIdx.y;          // row lane within block
+
+    const int ib  = blockIdx.x * BX + tx; // global beta-pair index
+    const long long row = (long long)blockIdx.y * AY + ty; // global alpha-row index
+
+    // ---- Shared memory: BX beta-pair metadata --------------------------------
+    // Only row ty==0 loads; all rows reuse it.  One __syncthreads() is enough.
+    __shared__ int    s_sb1[BX], s_tb1[BX];
+    __shared__ double s_a[BX],   s_b[BX];  // pre-scaled parity products
+
+    if (ty == 0) {
+        if (ib < nb) {
+            s_sb1[tx] = sourceb1[ib];
+            s_tb1[tx] = targetb1[ib];
+            // absorbed scalars: avoids two multiplies per thread in the hot path
+            s_a[tx]   = acc_coeff2 * parityb2[ib];  // coefficient on v0 → u
+            s_b[tx]   = acc_coeff1 * parityb1[ib];  // coefficient on u0 → v
+        } else {
+            // Out-of-range lane — init to harmless sentinel (will be guarded below)
+            s_sb1[tx] = 0;
+            s_tb1[tx] = 0;
+            s_a[tx]   = 0.0;
+            s_b[tx]   = 0.0;
+        }
+    }
+    __syncthreads();
+
+    // ---- Hot path: row-local read-modify-write -------------------------------
+    // All active threads in a warp share the same `row`, so
+    //   base + s_sb1[tx]  for consecutive tx values  → adjacent column accesses.
+    // When sourceb1 is sorted this collapses to one or two 32-byte cache lines.
+    if (row < nalpha_strs_ && ib < nb) {
+        const long long base = (long long)row * nbeta_strs_;
+
+        const double u0 = d_Cout[base + s_sb1[tx]];
+        const double v0 = d_Cout[base + s_tb1[tx]];
+
+        d_Cout[base + s_sb1[tx]] = fma(s_a[tx], v0, factor * u0);
+        d_Cout[base + s_tb1[tx]] = fma(s_b[tx], u0, factor * v0);
+    }
+}
+
+// Internal template launcher
+template<int BX, int AY>
+static void launch_inplace_givens_update_beta_only_rowmajor_real(
+    double* d_Cout,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nb,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2)
+{
+    if (nb == 0 || nalpha_strs_ == 0 || nbeta_strs_ == 0) return;
+
+    // grid.y can be at most 65535 for ordinary launches; each block covers AY rows.
+    // With AY=8, this supports up to 65535*8 = 524280 rows (sufficient for FCI).
+    const int grid_x = (nb           + BX - 1) / BX;
+    const int grid_y = (int)((nalpha_strs_ + AY - 1) / AY);
+
+    dim3 block(BX, AY);                  // BX * AY threads, e.g. 32*8 = 256
+    dim3 grid(grid_x, grid_y);
+
+    inplace_givens_update_beta_only_rowmajor_real<BX, AY><<<grid, block>>>(
+        d_Cout,
+        sourceb1, targetb1, parityb1, parityb2,
+        nb, nalpha_strs_, nbeta_strs_,
+        factor, acc_coeff1, acc_coeff2);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Failed to launch inplace_givens_update_beta_only_rowmajor_real<"
+                  << BX << "," << AY << "> (" << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("inplace_givens_update_beta_only_rowmajor_real launch failed");
+    }
+
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "inplace_givens_update_beta_only_rowmajor_real<"
+                  << BX << "," << AY << "> execution failed ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("inplace_givens_update_beta_only_rowmajor_real execution failed");
+    }
+}
+
+// Extern "C" wrapper: BX=32, AY=8 (256 threads/block) is the default tuned shape.
+// If nb >> 32 and the GPU has enough SMs, BX=64 may give better occupancy.
+extern "C" void inplace_givens_update_real_beta_only_rowmajor_wrapper(
+    double* d_Cout,
+    const int* sourceb1,
+    const int* targetb1,
+    const double* parityb1,
+    const double* parityb2,
+    int nb,
+    long long nalpha_strs_,
+    long long nbeta_strs_,
+    double factor,
+    double acc_coeff1,
+    double acc_coeff2)
+{
+    if (nb == 0 || nalpha_strs_ == 0 || nbeta_strs_ == 0) return;
+
+    // BX=32 → one full warp per row-tile: optimal coalescing for row-major data.
+    // BX=64 can help when nb is large enough that two warps per block are busy,
+    // but risks register spill on some architectures.  Default to 32.
+    launch_inplace_givens_update_beta_only_rowmajor_real<32, 8>(
+        d_Cout,
+        sourceb1, targetb1, parityb1, parityb2,
+        nb, nalpha_strs_, nbeta_strs_,
+        factor, acc_coeff1, acc_coeff2);
 }
 
 // ==============================================
@@ -1043,6 +2297,10 @@ extern "C" void lm_apply_array12_same_spin_spmm_csr_coalesced_wrapper(
     int nnz_unique = (int)(end_pair.first - d_keys_uni.begin());
     if (nnz_unique <= 0) return;
 
+    // Free raw COO data — no longer needed after reduce
+    d_keys_raw.clear(); d_keys_raw.shrink_to_fit();
+    d_vals_raw.clear(); d_vals_raw.shrink_to_fit();
+
     d_keys_uni.resize(nnz_unique);
     d_vals_uni.resize(nnz_unique);
 
@@ -1068,6 +2326,9 @@ extern "C" void lm_apply_array12_same_spin_spmm_csr_coalesced_wrapper(
         CHECK_CUDA(cudaGetLastError());
         CHECK_CUDA(cudaDeviceSynchronize());
     }
+
+    // Free unique keys — columns already extracted into d_col_ind
+    d_keys_uni.clear(); d_keys_uni.shrink_to_fit();
 
     // CSR row_ptr: exclusive_scan(row_counts) + last element = nnz_unique
     thrust::device_vector<int> d_row_ptr(states1 + 1);
@@ -1325,6 +2586,10 @@ extern "C" void lm_apply_array12_same_spin_spmm_csr_coalesced_wrapper_real(
     int nnz_unique = (int)(end_pair.first - d_keys_uni.begin());
     if (nnz_unique <= 0) return;
 
+    // Free raw COO data — no longer needed after reduce
+    d_keys_raw.clear(); d_keys_raw.shrink_to_fit();
+    d_vals_raw.clear(); d_vals_raw.shrink_to_fit();
+
     d_keys_uni.resize(nnz_unique);
     d_vals_uni.resize(nnz_unique);
 
@@ -1350,6 +2615,9 @@ extern "C" void lm_apply_array12_same_spin_spmm_csr_coalesced_wrapper_real(
         CHECK_CUDA(cudaGetLastError());
         CHECK_CUDA(cudaDeviceSynchronize());
     }
+
+    // Free unique keys — columns already extracted into d_col_ind
+    d_keys_uni.clear(); d_keys_uni.shrink_to_fit();
 
     // CSR row_ptr: exclusive_scan(row_counts) + last element = nnz_unique
     thrust::device_vector<int> d_row_ptr(states1 + 1);
@@ -1608,6 +2876,10 @@ extern "C" void lm_apply_array12_same_spin_spmm_csr_coalesced_wrapper_mixed(
     int nnz_unique = (int)(end_pair.first - d_keys_uni.begin());
     if (nnz_unique <= 0) return;
 
+    // Free raw COO data — no longer needed after reduce
+    d_keys_raw.clear(); d_keys_raw.shrink_to_fit();
+    d_vals_raw.clear(); d_vals_raw.shrink_to_fit();
+
     d_keys_uni.resize(nnz_unique);
     d_vals_uni.resize(nnz_unique);
 
@@ -1633,6 +2905,9 @@ extern "C" void lm_apply_array12_same_spin_spmm_csr_coalesced_wrapper_mixed(
         CHECK_CUDA(cudaGetLastError());
         CHECK_CUDA(cudaDeviceSynchronize());
     }
+
+    // Free unique keys — columns already extracted into d_col_ind
+    d_keys_uni.clear(); d_keys_uni.shrink_to_fit();
 
     // CSR row_ptr: exclusive_scan(row_counts) + last element = nnz_unique
     thrust::device_vector<int> d_row_ptr(states1 + 1);
@@ -2639,3 +3914,705 @@ extern "C" void lm_apply_array12_diff_spin_wrapper_mixed(
     }
 }
 
+// ==============================================
+// Diff Spin v2 tiled implementation
+// ==============================================
+
+namespace {
+
+constexpr int DIFF_V2_TILE_B = 16;   // threadIdx.x: beta-output columns
+constexpr int DIFF_V2_TILE_A = 8;    // threadIdx.y: alpha-output rows
+constexpr int DIFF_V2_CHUNK_A = 8;   // incoming alpha edges staged per row
+constexpr int DIFF_V2_CHUNK_B = 8;   // incoming beta edges staged per column
+
+int diff_spin_v2_tiled_grid_dim(long long tiles)
+{
+    const long long capped = std::min<long long>(tiles, 65535);
+    return static_cast<int>(std::max<long long>(capped, 1));
+}
+
+size_t diff_spin_v2_tiled_shared_bytes()
+{
+    const size_t alpha_slots =
+        static_cast<size_t>(DIFF_V2_TILE_A) * DIFF_V2_CHUNK_A;
+    const size_t beta_slots =
+        static_cast<size_t>(DIFF_V2_TILE_B) * DIFF_V2_CHUNK_B;
+    return 3 * (alpha_slots + beta_slots) * sizeof(int);
+}
+
+} // namespace
+
+__global__ void lm_apply_array12_diff_spin_v2_tiled_kernel_real(
+    double* __restrict__ d_out,
+    const double* __restrict__ d_C,
+    const long long* __restrict__ d_alpha_offsets,
+    const int* __restrict__ d_alpha_sources,
+    const int* __restrict__ d_alpha_pairs,
+    const int* __restrict__ d_alpha_parities,
+    const long long* __restrict__ d_beta_offsets,
+    const int* __restrict__ d_beta_sources,
+    const int* __restrict__ d_beta_pairs,
+    const int* __restrict__ d_beta_parities,
+    const double* __restrict__ d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs)
+{
+    __shared__ long long sh_a_begin[DIFF_V2_TILE_A];
+    __shared__ long long sh_a_count[DIFF_V2_TILE_A];
+    __shared__ long long sh_b_begin[DIFF_V2_TILE_B];
+    __shared__ long long sh_b_count[DIFF_V2_TILE_B];
+    __shared__ long long sh_max_a;
+    __shared__ long long sh_max_b;
+
+    extern __shared__ int sh_edges[];
+    int* sh_a_src = sh_edges;
+    int* sh_a_pair = sh_a_src + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_a_parity = sh_a_pair + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_b_src = sh_a_parity + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_b_pair = sh_b_src + DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+    int* sh_b_parity = sh_b_pair + DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+
+    const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    const int nthreads = blockDim.x * blockDim.y;
+    const long long norbs2 = static_cast<long long>(norbs) * norbs;
+
+    // One block owns a 2D output tile.  If the CI matrix has more tiles than
+    // the grid can expose directly, the block grid-strides over output tiles.
+    for (long long a_base = static_cast<long long>(blockIdx.y) * DIFF_V2_TILE_A;
+         a_base < alpha_states;
+         a_base += static_cast<long long>(gridDim.y) * DIFF_V2_TILE_A) {
+        for (long long b_base = static_cast<long long>(blockIdx.x) * DIFF_V2_TILE_B;
+             b_base < beta_states;
+             b_base += static_cast<long long>(gridDim.x) * DIFF_V2_TILE_B) {
+
+            if (tid < DIFF_V2_TILE_A) {
+                const long long a_out = a_base + tid;
+                if (a_out < alpha_states) {
+                    sh_a_begin[tid] = d_alpha_offsets[a_out];
+                    sh_a_count[tid] = d_alpha_offsets[a_out + 1] - sh_a_begin[tid];
+                } else {
+                    sh_a_begin[tid] = 0;
+                    sh_a_count[tid] = 0;
+                }
+            }
+            if (tid < DIFF_V2_TILE_B) {
+                const long long b_out = b_base + tid;
+                if (b_out < beta_states) {
+                    sh_b_begin[tid] = d_beta_offsets[b_out];
+                    sh_b_count[tid] = d_beta_offsets[b_out + 1] - sh_b_begin[tid];
+                } else {
+                    sh_b_begin[tid] = 0;
+                    sh_b_count[tid] = 0;
+                }
+            }
+            __syncthreads();
+
+            if (tid == 0) {
+                long long max_a = 0;
+                long long max_b = 0;
+                for (int i = 0; i < DIFF_V2_TILE_A; ++i) {
+                    max_a = max_a < sh_a_count[i] ? sh_a_count[i] : max_a;
+                }
+                for (int i = 0; i < DIFF_V2_TILE_B; ++i) {
+                    max_b = max_b < sh_b_count[i] ? sh_b_count[i] : max_b;
+                }
+                sh_max_a = max_a;
+                sh_max_b = max_b;
+            }
+            __syncthreads();
+
+            const long long a_out = a_base + threadIdx.y;
+            const long long b_out = b_base + threadIdx.x;
+            const bool active = a_out < alpha_states && b_out < beta_states;
+            double acc = 0.0;
+
+            // Irregular incoming-list lengths make the tile ragged.  We stage
+            // fixed-size chunks for all rows/columns in the output tile; each
+            // thread then consumes only the chunk entries for its owned
+            // (a_out, b_out) scalar.
+            for (long long a_chunk = 0; a_chunk < sh_max_a; a_chunk += DIFF_V2_CHUNK_A) {
+                for (int slot = tid;
+                     slot < DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+                     slot += nthreads) {
+                    const int local_a = slot / DIFF_V2_CHUNK_A;
+                    const int k = slot - local_a * DIFF_V2_CHUNK_A;
+                    const long long edge = sh_a_begin[local_a] + a_chunk + k;
+                    if (a_chunk + k < sh_a_count[local_a]) {
+                        sh_a_src[slot] = d_alpha_sources[edge];
+                        sh_a_pair[slot] = d_alpha_pairs[edge];
+                        sh_a_parity[slot] = d_alpha_parities[edge];
+                    } else {
+                        sh_a_src[slot] = 0;
+                        sh_a_pair[slot] = 0;
+                        sh_a_parity[slot] = 0;
+                    }
+                }
+                __syncthreads();
+
+                for (long long b_chunk = 0; b_chunk < sh_max_b; b_chunk += DIFF_V2_CHUNK_B) {
+                    for (int slot = tid;
+                         slot < DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+                         slot += nthreads) {
+                        const int local_b = slot / DIFF_V2_CHUNK_B;
+                        const int k = slot - local_b * DIFF_V2_CHUNK_B;
+                        const long long edge = sh_b_begin[local_b] + b_chunk + k;
+                        if (b_chunk + k < sh_b_count[local_b]) {
+                            sh_b_src[slot] = d_beta_sources[edge];
+                            sh_b_pair[slot] = d_beta_pairs[edge];
+                            sh_b_parity[slot] = d_beta_parities[edge];
+                        } else {
+                            sh_b_src[slot] = 0;
+                            sh_b_pair[slot] = 0;
+                            sh_b_parity[slot] = 0;
+                        }
+                    }
+                    __syncthreads();
+
+                    if (active) {
+                        const long long a_rem = sh_a_count[threadIdx.y] - a_chunk;
+                        const long long b_rem = sh_b_count[threadIdx.x] - b_chunk;
+                        const int a_limit = a_rem < DIFF_V2_CHUNK_A
+                            ? static_cast<int>(a_rem) : DIFF_V2_CHUNK_A;
+                        const int b_limit = b_rem < DIFF_V2_CHUNK_B
+                            ? static_cast<int>(b_rem) : DIFF_V2_CHUNK_B;
+                        const int a_slot_base = threadIdx.y * DIFF_V2_CHUNK_A;
+                        const int b_slot_base = threadIdx.x * DIFF_V2_CHUNK_B;
+
+                        for (int ia = 0; ia < a_limit; ++ia) {
+                            const int a_slot = a_slot_base + ia;
+                            const int a_src = sh_a_src[a_slot];
+                            const int ij = sh_a_pair[a_slot];
+                            const int pa = sh_a_parity[a_slot];
+
+                            for (int ib = 0; ib < b_limit; ++ib) {
+                                const int b_slot = b_slot_base + ib;
+                                const int b_src = sh_b_src[b_slot];
+                                const int kl = sh_b_pair[b_slot];
+                                const int pb = sh_b_parity[b_slot];
+                                const size_t h_idx =
+                                    static_cast<size_t>(ij) * static_cast<size_t>(norbs2)
+                                    + static_cast<size_t>(kl);
+                                const size_t c_idx =
+                                    static_cast<size_t>(a_src) * static_cast<size_t>(beta_states)
+                                    + static_cast<size_t>(b_src);
+                                acc += static_cast<double>(pa * pb) * d_h2e[h_idx] * d_C[c_idx];
+                            }
+                        }
+                    }
+                    __syncthreads();
+                }
+            }
+
+            if (active) {
+                const size_t out_idx =
+                    static_cast<size_t>(a_out) * static_cast<size_t>(beta_states)
+                    + static_cast<size_t>(b_out);
+                d_out[out_idx] += acc;
+            }
+            __syncthreads();
+        }
+    }
+}
+
+__global__ void lm_apply_array12_diff_spin_v2_tiled_kernel_mixed(
+    cuDoubleComplex* __restrict__ d_out,
+    const cuDoubleComplex* __restrict__ d_C,
+    const long long* __restrict__ d_alpha_offsets,
+    const int* __restrict__ d_alpha_sources,
+    const int* __restrict__ d_alpha_pairs,
+    const int* __restrict__ d_alpha_parities,
+    const long long* __restrict__ d_beta_offsets,
+    const int* __restrict__ d_beta_sources,
+    const int* __restrict__ d_beta_pairs,
+    const int* __restrict__ d_beta_parities,
+    const double* __restrict__ d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs)
+{
+    __shared__ long long sh_a_begin[DIFF_V2_TILE_A];
+    __shared__ long long sh_a_count[DIFF_V2_TILE_A];
+    __shared__ long long sh_b_begin[DIFF_V2_TILE_B];
+    __shared__ long long sh_b_count[DIFF_V2_TILE_B];
+    __shared__ long long sh_max_a;
+    __shared__ long long sh_max_b;
+
+    extern __shared__ int sh_edges[];
+    int* sh_a_src = sh_edges;
+    int* sh_a_pair = sh_a_src + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_a_parity = sh_a_pair + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_b_src = sh_a_parity + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_b_pair = sh_b_src + DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+    int* sh_b_parity = sh_b_pair + DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+
+    const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    const int nthreads = blockDim.x * blockDim.y;
+    const long long norbs2 = static_cast<long long>(norbs) * norbs;
+
+    for (long long a_base = static_cast<long long>(blockIdx.y) * DIFF_V2_TILE_A;
+         a_base < alpha_states;
+         a_base += static_cast<long long>(gridDim.y) * DIFF_V2_TILE_A) {
+        for (long long b_base = static_cast<long long>(blockIdx.x) * DIFF_V2_TILE_B;
+             b_base < beta_states;
+             b_base += static_cast<long long>(gridDim.x) * DIFF_V2_TILE_B) {
+
+            if (tid < DIFF_V2_TILE_A) {
+                const long long a_out = a_base + tid;
+                if (a_out < alpha_states) {
+                    sh_a_begin[tid] = d_alpha_offsets[a_out];
+                    sh_a_count[tid] = d_alpha_offsets[a_out + 1] - sh_a_begin[tid];
+                } else {
+                    sh_a_begin[tid] = 0;
+                    sh_a_count[tid] = 0;
+                }
+            }
+            if (tid < DIFF_V2_TILE_B) {
+                const long long b_out = b_base + tid;
+                if (b_out < beta_states) {
+                    sh_b_begin[tid] = d_beta_offsets[b_out];
+                    sh_b_count[tid] = d_beta_offsets[b_out + 1] - sh_b_begin[tid];
+                } else {
+                    sh_b_begin[tid] = 0;
+                    sh_b_count[tid] = 0;
+                }
+            }
+            __syncthreads();
+
+            if (tid == 0) {
+                long long max_a = 0;
+                long long max_b = 0;
+                for (int i = 0; i < DIFF_V2_TILE_A; ++i) {
+                    max_a = max_a < sh_a_count[i] ? sh_a_count[i] : max_a;
+                }
+                for (int i = 0; i < DIFF_V2_TILE_B; ++i) {
+                    max_b = max_b < sh_b_count[i] ? sh_b_count[i] : max_b;
+                }
+                sh_max_a = max_a;
+                sh_max_b = max_b;
+            }
+            __syncthreads();
+
+            const long long a_out = a_base + threadIdx.y;
+            const long long b_out = b_base + threadIdx.x;
+            const bool active = a_out < alpha_states && b_out < beta_states;
+            cuDoubleComplex acc = make_cuDoubleComplex(0.0, 0.0);
+
+            for (long long a_chunk = 0; a_chunk < sh_max_a; a_chunk += DIFF_V2_CHUNK_A) {
+                for (int slot = tid;
+                     slot < DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+                     slot += nthreads) {
+                    const int local_a = slot / DIFF_V2_CHUNK_A;
+                    const int k = slot - local_a * DIFF_V2_CHUNK_A;
+                    const long long edge = sh_a_begin[local_a] + a_chunk + k;
+                    if (a_chunk + k < sh_a_count[local_a]) {
+                        sh_a_src[slot] = d_alpha_sources[edge];
+                        sh_a_pair[slot] = d_alpha_pairs[edge];
+                        sh_a_parity[slot] = d_alpha_parities[edge];
+                    } else {
+                        sh_a_src[slot] = 0;
+                        sh_a_pair[slot] = 0;
+                        sh_a_parity[slot] = 0;
+                    }
+                }
+                __syncthreads();
+
+                for (long long b_chunk = 0; b_chunk < sh_max_b; b_chunk += DIFF_V2_CHUNK_B) {
+                    for (int slot = tid;
+                         slot < DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+                         slot += nthreads) {
+                        const int local_b = slot / DIFF_V2_CHUNK_B;
+                        const int k = slot - local_b * DIFF_V2_CHUNK_B;
+                        const long long edge = sh_b_begin[local_b] + b_chunk + k;
+                        if (b_chunk + k < sh_b_count[local_b]) {
+                            sh_b_src[slot] = d_beta_sources[edge];
+                            sh_b_pair[slot] = d_beta_pairs[edge];
+                            sh_b_parity[slot] = d_beta_parities[edge];
+                        } else {
+                            sh_b_src[slot] = 0;
+                            sh_b_pair[slot] = 0;
+                            sh_b_parity[slot] = 0;
+                        }
+                    }
+                    __syncthreads();
+
+                    if (active) {
+                        const long long a_rem = sh_a_count[threadIdx.y] - a_chunk;
+                        const long long b_rem = sh_b_count[threadIdx.x] - b_chunk;
+                        const int a_limit = a_rem < DIFF_V2_CHUNK_A
+                            ? static_cast<int>(a_rem) : DIFF_V2_CHUNK_A;
+                        const int b_limit = b_rem < DIFF_V2_CHUNK_B
+                            ? static_cast<int>(b_rem) : DIFF_V2_CHUNK_B;
+                        const int a_slot_base = threadIdx.y * DIFF_V2_CHUNK_A;
+                        const int b_slot_base = threadIdx.x * DIFF_V2_CHUNK_B;
+
+                        for (int ia = 0; ia < a_limit; ++ia) {
+                            const int a_slot = a_slot_base + ia;
+                            const int a_src = sh_a_src[a_slot];
+                            const int ij = sh_a_pair[a_slot];
+                            const int pa = sh_a_parity[a_slot];
+
+                            for (int ib = 0; ib < b_limit; ++ib) {
+                                const int b_slot = b_slot_base + ib;
+                                const int b_src = sh_b_src[b_slot];
+                                const int kl = sh_b_pair[b_slot];
+                                const int pb = sh_b_parity[b_slot];
+                                const size_t h_idx =
+                                    static_cast<size_t>(ij) * static_cast<size_t>(norbs2)
+                                    + static_cast<size_t>(kl);
+                                const size_t c_idx =
+                                    static_cast<size_t>(a_src) * static_cast<size_t>(beta_states)
+                                    + static_cast<size_t>(b_src);
+                                double weight = d_h2e[h_idx];
+                                if (pa * pb == -1) {
+                                    weight = -weight;
+                                }
+                                const cuDoubleComplex cval = d_C[c_idx];
+                                acc.x += weight * cval.x;
+                                acc.y += weight * cval.y;
+                            }
+                        }
+                    }
+                    __syncthreads();
+                }
+            }
+
+            if (active) {
+                const size_t out_idx =
+                    static_cast<size_t>(a_out) * static_cast<size_t>(beta_states)
+                    + static_cast<size_t>(b_out);
+                d_out[out_idx].x += acc.x;
+                d_out[out_idx].y += acc.y;
+            }
+            __syncthreads();
+        }
+    }
+}
+
+__global__ void lm_apply_array12_diff_spin_v2_tiled_kernel(
+    cuDoubleComplex* __restrict__ d_out,
+    const cuDoubleComplex* __restrict__ d_C,
+    const long long* __restrict__ d_alpha_offsets,
+    const int* __restrict__ d_alpha_sources,
+    const int* __restrict__ d_alpha_pairs,
+    const int* __restrict__ d_alpha_parities,
+    const long long* __restrict__ d_beta_offsets,
+    const int* __restrict__ d_beta_sources,
+    const int* __restrict__ d_beta_pairs,
+    const int* __restrict__ d_beta_parities,
+    const cuDoubleComplex* __restrict__ d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs)
+{
+    __shared__ long long sh_a_begin[DIFF_V2_TILE_A];
+    __shared__ long long sh_a_count[DIFF_V2_TILE_A];
+    __shared__ long long sh_b_begin[DIFF_V2_TILE_B];
+    __shared__ long long sh_b_count[DIFF_V2_TILE_B];
+    __shared__ long long sh_max_a;
+    __shared__ long long sh_max_b;
+
+    extern __shared__ int sh_edges[];
+    int* sh_a_src = sh_edges;
+    int* sh_a_pair = sh_a_src + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_a_parity = sh_a_pair + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_b_src = sh_a_parity + DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+    int* sh_b_pair = sh_b_src + DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+    int* sh_b_parity = sh_b_pair + DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+
+    const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    const int nthreads = blockDim.x * blockDim.y;
+    const long long norbs2 = static_cast<long long>(norbs) * norbs;
+
+    for (long long a_base = static_cast<long long>(blockIdx.y) * DIFF_V2_TILE_A;
+         a_base < alpha_states;
+         a_base += static_cast<long long>(gridDim.y) * DIFF_V2_TILE_A) {
+        for (long long b_base = static_cast<long long>(blockIdx.x) * DIFF_V2_TILE_B;
+             b_base < beta_states;
+             b_base += static_cast<long long>(gridDim.x) * DIFF_V2_TILE_B) {
+
+            if (tid < DIFF_V2_TILE_A) {
+                const long long a_out = a_base + tid;
+                if (a_out < alpha_states) {
+                    sh_a_begin[tid] = d_alpha_offsets[a_out];
+                    sh_a_count[tid] = d_alpha_offsets[a_out + 1] - sh_a_begin[tid];
+                } else {
+                    sh_a_begin[tid] = 0;
+                    sh_a_count[tid] = 0;
+                }
+            }
+            if (tid < DIFF_V2_TILE_B) {
+                const long long b_out = b_base + tid;
+                if (b_out < beta_states) {
+                    sh_b_begin[tid] = d_beta_offsets[b_out];
+                    sh_b_count[tid] = d_beta_offsets[b_out + 1] - sh_b_begin[tid];
+                } else {
+                    sh_b_begin[tid] = 0;
+                    sh_b_count[tid] = 0;
+                }
+            }
+            __syncthreads();
+
+            if (tid == 0) {
+                long long max_a = 0;
+                long long max_b = 0;
+                for (int i = 0; i < DIFF_V2_TILE_A; ++i) {
+                    max_a = max_a < sh_a_count[i] ? sh_a_count[i] : max_a;
+                }
+                for (int i = 0; i < DIFF_V2_TILE_B; ++i) {
+                    max_b = max_b < sh_b_count[i] ? sh_b_count[i] : max_b;
+                }
+                sh_max_a = max_a;
+                sh_max_b = max_b;
+            }
+            __syncthreads();
+
+            const long long a_out = a_base + threadIdx.y;
+            const long long b_out = b_base + threadIdx.x;
+            const bool active = a_out < alpha_states && b_out < beta_states;
+            cuDoubleComplex acc = make_cuDoubleComplex(0.0, 0.0);
+
+            for (long long a_chunk = 0; a_chunk < sh_max_a; a_chunk += DIFF_V2_CHUNK_A) {
+                for (int slot = tid;
+                     slot < DIFF_V2_TILE_A * DIFF_V2_CHUNK_A;
+                     slot += nthreads) {
+                    const int local_a = slot / DIFF_V2_CHUNK_A;
+                    const int k = slot - local_a * DIFF_V2_CHUNK_A;
+                    const long long edge = sh_a_begin[local_a] + a_chunk + k;
+                    if (a_chunk + k < sh_a_count[local_a]) {
+                        sh_a_src[slot] = d_alpha_sources[edge];
+                        sh_a_pair[slot] = d_alpha_pairs[edge];
+                        sh_a_parity[slot] = d_alpha_parities[edge];
+                    } else {
+                        sh_a_src[slot] = 0;
+                        sh_a_pair[slot] = 0;
+                        sh_a_parity[slot] = 0;
+                    }
+                }
+                __syncthreads();
+
+                for (long long b_chunk = 0; b_chunk < sh_max_b; b_chunk += DIFF_V2_CHUNK_B) {
+                    for (int slot = tid;
+                         slot < DIFF_V2_TILE_B * DIFF_V2_CHUNK_B;
+                         slot += nthreads) {
+                        const int local_b = slot / DIFF_V2_CHUNK_B;
+                        const int k = slot - local_b * DIFF_V2_CHUNK_B;
+                        const long long edge = sh_b_begin[local_b] + b_chunk + k;
+                        if (b_chunk + k < sh_b_count[local_b]) {
+                            sh_b_src[slot] = d_beta_sources[edge];
+                            sh_b_pair[slot] = d_beta_pairs[edge];
+                            sh_b_parity[slot] = d_beta_parities[edge];
+                        } else {
+                            sh_b_src[slot] = 0;
+                            sh_b_pair[slot] = 0;
+                            sh_b_parity[slot] = 0;
+                        }
+                    }
+                    __syncthreads();
+
+                    if (active) {
+                        const long long a_rem = sh_a_count[threadIdx.y] - a_chunk;
+                        const long long b_rem = sh_b_count[threadIdx.x] - b_chunk;
+                        const int a_limit = a_rem < DIFF_V2_CHUNK_A
+                            ? static_cast<int>(a_rem) : DIFF_V2_CHUNK_A;
+                        const int b_limit = b_rem < DIFF_V2_CHUNK_B
+                            ? static_cast<int>(b_rem) : DIFF_V2_CHUNK_B;
+                        const int a_slot_base = threadIdx.y * DIFF_V2_CHUNK_A;
+                        const int b_slot_base = threadIdx.x * DIFF_V2_CHUNK_B;
+
+                        for (int ia = 0; ia < a_limit; ++ia) {
+                            const int a_slot = a_slot_base + ia;
+                            const int a_src = sh_a_src[a_slot];
+                            const int ij = sh_a_pair[a_slot];
+                            const int pa = sh_a_parity[a_slot];
+
+                            for (int ib = 0; ib < b_limit; ++ib) {
+                                const int b_slot = b_slot_base + ib;
+                                const int b_src = sh_b_src[b_slot];
+                                const int kl = sh_b_pair[b_slot];
+                                const int pb = sh_b_parity[b_slot];
+                                const size_t h_idx =
+                                    static_cast<size_t>(ij) * static_cast<size_t>(norbs2)
+                                    + static_cast<size_t>(kl);
+                                const size_t c_idx =
+                                    static_cast<size_t>(a_src) * static_cast<size_t>(beta_states)
+                                    + static_cast<size_t>(b_src);
+                                cuDoubleComplex weight = d_h2e[h_idx];
+                                if (pa * pb == -1) {
+                                    weight.x = -weight.x;
+                                    weight.y = -weight.y;
+                                }
+                                const cuDoubleComplex prod = cuCmul(weight, d_C[c_idx]);
+                                acc.x += prod.x;
+                                acc.y += prod.y;
+                            }
+                        }
+                    }
+                    __syncthreads();
+                }
+            }
+
+            if (active) {
+                const size_t out_idx =
+                    static_cast<size_t>(a_out) * static_cast<size_t>(beta_states)
+                    + static_cast<size_t>(b_out);
+                d_out[out_idx].x += acc.x;
+                d_out[out_idx].y += acc.y;
+            }
+            __syncthreads();
+        }
+    }
+}
+
+extern "C" void lm_apply_array12_diff_spin_v2_tiled_wrapper_real(
+    double* d_out,
+    const double* d_C,
+    const long long* d_alpha_offsets,
+    const int* d_alpha_sources,
+    const int* d_alpha_pairs,
+    const int* d_alpha_parities,
+    const long long* d_beta_offsets,
+    const int* d_beta_sources,
+    const int* d_beta_pairs,
+    const int* d_beta_parities,
+    const double* d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs)
+{
+    const long long beta_tiles =
+        (beta_states + DIFF_V2_TILE_B - 1) / DIFF_V2_TILE_B;
+    const long long alpha_tiles =
+        (alpha_states + DIFF_V2_TILE_A - 1) / DIFF_V2_TILE_A;
+    dim3 block(DIFF_V2_TILE_B, DIFF_V2_TILE_A);
+    dim3 grid(
+        diff_spin_v2_tiled_grid_dim(beta_tiles),
+        diff_spin_v2_tiled_grid_dim(alpha_tiles));
+
+    lm_apply_array12_diff_spin_v2_tiled_kernel_real<<<
+        grid, block, diff_spin_v2_tiled_shared_bytes()>>>(
+            d_out,
+            d_C,
+            d_alpha_offsets,
+            d_alpha_sources,
+            d_alpha_pairs,
+            d_alpha_parities,
+            d_beta_offsets,
+            d_beta_sources,
+            d_beta_pairs,
+            d_beta_parities,
+            d_h2e,
+            alpha_states,
+            beta_states,
+            norbs);
+
+    cudaDeviceSynchronize();
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "lm_apply_array12_diff_spin_v2_tiled_wrapper_real failed ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("lm_apply_array12_diff_spin_v2_tiled_wrapper_real failed");
+    }
+}
+
+extern "C" void lm_apply_array12_diff_spin_v2_tiled_wrapper_mixed(
+    cuDoubleComplex* d_out,
+    const cuDoubleComplex* d_C,
+    const long long* d_alpha_offsets,
+    const int* d_alpha_sources,
+    const int* d_alpha_pairs,
+    const int* d_alpha_parities,
+    const long long* d_beta_offsets,
+    const int* d_beta_sources,
+    const int* d_beta_pairs,
+    const int* d_beta_parities,
+    const double* d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs)
+{
+    const long long beta_tiles =
+        (beta_states + DIFF_V2_TILE_B - 1) / DIFF_V2_TILE_B;
+    const long long alpha_tiles =
+        (alpha_states + DIFF_V2_TILE_A - 1) / DIFF_V2_TILE_A;
+    dim3 block(DIFF_V2_TILE_B, DIFF_V2_TILE_A);
+    dim3 grid(
+        diff_spin_v2_tiled_grid_dim(beta_tiles),
+        diff_spin_v2_tiled_grid_dim(alpha_tiles));
+
+    lm_apply_array12_diff_spin_v2_tiled_kernel_mixed<<<
+        grid, block, diff_spin_v2_tiled_shared_bytes()>>>(
+            d_out,
+            d_C,
+            d_alpha_offsets,
+            d_alpha_sources,
+            d_alpha_pairs,
+            d_alpha_parities,
+            d_beta_offsets,
+            d_beta_sources,
+            d_beta_pairs,
+            d_beta_parities,
+            d_h2e,
+            alpha_states,
+            beta_states,
+            norbs);
+
+    cudaDeviceSynchronize();
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "lm_apply_array12_diff_spin_v2_tiled_wrapper_mixed failed ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("lm_apply_array12_diff_spin_v2_tiled_wrapper_mixed failed");
+    }
+}
+
+extern "C" void lm_apply_array12_diff_spin_v2_tiled_wrapper(
+    cuDoubleComplex* d_out,
+    const cuDoubleComplex* d_C,
+    const long long* d_alpha_offsets,
+    const int* d_alpha_sources,
+    const int* d_alpha_pairs,
+    const int* d_alpha_parities,
+    const long long* d_beta_offsets,
+    const int* d_beta_sources,
+    const int* d_beta_pairs,
+    const int* d_beta_parities,
+    const cuDoubleComplex* d_h2e,
+    long long alpha_states,
+    long long beta_states,
+    int norbs)
+{
+    const long long beta_tiles =
+        (beta_states + DIFF_V2_TILE_B - 1) / DIFF_V2_TILE_B;
+    const long long alpha_tiles =
+        (alpha_states + DIFF_V2_TILE_A - 1) / DIFF_V2_TILE_A;
+    dim3 block(DIFF_V2_TILE_B, DIFF_V2_TILE_A);
+    dim3 grid(
+        diff_spin_v2_tiled_grid_dim(beta_tiles),
+        diff_spin_v2_tiled_grid_dim(alpha_tiles));
+
+    lm_apply_array12_diff_spin_v2_tiled_kernel<<<
+        grid, block, diff_spin_v2_tiled_shared_bytes()>>>(
+            d_out,
+            d_C,
+            d_alpha_offsets,
+            d_alpha_sources,
+            d_alpha_pairs,
+            d_alpha_parities,
+            d_beta_offsets,
+            d_beta_sources,
+            d_beta_pairs,
+            d_beta_parities,
+            d_h2e,
+            alpha_states,
+            beta_states,
+            norbs);
+
+    cudaDeviceSynchronize();
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "lm_apply_array12_diff_spin_v2_tiled_wrapper failed ("
+                  << cudaGetErrorString(err) << ")\n";
+        throw std::runtime_error("lm_apply_array12_diff_spin_v2_tiled_wrapper failed");
+    }
+}

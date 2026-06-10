@@ -36,14 +36,19 @@ OPTION(USE_OpenMP "Use OpenMP to enamble <omp.h>" OFF)
 cmake_policy(SET CMP0074 NEW)         # find_package() respects *_ROOT vars
 set(BLA_VENDOR "Generic")             # bypass FindBLAS vendor picks
 
-# (Nick) kept as-is so CMake finds headers/libs inside the env.
-# set(CMAKE_PREFIX_PATH "/home/nstair/anaconda3/envs/cuqf_8_25_25_v2")
-# set(CMAKE_PREFIX_PATH "/home/zach_gonzales/anaconda3/envs/qforte")
-set(CMAKE_PREFIX_PATH "/home/nstair/anaconda3/envs/qf-cusv1")
+set(QFORTE_BLAS_PREFIX "$ENV{CONDA_PREFIX}" CACHE PATH "Prefix containing OpenBLAS")
+if(NOT QFORTE_BLAS_PREFIX)
+  set(QFORTE_BLAS_PREFIX "/home/nstair/anaconda3/envs/qf-cusv1")
+endif()
 
-set(BLAS_LIBRARIES "${CMAKE_PREFIX_PATH}/lib")
-set(CBLAS_INCLUDE_DIR "${CMAKE_PREFIX_PATH}/include")         # need
-set(OPENBLAS_EXE "${CMAKE_PREFIX_PATH}/lib/libopenblas.so")   # need
+list(APPEND CMAKE_PREFIX_PATH "${QFORTE_BLAS_PREFIX}")
+set(BLAS_LIBRARIES "${QFORTE_BLAS_PREFIX}/lib")
+set(CBLAS_INCLUDE_DIR "${QFORTE_BLAS_PREFIX}/include")         # need
+if(APPLE)
+  set(OPENBLAS_EXE "${QFORTE_BLAS_PREFIX}/lib/libopenblas.dylib")
+else()
+  set(OPENBLAS_EXE "${QFORTE_BLAS_PREFIX}/lib/libopenblas.so")
+endif()
 
 # -------------------------------------------------------------------
 # CUDA toolkit & flags
@@ -97,6 +102,7 @@ if(ENABLE_CUDA)
       "${SOURCE_DIR}/sq_op_pool_gpu.cu"
       "${SOURCE_DIR}/cublas_math.cu"
       "${SOURCE_DIR}/tensor_gpu_kernels.cu"
+      "${SOURCE_DIR}/qforte_globals.cu"
   )
 else()
   set(CUDA_SOURCES "")

@@ -59,7 +59,8 @@ class SPQE(UCCPQE):
             opt_maxiter = 30,
             use_cumulative_thresh=True,
             max_excit_rank = None,
-            optimizer = 'Jacobi'):
+            optimizer = 'Jacobi',
+            **kwargs):
         """
         spqe_thresh: float
             The convergence threshold against which the norm of the residual is compared
@@ -86,6 +87,19 @@ class SPQE(UCCPQE):
         optimizer: {'jacobi', 'nelder-mead', 'powell', 'bfgs', 'l-bfgs-b', 'cg', 'slsqp'}
             The optimizer to solve the residual equations.
         """
+
+        if kwargs:
+            qf_optimizer_options = sorted(
+                key for key in kwargs
+                if key.startswith("lbfgs_qf") or key.startswith("bfgs_qf")
+            )
+            if qf_optimizer_options:
+                raise ValueError(
+                    "lbfgs_qf/bfgs_qf and their acceleration protocols currently support "
+                    "gradient-based VQE classes UCCNVQE and ADAPTVQE only. "
+                    "SPQE is residual-based."
+                )
+            raise TypeError(f"Unexpected run keyword option(s): {sorted(kwargs)}")
 
         if(self._state_prep_type != 'occupation_list'):
             raise ValueError("SPQE implementation can only handle occupation_list Hartree-Fock reference.")
@@ -821,5 +835,8 @@ class SPQE(UCCPQE):
 
 SPQE.jacobi_solver = optimizer.jacobi_solver
 SPQE.scipy_solver = optimizer.scipy_solver
+SPQE.lbfgs_qf_solve = optimizer.lbfgs_qf_solve
+SPQE.bfgs_qf_solve = optimizer.bfgs_qf_solve
+SPQE.lbfgs_solver = optimizer.lbfgs_solver
 SPQE.construct_moment_space = moment_energy_corrections.construct_moment_space
 SPQE.compute_moment_energies = moment_energy_corrections.compute_moment_energies

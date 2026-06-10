@@ -93,7 +93,9 @@ class QSD(Algorithm):
         = canonical_geig_solve(self._S,
                                self._Hbar,
                                print_mats=self._verbose,
-                               sort_ret_vals=True)
+                               sort_ret_vals=True,
+                               stabilization_thresh=getattr(
+                                   self, "_gev_stabilization_thresh", None))
 
         print(f'\n       ==> {type(self).__name__} eigenvalues <==')
         print('----------------------------------------')
