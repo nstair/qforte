@@ -3,9 +3,8 @@ Informal test how-to and TODOs
 
 Important environment rule
 --------------------------
-If the user has not specified an Anaconda/conda environment, or if the correct
-environment is unclear from context, Codex must ask the user explicitly which
-environment to use before running these informal tests.
+Use qf-cusv1 for these informal tests unless the user explicitly asks for a
+different conda environment.
 
 Maintenance rule
 ----------------
@@ -22,10 +21,12 @@ These tests are intentionally informal scripts, not pytest tests.  Most scripts
 write detailed logs under ignored log directories and print compact PASS/SKIP
 tables to the terminal.
 
-Use the user-specified conda environment in the command examples below.  If the
-user says "qfe_env_v1", for example, replace ENV_NAME with qfe_env_v1:
+Default command form:
 
-    conda run -n ENV_NAME python path/to/script.py
+    conda run -n qf-cusv1 python path/to/script.py
+
+If the user explicitly requests another environment, substitute it in the
+commands below.
 
 Do not refresh expected/reference outputs unless the user explicitly asks for
 that.  Normal validation runs should not overwrite saved references.
@@ -43,25 +44,38 @@ Current molecule/reference system:
 
 Reference/validation run:
 
-    conda run -n ENV_NAME python informal_tests/srqk_fci_comp/run_srqk_fci_comp.py
+    conda run -n qf-cusv1 python informal_tests/srqk_fci_comp/run_srqk_fci_comp.py
 
 Backend parity run:
 
-    conda run -n ENV_NAME python informal_tests/srqk_fci_comp/run_srqk_backend_parity.py
+    conda run -n qf-cusv1 python informal_tests/srqk_fci_comp/run_srqk_backend_parity.py
 
 Low-memory backend parity run:
 
-    conda run -n ENV_NAME python informal_tests/srqk_fci_comp/run_srqk_low_memory_backend_parity.py
+    conda run -n qf-cusv1 python informal_tests/srqk_fci_comp/run_srqk_low_memory_backend_parity.py
+
+Current status note:
+
+    In qf-cusv1, SRQK backend parity now passes for fock, fqe, fci_gpu, and
+    cusv, including the Python-side final-state <S^2> and NOON diagnostics.
+
+Important regression clue:
+
+    If SRQK energies/matrices still agree but reconstructed-state diagnostics
+    drift, first inspect src/qforte/maths/eigsolve.py.  A prior bug reordered
+    X_prime along with the sorted generalized eigenpairs, which left the
+    eigenvalues correct but corrupted the returned eigenvectors used for final
+    state reconstruction.
 
 Only refresh the saved SRQK expected JSON after reviewing intentional numerical
 changes:
 
-    conda run -n ENV_NAME python informal_tests/srqk_fci_comp/run_srqk_fci_comp.py --write-expected
+    conda run -n qf-cusv1 python informal_tests/srqk_fci_comp/run_srqk_fci_comp.py --write-expected
 
 Optional helpers:
 
-    conda run -n ENV_NAME python informal_tests/srqk_fci_comp/run_srqk_fci_comp.py --list-cases
-    conda run -n ENV_NAME python informal_tests/srqk_fci_comp/run_srqk_backend_parity.py --list-backends
+    conda run -n qf-cusv1 python informal_tests/srqk_fci_comp/run_srqk_fci_comp.py --list-cases
+    conda run -n qf-cusv1 python informal_tests/srqk_fci_comp/run_srqk_backend_parity.py --list-backends
 
 
 UNCC-VQE informal tests
@@ -76,20 +90,20 @@ Current molecule/reference systems:
 
 Reference/validation run:
 
-    conda run -n ENV_NAME python informal_tests/uncc_vqe_fci_comp/run_uncc_vqe_fci_comp.py
+    conda run -n qf-cusv1 python informal_tests/uncc_vqe_fci_comp/run_uncc_vqe_fci_comp.py
 
 Backend parity run:
 
-    conda run -n ENV_NAME python informal_tests/uncc_vqe_fci_comp/run_uncc_vqe_backend_parity.py
+    conda run -n qf-cusv1 python informal_tests/uncc_vqe_fci_comp/run_uncc_vqe_backend_parity.py
 
 Only refresh the saved UNCC-VQE expected JSON after reviewing intentional
 numerical changes:
 
-    conda run -n ENV_NAME python informal_tests/uncc_vqe_fci_comp/run_uncc_vqe_fci_comp.py --write-expected
+    conda run -n qf-cusv1 python informal_tests/uncc_vqe_fci_comp/run_uncc_vqe_fci_comp.py --write-expected
 
 Optional helper:
 
-    conda run -n ENV_NAME python informal_tests/uncc_vqe_fci_comp/run_uncc_vqe_fci_comp.py --list-cases
+    conda run -n qf-cusv1 python informal_tests/uncc_vqe_fci_comp/run_uncc_vqe_fci_comp.py --list-cases
 
 
 PySCF dump API informal tests
@@ -108,23 +122,23 @@ committed.
 
 Generate missing dumps or confirm existing dumps are present:
 
-    conda run -n ENV_NAME python informal_tests/pyscf_fci_dump_api/run_generate_pyscf_dumps.py
+    conda run -n qf-cusv1 python informal_tests/pyscf_fci_dump_api/run_generate_pyscf_dumps.py
 
 Only overwrite dumps after reviewing intentional changes to the dump data:
 
-    conda run -n ENV_NAME python informal_tests/pyscf_fci_dump_api/run_generate_pyscf_dumps.py --overwrite
+    conda run -n qf-cusv1 python informal_tests/pyscf_fci_dump_api/run_generate_pyscf_dumps.py --overwrite
 
 BeH2 molecule-build parity:
 
-    conda run -n ENV_NAME python informal_tests/pyscf_fci_dump_api/run_beh2_dump_molecule_parity.py
+    conda run -n qf-cusv1 python informal_tests/pyscf_fci_dump_api/run_beh2_dump_molecule_parity.py
 
 Benzene AVAS molecule-build parity:
 
-    conda run -n ENV_NAME python informal_tests/pyscf_fci_dump_api/run_benzene_avas_dump_molecule_parity.py
+    conda run -n qf-cusv1 python informal_tests/pyscf_fci_dump_api/run_benzene_avas_dump_molecule_parity.py
 
 VQE/SRQK algorithm parity across available molecule builds:
 
-    conda run -n ENV_NAME python informal_tests/pyscf_fci_dump_api/run_dump_algorithm_parity.py
+    conda run -n qf-cusv1 python informal_tests/pyscf_fci_dump_api/run_dump_algorithm_parity.py
 
 Environment expectations:
 
@@ -147,20 +161,20 @@ computer backends against saved FCI tensor sigma vectors.
 
 Validation run:
 
-    conda run -n ENV_NAME python informal_tests/ham_application/run_ham_application.py
+    conda run -n qf-cusv1 python informal_tests/ham_application/run_ham_application.py
 
 Only refresh the saved FCI tensor reference sigma vectors after reviewing the
 current FCI tensor outputs:
 
-    conda run -n ENV_NAME python informal_tests/ham_application/run_ham_application.py --write-reference
+    conda run -n qf-cusv1 python informal_tests/ham_application/run_ham_application.py --write-reference
 
 Optional helpers:
 
-    conda run -n ENV_NAME python informal_tests/ham_application/run_ham_application.py --list-systems
-    conda run -n ENV_NAME python informal_tests/ham_application/run_ham_application.py --list-backends
-    conda run -n ENV_NAME python informal_tests/ham_application/run_ham_application.py --list-cases
-    conda run -n ENV_NAME python informal_tests/ham_application/run_ham_application.py --system beh2
-    conda run -n ENV_NAME python informal_tests/ham_application/run_ham_application.py --system benzene --backend fock
+    conda run -n qf-cusv1 python informal_tests/ham_application/run_ham_application.py --list-systems
+    conda run -n qf-cusv1 python informal_tests/ham_application/run_ham_application.py --list-backends
+    conda run -n qf-cusv1 python informal_tests/ham_application/run_ham_application.py --list-cases
+    conda run -n qf-cusv1 python informal_tests/ham_application/run_ham_application.py --system beh2
+    conda run -n qf-cusv1 python informal_tests/ham_application/run_ham_application.py --system benzene --backend fock
 
 Reference files that should be committed:
 
@@ -204,7 +218,7 @@ TODOs
 - When compiled on a CUDA-capable machine, make sure none of the backend checks
   that should be available are skipped, especially fci_gpu and cusv.
 
-- Similarly, revisit optional diagnostic properties such as <S^2> and natural
-  orbital occupations.  Make sure comparisons are enabled once the relevant
-  subroutines are implemented for each CPU/GPU backend, and make sure skips are
-  loud and explicit until then.
+- If SRQK backend parity ever regresses on final-state diagnostics while energy,
+  H, and S still pass, first re-check the generalized-eigenvector residuals from
+  canonical_geig_solve(sort_ret_vals=True) before debugging the backend-specific
+  NOON or <S^2> code paths.

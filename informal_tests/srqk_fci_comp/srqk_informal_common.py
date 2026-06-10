@@ -403,7 +403,7 @@ def comparison_rows(observed, expected, tolerances):
             reason = compact_skip_reason(
                 observed.get(reason_key) or "backend diagnostic subroutine is unavailable"
             )
-            rows.append((label, None, reason, tol))
+            rows.append((label, False, f"missing diagnostic: {reason}", tol))
             continue
 
         passed, diff = func(label, observed[key], expected[key], tol)

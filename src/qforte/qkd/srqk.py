@@ -18,6 +18,7 @@ from qforte.utils.trotterization import (trotterize,
 
 import numpy as np
 import time
+import math
 
 class SRQK(QSD):
     """A quantum subspace diagonalization algorithm that generates the many-body
@@ -773,11 +774,15 @@ class SRQK(QSD):
         print(self.final_noons_summary_table())
 
     def _unsupported_final_diagnostics_message(self):
+        if getattr(self, "_use_exact_evolution", False):
+            return (
+                "SRQK final-state <S^2>/NOON diagnostics are not yet implemented "
+                "for use_exact_evolution=True. The current Python-side diagnostic "
+                "reconstruction replays the Trotterized Fock-space schedule only."
+            )
         return (
-            "SRQK final-state <S^2>/NOON diagnostics are not yet implemented "
-            f'for computer_type="{self._computer_type}". Currently only '
-            'computer_type="fci" is supported; "fock", "fqe", "cusv", and '
-            '"fci_gpu" will be added later.'
+            "SRQK final-state <S^2>/NOON diagnostics are not available for the "
+            "current configuration."
         )
 
     def _build_final_fci_krylov_states(self):
@@ -833,8 +838,174 @@ class SRQK(QSD):
         qc.set_state(final_state)
         return qc
 
+    def _backend_state_vector_to_numpy(self, state):
+        """Convert a backend full-vector state copy into a NumPy array."""
+        if hasattr(state, "get"):
+            return np.asarray(state.get(), dtype=complex)
+        return np.asarray(state, dtype=complex)
+
+    def _backend_tensor_state_to_cpu_tensor(self, state):
+        """Convert a determinant-tensor backend state copy into a CPU Tensor."""
+        if hasattr(state, "copy_to_tensor"):
+            tensor_shape = [
+                int(math.comb(self._norb, self._nael)),
+                int(math.comb(self._norb, self._nbel)),
+            ]
+            if hasattr(state, "to_cpu") and hasattr(state, "on_gpu") and state.on_gpu():
+                state.to_cpu()
+            tensor = qforte.Tensor(tensor_shape, "srqk_backend_state_cpu")
+            state.copy_to_tensor(tensor)
+            return tensor
+
+        state_array = np.asarray(state, dtype=complex)
+        tensor = qforte.Tensor(list(state_array.shape), "srqk_backend_state_cpu")
+        tensor.fill_from_nparray(state_array.ravel(), list(state_array.shape))
+        return tensor
+
+    def _build_final_backend_fci_state(self):
+        """Build a CPU FCIComputer from stored backend determinant-basis Krylov states."""
+        if not (
+            hasattr(self, "_omega_lst")
+            and len(self._omega_lst) == self._nstates
+        ):
+            raise NotImplementedError(
+                "Stored backend Krylov states are unavailable for final-state diagnostics."
+            )
+
+        root_coeffs = self._eigenvectors[:, self._target_root]
+        final_state = self._backend_tensor_state_to_cpu_tensor(self._omega_lst[0])
+        final_state.zero()
+
+        for coeff, omega in zip(root_coeffs, self._omega_lst):
+            omega_cpu = self._backend_tensor_state_to_cpu_tensor(omega)
+            final_state.zaxpy(x=omega_cpu, alpha=coeff)
+
+        norm = final_state.norm()
+        if norm < 1.0e-14:
+            raise ValueError("Cannot compute final SRQK diagnostics for a zero-norm state.")
+        final_state.scale(1.0 / norm)
+
+        qc = qforte.FCIComputer(self._nel, self._2_spin, self._norb)
+        qc.set_state(final_state)
+        return qc
+
+    def _build_final_fock_krylov_states(self):
+        """Return Fock-space Krylov basis vectors for final-state diagnostics."""
+        if getattr(self, "_use_exact_evolution", False):
+            raise NotImplementedError(self._unsupported_final_diagnostics_message())
+
+        if (
+            self._computer_type in {"fock", "cusv"}
+            and hasattr(self, "_omega_lst")
+            and len(self._omega_lst) == self._nstates
+        ):
+            return [self._backend_state_vector_to_numpy(omega) for omega in self._omega_lst]
+
+        if self._use_legacy_fock_srqk_protocal:
+            return [self._fock_state_for_krylov_power_legacy(m)[0] for m in range(self._nstates)]
+
+        hermitian_pairs = qforte.SQOpPool()
+        hermitian_pairs.add_hermitian_pairs(1.0, self._sq_ham)
+        return [
+            self._fock_build_basis_state(hermitian_pairs, m) for m in range(self._nstates)
+        ]
+
+    def build_final_fock_state(self):
+        """Build a Fock-space Computer holding the target-root SRQK wave function."""
+        omega_lst = self._build_final_fock_krylov_states()
+        root_coeffs = self._eigenvectors[:, self._target_root]
+
+        final_coeffs = np.zeros_like(np.asarray(omega_lst[0], dtype=complex), dtype=complex)
+        for coeff, omega in zip(root_coeffs, omega_lst):
+            final_coeffs += coeff * np.asarray(omega, dtype=complex)
+
+        norm = np.linalg.norm(final_coeffs)
+        if norm < 1.0e-14:
+            raise ValueError("Cannot compute final SRQK diagnostics for a zero-norm state.")
+
+        qc = qforte.Computer(self._nqb)
+        qc.set_coeff_vec((final_coeffs / norm).tolist())
+        return qc
+
+    def _fock_noons_from_state(self, qc):
+        """Return spin-summed spatial NOONs from a final Fock-space state."""
+        coeffs = np.asarray(qc.get_coeff_vec(), dtype=complex)
+        norm_sq = float(np.real(np.vdot(coeffs, coeffs)))
+        if norm_sq < 1.0e-14:
+            raise ValueError("Cannot compute natural occupations for a zero-norm state.")
+
+        gamma = np.zeros((self._norb, self._norb), dtype=complex)
+        for p in range(self._norb):
+            for q in range(self._norb):
+                element = 0.0 + 0.0j
+                for spin in [0, 1]:
+                    sqop = qforte.SQOperator()
+                    sqop.add(1.0, [2 * p + spin], [2 * q + spin])
+                    element += qc.direct_op_exp_val(sqop.jw_transform())
+                gamma[p, q] = element / norm_sq
+
+        gamma = 0.5 * (gamma + gamma.conj().T)
+        noons = np.linalg.eigvalsh(np.real(gamma))
+        return [float(noon) for noon in noons[::-1]]
+
+    def compute_final_fock_diagnostics(self):
+        """Compute and store final-state diagnostics using a Fock reconstruction."""
+        try:
+            qc = self.build_final_fock_state()
+        except Exception as exc:
+            err = str(exc)
+            self._spin_squared = None
+            self._spin_squared_error = err
+            self._natural_orbital_occupation_numbers = None
+            self._noons_error = err
+            return
+
+        try:
+            s_squared = qforte.total_spin_squared(self._nqb)
+            self._spin_squared = float(np.real(qc.direct_op_exp_val(s_squared)))
+            self._spin_squared_error = None
+        except Exception as exc:
+            self._spin_squared = None
+            self._spin_squared_error = str(exc)
+
+        try:
+            self._natural_orbital_occupation_numbers = self._fock_noons_from_state(qc)
+            self._noons_error = None
+        except Exception as exc:
+            self._natural_orbital_occupation_numbers = None
+            self._noons_error = str(exc)
+
     def compute_final_fci_diagnostics(self):
-        """Compute and store final-state FCI diagnostics when possible."""
+        """Compute and store final-state diagnostics when possible."""
+        if self._computer_type in {"fock", "cusv"}:
+            self.compute_final_fock_diagnostics()
+            return
+
+        if self._computer_type in {"fqe", "fci_gpu"}:
+            try:
+                qc = self._build_final_backend_fci_state()
+            except Exception:
+                self.compute_final_fock_diagnostics()
+                return
+
+            try:
+                self._spin_squared = float(np.real(qc.get_spin_squared_expectation()))
+                self._spin_squared_error = None
+            except Exception as exc:
+                self._spin_squared = None
+                self._spin_squared_error = str(exc)
+
+            try:
+                noons = qc.get_natural_orbital_occupation_numbers()
+                self._natural_orbital_occupation_numbers = [
+                    float(np.real(noon)) for noon in noons
+                ]
+                self._noons_error = None
+            except Exception as exc:
+                self._natural_orbital_occupation_numbers = None
+                self._noons_error = str(exc)
+            return
+
         if self._computer_type != "fci":
             err = self._unsupported_final_diagnostics_message()
             self._spin_squared = None

@@ -105,14 +105,15 @@ def canonical_geig_solve(
         sorted_e_prime_idxs = sorted_largest_idxs(e_prime, use_real=True, rev=False)
         sorted_e_prime = np.zeros((len(e_prime)), dtype=complex)
         sorted_C_prime = np.zeros((len(e_prime),len(e_prime)), dtype=complex)
-        sorted_X_prime = np.zeros((len(s),len(e_prime)), dtype=complex)
         for n in range(len(e_prime)):
             old_idx = sorted_e_prime_idxs[n][1]
             sorted_e_prime[n]   = e_prime[old_idx]
             sorted_C_prime[:,n] = C_prime[:,old_idx]
-            sorted_X_prime[:,n] = X_prime[:,old_idx]
 
-        sorted_C = sorted_X_prime.dot(sorted_C_prime)
+        # X_prime is the fixed overlap-basis transform. Only the generalized
+        # eigenpairs need reordering by energy; permuting X_prime here corrupts
+        # the reconstructed eigenvectors/state coefficients.
+        sorted_C = X_prime.dot(sorted_C_prime)
         return sorted_e_prime, sorted_C
 
     else:

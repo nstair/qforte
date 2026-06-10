@@ -328,10 +328,10 @@
       "longest_macro_trotter_number": 1,
       "low_memory": false,
       "noons": [
-        1.964322543041,
-        1.885859761822,
-        0.113325570336,
-        0.036492124801
+        1.962842317132,
+        1.914647498848,
+        0.093580352264,
+        0.028929831756
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -374,7 +374,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 3.190716e-05,
+      "spin_squared": 1.0804775e-05,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "manual_linear_old_behavior",
@@ -715,10 +715,10 @@
       "longest_macro_trotter_number": 1,
       "low_memory": false,
       "noons": [
-        1.969570659339,
-        1.969226971129,
-        0.032533255062,
-        0.02866911447
+        1.98772587973,
+        1.987503449635,
+        0.017738934256,
+        0.007031736379
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -761,7 +761,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 0.014804239521,
+      "spin_squared": 0.005266592336,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "variance_linear_fixed_trotter",
@@ -1102,10 +1102,10 @@
       "longest_macro_trotter_number": 4,
       "low_memory": false,
       "noons": [
-        1.911493594917,
-        1.907693625181,
-        0.137955054064,
-        0.042857725838
+        1.963942927694,
+        1.933496901008,
+        0.073263605497,
+        0.029296565802
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -1148,7 +1148,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 0.004300773898,
+      "spin_squared": 0.000344971121,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "variance_linear_auto_trotter",
@@ -1489,10 +1489,10 @@
       "longest_macro_trotter_number": 7,
       "low_memory": false,
       "noons": [
-        1.938813727888,
-        1.869089680929,
-        0.141492625113,
-        0.05060396607
+        1.960053529193,
+        1.935313666407,
+        0.073697822488,
+        0.030934981912
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -1536,7 +1536,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 0.001664608715,
+      "spin_squared": 0.000152576621,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "variance_power_auto_trotter",
@@ -1877,10 +1877,10 @@
       "longest_macro_trotter_number": 1,
       "low_memory": false,
       "noons": [
-        1.966015585359,
-        1.886429224022,
-        0.112658627669,
-        0.034896562951
+        1.962979688621,
+        1.913700774232,
+        0.094302006777,
+        0.02901753037
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -1923,7 +1923,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 3.585e-09,
+      "spin_squared": 1.041e-09,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "manual_linear_old_behavior",
@@ -2651,10 +2651,10 @@
       "longest_macro_trotter_number": 10,
       "low_memory": false,
       "noons": [
-        1.970409003584,
-        1.939273744588,
-        0.063461265119,
-        0.02685598671
+        1.96588992141,
+        1.907165603951,
+        0.09766847036,
+        0.029276004279
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -2697,7 +2697,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 5.0639e-08,
+      "spin_squared": 6.5757e-08,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "variance_linear_auto_trotter",
@@ -3038,10 +3038,10 @@
       "longest_macro_trotter_number": 18,
       "low_memory": false,
       "noons": [
-        1.983355656112,
-        1.945628172758,
-        0.055728529523,
-        0.015287641607
+        1.965214323642,
+        1.908231749272,
+        0.097738831216,
+        0.02881509587
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -3085,7 +3085,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 7.9398e-08,
+      "spin_squared": 6.2351e-08,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "variance_power_auto_trotter",
@@ -3426,10 +3426,10 @@
       "longest_macro_trotter_number": 1,
       "low_memory": false,
       "noons": [
-        1.9095362003,
-        1.899316309574,
-        0.10340999522,
-        0.087737494906
+        1.962842316293,
+        1.914647502131,
+        0.09358034886,
+        0.028929832716
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -3472,7 +3472,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 1.0856338e-05,
+      "spin_squared": 1.0804774e-05,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "manual_linear_old_behavior",
@@ -3813,10 +3813,10 @@
       "longest_macro_trotter_number": 1,
       "low_memory": false,
       "noons": [
-        1.964542017021,
-        1.963580380389,
-        0.042327155842,
-        0.029550446748
+        1.98772587973,
+        1.987503449635,
+        0.017738934256,
+        0.007031736379
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -3859,7 +3859,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 0.031418535006,
+      "spin_squared": 0.005266592336,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "variance_linear_fixed_trotter",
@@ -4200,10 +4200,10 @@
       "longest_macro_trotter_number": 4,
       "low_memory": false,
       "noons": [
-        1.908659724925,
-        1.890704434995,
-        0.134510153771,
-        0.066125686309
+        1.963942927694,
+        1.933496901008,
+        0.073263605497,
+        0.029296565802
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -4246,7 +4246,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 0.002598562552,
+      "spin_squared": 0.000344971121,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "variance_linear_auto_trotter",
@@ -4587,10 +4587,10 @@
       "longest_macro_trotter_number": 7,
       "low_memory": false,
       "noons": [
-        1.938813727888,
-        1.869089680929,
-        0.141492625113,
-        0.05060396607
+        1.960053529193,
+        1.935313666407,
+        0.073697822488,
+        0.030934981912
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -4634,7 +4634,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 0.001664608715,
+      "spin_squared": 0.000152576621,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "variance_power_auto_trotter",
@@ -4975,10 +4975,10 @@
       "longest_macro_trotter_number": 1,
       "low_memory": false,
       "noons": [
-        1.91481140307,
-        1.898243179383,
-        0.103579394479,
-        0.083366023069
+        1.962979688231,
+        1.913700775477,
+        0.094302005609,
+        0.029017530683
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -5021,7 +5021,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 1.491e-09,
+      "spin_squared": 1.041e-09,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "manual_linear_old_behavior",
@@ -5749,10 +5749,10 @@
       "longest_macro_trotter_number": 10,
       "low_memory": false,
       "noons": [
-        1.968139948097,
-        1.914566914756,
-        0.090746782007,
-        0.02654635514
+        1.96588992141,
+        1.907165603951,
+        0.09766847036,
+        0.029276004279
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -5795,7 +5795,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 9.4494e-08,
+      "spin_squared": 6.5757e-08,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "variance_linear_auto_trotter",
@@ -6136,10 +6136,10 @@
       "longest_macro_trotter_number": 18,
       "low_memory": false,
       "noons": [
-        1.983355656112,
-        1.945628172759,
-        0.055728529523,
-        0.015287641607
+        1.965214323642,
+        1.908231749272,
+        0.097738831216,
+        0.02881509587
       ],
       "noons_available": true,
       "noons_skip_reason": null,
@@ -6183,7 +6183,7 @@
         "target_root": 0,
         "use_exact_evolution": false
       },
-      "spin_squared": 7.9398e-08,
+      "spin_squared": 6.2351e-08,
       "spin_squared_available": true,
       "spin_squared_skip_reason": null,
       "style": "variance_power_auto_trotter",
