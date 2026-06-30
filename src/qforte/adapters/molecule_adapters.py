@@ -371,8 +371,8 @@ def create_psi_mol(**kwargs):
         mo_teis = np.asarray(mo_teis.transpose(0, 2, 3, 1), order='C')
 
         # save numpy copies
-        # qforte_mol.mo_oeis_np = copy.deepcopy(mo_oeis)
-        # qforte_mol.mo_teis_np = copy.deepcopy(mo_teis)
+        qforte_mol.mo_oeis_np = copy.deepcopy(mo_oeis)
+        qforte_mol.mo_teis_np = copy.deepcopy(mo_teis)
 
         # Save data to a file
         # np.savez(
@@ -756,8 +756,10 @@ def create_pyscf_mol(**kwargs):
             # Transform the Fock matrix into the AVAS MO basis
             F_avas = C_avas.T @ F @ C_avas
 
-            # Get number of core orbitals
-            ncore = nmo - ncas
+            # PySCF AVAS returns [frozen | inactive/core | active | virtual].
+            # The active block therefore starts at the CASCI ncore boundary,
+            # not at the last ncas orbitals of the full MO space.
+            ncore = mcscf.CASCI(mf, ncas, nelecas).ncore
 
             # Extract just the active block of the Fock matrix
             F_active = F_avas[ncore:ncore+ncas, ncore:ncore+ncas]

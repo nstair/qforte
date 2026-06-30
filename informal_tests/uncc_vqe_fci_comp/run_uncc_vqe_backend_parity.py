@@ -4,7 +4,7 @@ Run from the repository root with qfe_env_v1:
 
     conda run -n qfe_env_v1 python informal_tests/uncc_vqe_fci_comp/run_uncc_vqe_backend_parity.py
 
-This is intentionally not a pytest test.  It reuses the HF/C1 and HF/C2v
+This is intentionally not a pytest test.  It reuses the compact HF and H4
 cases in run_uncc_vqe_fci_comp.py, runs them with alternate computer backends,
 and compares the final observables against expected_uncc_vqe_fci_comp.json.
 Unavailable optional backends are skipped.
@@ -205,11 +205,11 @@ def result_record(case: dict[str, Any], mol, alg, backend: str) -> dict[str, Any
 
 
 def run_case(case: dict[str, Any], systems: dict[str, Any], backend: str) -> dict[str, Any]:
-    mol = systems[case["symmetry"]]
+    mol = systems[case["system_id"]]
     if backend == "fci_gpu":
         # GPU runs mutate the tensor residency on the molecule object, so reuse
         # across cases can poison subsequent constructor calls.
-        mol = fci_ref.build_hf(case["symmetry"])
+        mol = fci_ref.build_system(case["system_id"])
     alg = qf.UCCNVQE(
         mol,
         computer_type=backend,
@@ -354,7 +354,7 @@ def evaluate_record(backend: str, observed: dict[str, Any], expected: dict[str, 
 
 
 def system_label(case: dict[str, Any]) -> str:
-    return f"HF/{case['symmetry'].upper()}"
+    return case.get("system_label", fci_ref.case_system_label(case))
 
 
 def ansatz_label(pool_type: str) -> str:
@@ -529,11 +529,11 @@ def load_expected(cases: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 def build_systems(cases: list[dict[str, Any]]) -> dict[str, Any]:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     systems = {}
-    for symmetry in sorted({case["symmetry"] for case in cases}):
-        log_path = LOG_DIR / f"build_hf_{symmetry}.log"
+    for system_id in sorted({case["system_id"] for case in cases}):
+        log_path = LOG_DIR / f"build_{system_id}.log"
         with log_path.open("w") as log:
             with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
-                systems[symmetry] = fci_ref.build_hf(symmetry)
+                systems[system_id] = fci_ref.build_system(system_id)
     return systems
 
 
@@ -607,7 +607,7 @@ def worker_main(case_label: str, backend: str, log_path: Path):
     with log_path.open("w") as log:
         with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
             try:
-                systems[case["symmetry"]] = fci_ref.build_hf(case["symmetry"])
+                systems[case["system_id"]] = fci_ref.build_system(case["system_id"])
                 record = run_case(case, systems, backend)
                 payload = {"ok": True, "record": record}
             except Exception as exc:
@@ -618,10 +618,12 @@ def worker_main(case_label: str, backend: str, log_path: Path):
 
 def print_reference_summary(systems: dict[str, Any]):
     print("\n==> Reference systems <==")
-    for symmetry in sorted(systems):
-        mol = systems[symmetry]
+    for system_id in sorted(systems):
+        mol = systems[system_id]
+        spec = fci_ref.SYSTEM_SPECS[system_id]
+        label = f"{spec['molecule']}/{spec['basis'].upper()}/{spec['symmetry'].upper()}"
         print(
-            f"  {symmetry:<4s} HF = {mol.hf_energy:+18.12f} "
+            f"  {label:<22s} HF = {mol.hf_energy:+18.12f} "
             f"MP2 = {mol.mp2_energy:+18.12f} "
             f"FCI = {mol.fci_energy:+18.12f}"
         )

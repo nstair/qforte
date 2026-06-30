@@ -38,6 +38,7 @@
         -0.0,
         -0.0
       ],
+      "basis": "sto-6g",
       "batched_history": [],
       "case": "c1_sd_bfgs_mp2_hdiag_mp2",
       "cnot_count": 2400,
@@ -80,6 +81,7 @@
         0.0
       ],
       "gradient_norm": 0.000792327298,
+      "molecule": "HF",
       "n_nonzero_params": 17,
       "n_params": 35,
       "n_pool": 35,
@@ -174,7 +176,9 @@
         "fci_energy": -99.532176321244,
         "hf_energy": -99.49928497142,
         "mp2_energy": -99.520559949145
-      }
+      },
+      "system_id": "hf_c1",
+      "system_label": "HF/STO-6G/C1"
     },
     {
       "amplitudes": [
@@ -214,6 +218,7 @@
         0.0,
         0.017645513971
       ],
+      "basis": "sto-6g",
       "batched_history": [],
       "case": "c1_sd_jacobi_zero",
       "cnot_count": 2400,
@@ -256,6 +261,7 @@
         1.4212079e-05
       ],
       "gradient_norm": 0.001524207541,
+      "molecule": "HF",
       "n_nonzero_params": 17,
       "n_params": 35,
       "n_pool": 35,
@@ -336,7 +342,9 @@
         "fci_energy": -99.532176321244,
         "hf_energy": -99.49928497142,
         "mp2_energy": -99.520559949145
-      }
+      },
+      "system_id": "hf_c1",
+      "system_label": "HF/STO-6G/C1"
     },
     {
       "amplitudes": [
@@ -386,6 +394,7 @@
         -0.001980118769,
         5.04849e-07
       ],
+      "basis": "sto-6g",
       "batched_history": [
         {
           "active_size": 15,
@@ -466,6 +475,7 @@
         -3.2147e-08
       ],
       "gradient_norm": 0.022828696028,
+      "molecule": "HF",
       "n_nonzero_params": 27,
       "n_params": 45,
       "n_pool": 45,
@@ -565,7 +575,9 @@
         "fci_energy": -99.532176321244,
         "hf_energy": -99.49928497142,
         "mp2_energy": -99.520559949145
-      }
+      },
+      "system_id": "hf_c1",
+      "system_label": "HF/STO-6G/C1"
     },
     {
       "amplitudes": [
@@ -587,6 +599,7 @@
         0.012963669939,
         0.012963744609
       ],
+      "basis": "sto-6g",
       "batched_history": [],
       "case": "c2v_sd_jacobi_mp2",
       "cnot_count": 880,
@@ -611,6 +624,7 @@
         -1.462955e-06
       ],
       "gradient_norm": 3.4551981e-05,
+      "molecule": "HF",
       "n_nonzero_params": 17,
       "n_params": 17,
       "n_pool": 17,
@@ -673,7 +687,9 @@
         "fci_energy": -99.532176321245,
         "hf_energy": -99.49928497142,
         "mp2_energy": -99.520559949145
-      }
+      },
+      "system_id": "hf_c2v",
+      "system_label": "HF/STO-6G/C2V"
     },
     {
       "amplitudes": [
@@ -954,6 +970,7 @@
         0.0,
         0.0
       ],
+      "basis": "sto-6g",
       "batched_history": [
         {
           "active_size": 17,
@@ -1265,6 +1282,7 @@
         0.0
       ],
       "gradient_norm": 0.28439099557,
+      "molecule": "HF",
       "n_nonzero_params": 237,
       "n_params": 276,
       "n_pool": 276,
@@ -1595,7 +1613,297 @@
         "fci_energy": -99.532176321245,
         "hf_energy": -99.49928497142,
         "mp2_energy": -99.520559949145
-      }
+      },
+      "system_id": "hf_c2v",
+      "system_label": "HF/STO-6G/C2V"
+    },
+    {
+      "amplitudes": [
+        0.190384514864,
+        0.066062819275,
+        0.080414932235,
+        0.080414932235,
+        0.042146797506,
+        0.053801418176,
+        -0.050609840334,
+        -0.050609840334,
+        0.032059883574,
+        0.032059883574,
+        -0.0,
+        -0.0,
+        -0.006584089684,
+        -0.006584089684,
+        0.005406764434,
+        0.005406764434,
+        0.0,
+        0.0,
+        -0.0,
+        -0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "basis": "sto-3g",
+      "batched_history": [],
+      "case": "h4_c1_sd_bfgs_mp2_hdiag_mp2",
+      "cnot_count": 1312,
+      "energy": -2.166301958824,
+      "gradient": [
+        0.000223853439,
+        -0.000142343623,
+        0.000164337906,
+        0.000164337906,
+        -0.000636852799,
+        -0.00015214794,
+        -0.000417273664,
+        -0.000417273664,
+        -0.000269304792,
+        -0.000269304792,
+        -0.0,
+        -0.0,
+        -7.6613509e-05,
+        -7.6613509e-05,
+        -0.000371683456,
+        -0.000371683456,
+        -0.0,
+        -0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.0,
+        -0.0
+      ],
+      "gradient_norm": 0.001155178623,
+      "molecule": "H4-linear",
+      "n_nonzero_params": 14,
+      "n_params": 26,
+      "n_pool": 26,
+      "noons": [
+        1.966408435124,
+        1.905788289991,
+        0.099167017472,
+        0.028636257413
+      ],
+      "optimizer": "bfgs_qf",
+      "optimizer_result": {
+        "nfev": 6,
+        "nit": 5,
+        "njev": 6,
+        "success": false
+      },
+      "pool_indices": [
+        22,
+        8,
+        16,
+        17,
+        25,
+        11,
+        18,
+        19,
+        14,
+        15,
+        4,
+        5,
+        0,
+        1,
+        6,
+        7,
+        12,
+        13,
+        23,
+        24,
+        2,
+        3,
+        9,
+        10,
+        20,
+        21
+      ],
+      "pool_type": "SD",
+      "run_options": {
+        "batch_opt_thresh": 1e-05,
+        "batched_opt_batch_maxiter": 5,
+        "batched_opt_cycles": 1,
+        "batched_opt_final_maxiter": 5,
+        "batched_opt_type": "none",
+        "batched_opt_verbose": false,
+        "bfgs_qf_alpha0": 1.0,
+        "bfgs_qf_hdiag_floor": 0.001,
+        "bfgs_qf_hdiag_method": "mp2",
+        "bfgs_qf_hdiag_mode": "abs",
+        "bfgs_qf_hdiag_start": 1,
+        "bfgs_qf_hdiag_stop": 1,
+        "bfgs_qf_max_ls": 10,
+        "bfgs_qf_max_step_norm": 0.5,
+        "bfgs_qf_maxiter": 5,
+        "bfgs_qf_print_aux": false,
+        "bfgs_qf_reset_on_bad_curvature": true,
+        "bfgs_qf_reset_on_nondescent": true,
+        "bfgs_qf_use_gradient_energy": true,
+        "bfgs_qf_use_hessian_diag": true,
+        "general_ex_pool_order": "default",
+        "init_amps": "mp2",
+        "opt_ftol": 1e-10,
+        "opt_maxiter": 5,
+        "opt_thresh": 1e-05,
+        "optimizer": "bfgs_qf",
+        "pool_type": "SD",
+        "primary_pool_order": "mp2_amps",
+        "secondary_pool_order": "shell",
+        "use_analytic_grad": true
+      },
+      "spin_squared": 3.56e-10,
+      "symmetry": "c1",
+      "system": {
+        "fci_energy": -2.166387448527,
+        "hf_energy": -2.09854593683,
+        "mp2_energy": -2.139744024308
+      },
+      "system_id": "h4_linear_c1",
+      "system_label": "H4-linear/STO-3G/C1"
+    },
+    {
+      "amplitudes": [
+        -0.006386400413,
+        -0.006386400413,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        0.004993615208,
+        0.004993615208,
+        0.065399083657,
+        0.0,
+        0.0,
+        0.055259454739,
+        0.0,
+        0.0,
+        0.030616040987,
+        0.030616040987,
+        0.079226354764,
+        0.079226354764,
+        -0.048939125645,
+        -0.048939125645,
+        -0.0,
+        -0.0,
+        0.192123918792,
+        -0.0,
+        -0.0,
+        0.042474773064
+      ],
+      "basis": "sto-3g",
+      "batched_history": [],
+      "case": "h4_c1_sd_jacobi_zero",
+      "cnot_count": 1312,
+      "energy": -2.166305280975,
+      "gradient": [
+        -2.9384076e-05,
+        -2.9384076e-05,
+        0.0,
+        0.0,
+        -0.0,
+        -0.0,
+        -0.000138547044,
+        -0.000138547044,
+        -0.000169374766,
+        0.0,
+        0.0,
+        -0.000265149398,
+        -0.0,
+        -0.0,
+        0.00015159797,
+        0.00015159797,
+        0.000181796502,
+        0.000181796502,
+        -4.5885613e-05,
+        -4.5885613e-05,
+        -0.0,
+        -0.0,
+        2.7055487e-05,
+        0.0,
+        0.0,
+        -9.1845601e-05
+      ],
+      "gradient_norm": 0.000514346039,
+      "molecule": "H4-linear",
+      "n_nonzero_params": 14,
+      "n_params": 26,
+      "n_pool": 26,
+      "noons": [
+        1.966432320094,
+        1.905820792413,
+        0.099102478834,
+        0.028644408659
+      ],
+      "optimizer": "jacobi",
+      "optimizer_result": {
+        "nfev": null,
+        "nit": null,
+        "njev": null,
+        "success": null
+      },
+      "pool_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25
+      ],
+      "pool_type": "SD",
+      "run_options": {
+        "batch_opt_thresh": 1e-05,
+        "batched_opt_batch_maxiter": 5,
+        "batched_opt_cycles": 1,
+        "batched_opt_final_maxiter": 5,
+        "batched_opt_type": "none",
+        "batched_opt_verbose": false,
+        "general_ex_pool_order": "default",
+        "init_amps": "zero",
+        "opt_ftol": 1e-10,
+        "opt_maxiter": 5,
+        "opt_thresh": 1e-05,
+        "optimizer": "jacobi",
+        "pool_type": "SD",
+        "primary_pool_order": "none",
+        "secondary_pool_order": "lexical",
+        "use_analytic_grad": true
+      },
+      "spin_squared": 2.54e-10,
+      "symmetry": "c1",
+      "system": {
+        "fci_energy": -2.166387448527,
+        "hf_energy": -2.09854593683,
+        "mp2_energy": -2.139744024308
+      },
+      "system_id": "h4_linear_c1",
+      "system_label": "H4-linear/STO-3G/C1"
     }
   ],
   "description": "Informal HF UCCN-VQE FCIComputer consistency data",
