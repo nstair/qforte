@@ -9,7 +9,7 @@ To intentionally refresh the reference data after reviewing expected changes:
     conda run -n qfe_env_v1 python informal_tests/uncc_vqe_fci_comp/run_uncc_vqe_fci_comp.py --write-expected
 
 This is intentionally not a pytest test.  It keeps compact reference data for a
-small set of HF/C1 and HF/C2v UCCN-VQE FCIComputer runs.
+small set of HF and H4 UCCN-VQE FCIComputer runs.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ TOLERANCES = {
 CASE_MATRIX = [
     {
         "label": "c1_sd_bfgs_mp2_hdiag_mp2",
-        "symmetry": "c1",
+        "system_id": "hf_c1",
         "pool_type": "SD",
         "optimizer": "bfgs_qf",
         "init_amps": "mp2",
@@ -60,14 +60,14 @@ CASE_MATRIX = [
     },
     {
         "label": "c1_sd_jacobi_zero",
-        "symmetry": "c1",
+        "system_id": "hf_c1",
         "pool_type": "SD",
         "optimizer": "jacobi",
         "init_amps": "zero",
     },
     {
         "label": "c1_1up_bfgs_mp2_batch_no_hdiag",
-        "symmetry": "c1",
+        "system_id": "hf_c1",
         "pool_type": "1-UpCCGSD",
         "optimizer": "bfgs_qf",
         "init_amps": "mp2",
@@ -79,7 +79,7 @@ CASE_MATRIX = [
     },
     {
         "label": "c2v_sd_jacobi_mp2",
-        "symmetry": "c2v",
+        "system_id": "hf_c2v",
         "pool_type": "SD",
         "optimizer": "jacobi",
         "init_amps": "mp2",
@@ -87,7 +87,7 @@ CASE_MATRIX = [
     },
     {
         "label": "c2v_gsd_bfgs_batch_no_hdiag",
-        "symmetry": "c2v",
+        "system_id": "hf_c2v",
         "pool_type": "GSD",
         "optimizer": "bfgs_qf",
         "init_amps": "zero",
@@ -95,6 +95,24 @@ CASE_MATRIX = [
         "general_ex_pool_order": "particle_hole_first",
         "batched_opt_type": "half_sweep_then_all",
         "use_hessian_diag": False,
+    },
+    {
+        "label": "h4_c1_sd_bfgs_mp2_hdiag_mp2",
+        "system_id": "h4_linear_c1",
+        "pool_type": "SD",
+        "optimizer": "bfgs_qf",
+        "init_amps": "mp2",
+        "primary_pool_order": "mp2_amps",
+        "secondary_pool_order": "shell",
+        "general_ex_pool_order": "default",
+        "hdiag_method": "mp2",
+    },
+    {
+        "label": "h4_c1_sd_jacobi_zero",
+        "system_id": "h4_linear_c1",
+        "pool_type": "SD",
+        "optimizer": "jacobi",
+        "init_amps": "zero",
     },
 ]
 
@@ -107,13 +125,63 @@ def hf_geometry():
     ]
 
 
-def build_hf(symmetry: str):
+def h4_linear_geometry():
+    spacing = 1.0
+    return [
+        ("H", (0.0, 0.0, 0.0 * spacing)),
+        ("H", (0.0, 0.0, 1.0 * spacing)),
+        ("H", (0.0, 0.0, 2.0 * spacing)),
+        ("H", (0.0, 0.0, 3.0 * spacing)),
+    ]
+
+
+SYSTEM_SPECS = {
+    "hf_c1": {
+        "molecule": "HF",
+        "basis": "sto-6g",
+        "symmetry": "c1",
+        "geometry": hf_geometry,
+    },
+    "hf_c2v": {
+        "molecule": "HF",
+        "basis": "sto-6g",
+        "symmetry": "c2v",
+        "geometry": hf_geometry,
+    },
+    "h4_linear_c1": {
+        "molecule": "H4-linear",
+        "basis": "sto-3g",
+        "symmetry": "c1",
+        "geometry": h4_linear_geometry,
+    },
+}
+
+
+def case_system_spec(case: dict[str, Any]) -> dict[str, Any]:
+    system_id = case["system_id"]
+    try:
+        return SYSTEM_SPECS[system_id]
+    except KeyError as exc:
+        raise ValueError(f"Unknown system_id {system_id!r} for case {case['label']!r}") from exc
+
+
+def case_system_label(case: dict[str, Any]) -> str:
+    spec = case_system_spec(case)
+    return f"{spec['molecule']}/{spec['basis'].upper()}/{spec['symmetry'].upper()}"
+
+
+def build_system(system_id: str):
+    try:
+        spec = SYSTEM_SPECS[system_id]
+    except KeyError as exc:
+        raise ValueError(f"Unknown system_id {system_id!r}.") from exc
+
     return qf.system_factory(
         system_type="molecule",
         build_type="psi4",
-        basis="sto-6g",
-        mol_geometry=hf_geometry(),
-        symmetry=symmetry,
+        basis=spec["basis"],
+        mol_geometry=spec["geometry"](),
+        symmetry=spec["symmetry"],
         multiplicity=1,
         charge=0,
         num_frozen_docc=0,
@@ -240,13 +308,18 @@ def final_result_field(alg, name: str):
 
 
 def result_record(case: dict[str, Any], mol, alg) -> dict[str, Any]:
+    spec = case_system_spec(case)
     gradient = np.asarray(alg.gradient_ary_feval(alg._tamps), dtype=float)
     spin_squared = alg.compute_final_spin_squared_expectation()
     noons = alg.compute_final_noons()
 
     return json_safe({
         "case": case["label"],
-        "symmetry": case["symmetry"],
+        "system_id": case["system_id"],
+        "system_label": case_system_label(case),
+        "molecule": spec["molecule"],
+        "basis": spec["basis"],
+        "symmetry": spec["symmetry"],
         "pool_type": case["pool_type"],
         "optimizer": case["optimizer"],
         "run_options": make_run_options(case),
@@ -298,7 +371,7 @@ def compact_batch_history(history):
 
 
 def run_case(case: dict[str, Any], systems: dict[str, Any]) -> dict[str, Any]:
-    mol = systems[case["symmetry"]]
+    mol = systems[case["system_id"]]
     alg = qf.UCCNVQE(
         mol,
         computer_type="fci",
@@ -423,13 +496,13 @@ def selected_cases(labels: list[str] | None):
 
 def run_all(cases: list[dict[str, Any]]):
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    symmetries = sorted({case["symmetry"] for case in cases})
+    system_ids = sorted({case["system_id"] for case in cases})
     systems = {}
 
-    for symmetry in symmetries:
-        log_path = LOG_DIR / f"build_hf_{symmetry}.log"
+    for system_id in system_ids:
+        log_path = LOG_DIR / f"build_{system_id}.log"
         with log_path.open("w") as log, contextlib.redirect_stdout(log):
-            systems[symmetry] = build_hf(symmetry)
+            systems[system_id] = build_system(system_id)
 
     records = []
     for index, case in enumerate(cases, start=1):

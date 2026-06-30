@@ -81,12 +81,12 @@ class VQE(AnsatzAlgorithm):
         optimizer_name = str(getattr(self, "_optimizer", "")).strip().lower()
         pool_type = getattr(self, "_pool_type", None)
 
-        if optimizer_name in {"lbfgs_qf", "qf_lbfgs"}:
-            raise NotImplementedError(
-                'optimizer="lbfgs_qf" is currently disabled for VQE because '
-                "the in-house qf L-BFGS path is not reliable enough for these "
-                'runs. Use optimizer="bfgs_qf" or a SciPy optimizer instead.'
-            )
+        # if optimizer_name in {"lbfgs_qf", "qf_lbfgs"}:
+        #     raise NotImplementedError(
+        #         'optimizer="lbfgs_qf" is currently disabled for VQE because '
+        #         "the in-house qf L-BFGS path is not reliable enough for these "
+        #         'runs. Use optimizer="bfgs_qf" or a SciPy optimizer instead.'
+        #     )
 
         if optimizer_name != "jacobi":
             return

@@ -31,8 +31,8 @@ geom = [
     ('H', (0., 0.,12.0)),
     ('H', (0., 0.,13.0)),
     ('H', (0., 0.,14.0)),
-    ('H', (0., 0.,15.0)),
-    ('H', (0., 0.,16.0)),
+    # ('H', (0., 0.,15.0)),
+    # ('H', (0., 0.,16.0)),
     ]
 
 # Get the molecule object that now contains both the fermionic and qubit Hamiltonians.
@@ -82,7 +82,7 @@ sqham = mol.sq_hamiltonian
 hermitian_pairs = qf.SQOpPool()
 hermitian_pairs.add_hermitian_pairs(1.0, sqham)
 
-num_threads = 8
+num_threads = 4
 print(f"\n num threads: {num_threads}\n")
 
 time = 0.1

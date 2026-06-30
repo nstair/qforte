@@ -12,10 +12,10 @@ geom = [
     ('H', (0., 0., 8.00)),
     ('H', (0., 0., 9.00)),
     ('H', (0., 0., 10.00)),
-    ('H', (0., 0., 11.00)),
-    ('H', (0., 0., 12.00)),
-    ('H', (0., 0., 13.00)),
-    ('H', (0., 0., 14.00)),
+    # ('H', (0., 0., 11.00)),
+    # ('H', (0., 0., 12.00)),
+    # ('H', (0., 0., 13.00)),
+    # ('H', (0., 0., 14.00)),
     ]
 
 # geom = [
@@ -23,10 +23,18 @@ geom = [
 #     ('N', (0., 0., 2.00)),
 #     ]
 
+
+geom = [
+    ('H', (0., 0., 0.00)), 
+    ('Be', (0., 0., 1.00)),
+    ('H', (0., 0., 2.00)),
+    ]
+
 mol = qf.system_factory(
     build_type='psi4', 
     mol_geometry=geom, 
-    basis='sto-3g',
+    basis='cc-pvdz',
+    store_np_ints=True,
     run_fci=0)
 
 
@@ -44,7 +52,7 @@ if(COMPUTER_TYPE in ['fock', 'cusv']):
 else:
     APPLY_HAM_AS_TENSOR = True
 
-s = 4
+s = 1
 dt = 'lambda_inv'
 # dt = 0.01
 
@@ -69,10 +77,20 @@ alg.run(
     gev_stabilization_thresh=GEV_STABILIZATION_THRESH
     )
 
-timer.record('SRQK {COMPUTER_TYPE})}')
+timer.record(f'SRQK {COMPUTER_TYPE}')
 
-# print(f'\n\n Efci:      {mol.fci_energy:+12.10f}')
-# print(f'\n\n |E-FCI|:   {abs(mol.fci_energy - alg.get_ts_energy()):e}')
+
+print(f"======> {COMPUTER_TYPE} <======")
+
+# print(f'\n\nEfci:      {mol.fci_energy:+12.10f}')
+# print(f'E-SRQK:    {alg.get_ts_energy():+12.10f}')
+# print(f'|E-FCI|:    {abs(mol.fci_energy - alg.get_ts_energy()):e}')
 
 print('\n\n')
 print(timer)
+
+
+
+
+
+

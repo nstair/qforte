@@ -1329,77 +1329,28 @@ class CUSVComputer:
             raise RuntimeError("get_exp_val_opt requires authoritative state on GPU. Call to_gpu() first.")
         if self._state_gpu is None:
             raise RuntimeError("GPU state not allocated.")
-
-        # import numpy as np
-        from cuquantum import cudaDataType
-        # from cuquantum.bindings import custatevec as cusv
-        # from openfermion.transforms import jordan_wigner
-
-        self._ensure_cusv_handle()
-        cusv = self._cusv
-
-        # SQOperator -> FermionOperator (assumed already in abab mode labeling)
-        fop = self.convert_sqop_to_openfermion(sqop)
-
-        # FermionOperator -> QubitOperator (sum of Pauli strings)
-        qop = jordan_wigner(fop)
+        arrays = self.get_pauli_arrays_from_sqop(sqop)
+        return self.get_exp_val_opt_from_pauli_arays(arrays)
 
 
-        items = list(qop.terms.items())
-        if len(items) == 0:
-            return 0.0 + 0.0j
+    def get_exp_val_opt_from_pauli_arays(self, arrays) -> complex:
+        """
+        Alternative optimized expectation value using cuStateVec, where the caller provides
+        pre-processed arrays of Pauli strings and coefficients.
 
-        # Separate identity term (empty Pauli string)
-        expval = 0.0 + 0.0j
-        pauli_terms = []
-        pauli_coeffs = []
-        for term, coeff in items:
-            c = complex(coeff)
-            if len(term) == 0:
-                expval += c  # <I> = 1
-            else:
-                pauli_terms.append(term)
-                pauli_coeffs.append(c)
+        This is a lower-level interface than get_exp_val_opt(), which accepts a SQOperator directly.
+        Here, the caller is responsible for converting the SQOperator into the appropriate arrays.
 
-        n = len(pauli_terms)
-        if n == 0:
-            return complex(expval)
+        Expected input format:
+        arrays: list of tuples (coeff, term)
+            coeff: complex coefficient for the Pauli string
+            term: tuple of (q, pchar) pairs, e.g. ((0,'X'), (5,'Z'))
 
-        # Build nested arrays for cuStateVec:
-        #   pauli_operators_array: list[list[_Pauli]]
-        #   basis_bits_array:      list[list[int32]]
-        #   n_basis_bits_array:    list[uint32]
-        pauli_operators_array = []
-        basis_bits_array = []
-        n_basis_bits_array = []
+        The method will batch compute <psi|P|psi> for each term and return sum(coeff * <P>).
 
-        for term in pauli_terms:
-            # term: tuple((q, 'X'/'Y'/'Z'), ...), may be unsorted
-            term_sorted = sorted(term, key=lambda x: x[0])
-
-            bits = []
-            paulis = []
-            for (q, pchar) in term_sorted:
-                q = int(q)
-                bits.append(np.int32(q))
-                if pchar == "X":
-                    paulis.append(cusv.Pauli.X)
-                elif pchar == "Y":
-                    paulis.append(cusv.Pauli.Y)
-                elif pchar == "Z":
-                    paulis.append(cusv.Pauli.Z)
-                else:
-                    raise ValueError(f"Unexpected Pauli label {pchar!r}")
-
-            basis_bits_array.append(bits)
-            pauli_operators_array.append(paulis)
-            n_basis_bits_array.append(np.uint32(len(bits)))
-
-        # Host output buffer (cuStateVec stores expectations as float64 on host)
-        expectations = np.empty(n, dtype=np.float64)
-
-        # Call optimized batched expectation routine
-        sv_dtype = self._cuda_data_type_from_dtype(self._state_gpu.dtype, cudaDataType=cudaDataType)
+        core idea, make the below function callable with only arguments passed in
+        rather than doing the jw tranform in the exp val funciton
+        used for microbenchmark timing purpouses
 
         cusv.compute_expectations_on_pauli_basis(
             self._handle,
@@ -1419,6 +1370,155 @@ class CUSVComputer:
             expval += c * float(e)
 
         return complex(expval)
+        """
+        if not self.on_gpu():
+            raise RuntimeError(
+                "get_exp_val_opt_from_pauli_arays requires authoritative state on GPU. "
+                "Call to_gpu() first."
+            )
+        if self._state_gpu is None:
+            raise RuntimeError("GPU state not allocated.")
+
+        self._ensure_cusv_handle()
+        cusv = self._cusv
+
+        processed_arrays = list(arrays)
+        if len(processed_arrays) == 0:
+            return 0.0 + 0.0j
+
+        expval = 0.0 + 0.0j
+        pauli_terms = []
+        pauli_coeffs = []
+
+        for item in processed_arrays:
+            if len(item) != 2:
+                raise ValueError(
+                    "Each pauli-array entry must be a (coeff, term) pair."
+                )
+
+            coeff, term = item
+            c = complex(coeff)
+            term_tuple = tuple(term)
+
+            if len(term_tuple) == 0:
+                expval += c
+                continue
+
+            pauli_terms.append(term_tuple)
+            pauli_coeffs.append(c)
+
+        n = len(pauli_terms)
+        if n == 0:
+            return complex(expval)
+
+        pauli_operators_array = []
+        basis_bits_array = []
+        n_basis_bits_array = []
+
+        for term in pauli_terms:
+            term_sorted = sorted(term, key=lambda x: int(x[0]))
+
+            bits = []
+            paulis = []
+            last_q = None
+            for (q, pchar) in term_sorted:
+                q = int(q)
+                pchar = str(pchar)
+
+                if q < 0 or q >= self.n_qubits:
+                    raise ValueError(
+                        f"Pauli term references qubit {q}, but this computer has "
+                        f"{self.n_qubits} qubits."
+                    )
+                if last_q is not None and q == last_q:
+                    raise ValueError(
+                        f"Duplicate Pauli entry for qubit {q} in term {term!r}."
+                    )
+
+                bits.append(np.int32(q))
+                if pchar == "X":
+                    paulis.append(cusv.Pauli.X)
+                elif pchar == "Y":
+                    paulis.append(cusv.Pauli.Y)
+                elif pchar == "Z":
+                    paulis.append(cusv.Pauli.Z)
+                else:
+                    raise ValueError(f"Unexpected Pauli label {pchar!r}")
+
+                last_q = q
+
+            basis_bits_array.append(bits)
+            pauli_operators_array.append(paulis)
+            n_basis_bits_array.append(np.uint32(len(bits)))
+
+        expectations = np.empty(n, dtype=np.float64)
+
+        from cuquantum import cudaDataType
+
+        sv_dtype = self._cuda_data_type_from_dtype(
+            self._state_gpu.dtype,
+            cudaDataType=cudaDataType,
+        )
+
+        cusv.compute_expectations_on_pauli_basis(
+            self._handle,
+            int(self._state_gpu.data.ptr),
+            sv_dtype,
+            np.uint32(self.n_qubits),
+            int(expectations.ctypes.data),
+            pauli_operators_array,
+            np.uint32(n),
+            basis_bits_array,
+            n_basis_bits_array,
+        )
+
+        for c, e in zip(pauli_coeffs, expectations):
+            expval += c * float(e)
+
+        return complex(expval)
+    
+    def get_pauli_arrays_from_sqop(self, sqop) -> List[Tuple[complex, Tuple[Tuple[int, str], ...]]]:
+        """
+        Helper to convert a SQOperator into the list of (coeff, term) tuples needed for
+        get_exp_val_opt_from_pauli_arrays().
+
+        This is essentially the same as the processing in get_exp_val_opt(), but we expose it
+        as a separate method so that users can pre-process their SQOperators once and then call
+        get_exp_val_opt_from_pauli_arrays() multiple times with the same arrays for efficiency.
+        """
+        fop = self.convert_sqop_to_openfermion(sqop)
+        qop = jordan_wigner(fop)
+
+        items = list(qop.terms.items())
+        if len(items) == 0:
+            return []
+
+        arrays: List[Tuple[complex, Tuple[Tuple[int, str], ...]]] = []
+        for term, coeff in items:
+            c = complex(coeff)
+            if abs(c) == 0.0:
+                continue
+
+            term_sorted = tuple(
+                (int(q), str(pchar))
+                for (q, pchar) in sorted(term, key=lambda x: int(x[0]))
+            )
+            arrays.append((c, term_sorted))
+
+        def _term_sort_key(item):
+            coeff, term = item
+            if len(term) == 0:
+                return (-1, (), ())
+            targets = tuple(q for (q, _) in term)
+            paulis = tuple(p for (_, p) in term)
+            return (len(term), targets, paulis, float(np.real(coeff)), float(np.imag(coeff)))
+
+        arrays.sort(key=_term_sort_key)
+        return arrays
+
+    def get_exp_val_opt_from_pauli_arrays(self, arrays) -> complex:
+        """Compatibility alias for the typo-spelled public helper above."""
+        return self.get_exp_val_opt_from_pauli_arays(arrays)
 
     def get_exp_val_tensor(self, h0e: complex, h1e: np.ndarray, h2e: np.ndarray) -> complex:
         raise NotImplementedError("CUSVComputer.get_exp_val_tensor(): stub.")

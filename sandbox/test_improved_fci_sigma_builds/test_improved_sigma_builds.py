@@ -136,7 +136,14 @@ def run_qforte_gpu_real_v2(mol, nel, sz, norb, timer):
     fci.to_gpu()
 
     timer.reset()
-    fci.apply_tensor_spat_012bdy_gpu_v2(
+    # fci.apply_tensor_spat_012bdy_gpu_v2(
+    #     mol.nuclear_repulsion_energy,
+    #     mo_oeis_gpu,
+    #     mo_teis_gpu,
+    #     mo_teis_einsum_gpu,
+    #     norb,
+    # )
+    fci.apply_tensor_spat_012bdy_gpu(
         mol.nuclear_repulsion_energy,
         mo_oeis_gpu,
         mo_teis_gpu,

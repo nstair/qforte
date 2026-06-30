@@ -209,9 +209,19 @@ PYBIND11_MODULE(qforte, m) {
         .def("set_coeffs_to_scaler", &SQOpPoolGPU::set_coeffs_to_scaler)
         .def("terms", &SQOpPoolGPU::terms)
         .def("set_orb_spaces", &SQOpPoolGPU::set_orb_spaces)
+        .def("set_orb_irreps", &SQOpPoolGPU::set_orb_irreps,
+             py::arg("orb_irreps_to_int"), py::arg("target_irrep") = 0)
+        .def("excitation_irrep_allowed", &SQOpPoolGPU::excitation_irrep_allowed)
         .def("get_qubit_op_pool", &SQOpPoolGPU::get_qubit_op_pool)
         .def("get_qubit_operator", &SQOpPoolGPU::get_qubit_operator, py::arg("order_type"),
              py::arg("combine_like_terms") = true, py::arg("qubit_excitations") = false)
+        .def("count_cnot_for_jw_exponential", &SQOpPoolGPU::count_cnot_for_jw_exponential,
+             py::arg("qubit_excitations") = false,
+             py::arg("trotter_number") = 1)
+        .def("count_cnot_for_term_jw_exponential", &SQOpPoolGPU::count_cnot_for_term_jw_exponential,
+             py::arg("term_index"),
+             py::arg("qubit_excitations") = false,
+             py::arg("trotter_number") = 1)
         .def("fill_pool", &SQOpPoolGPU::fill_pool)
         .def("fill_pool_kUpCCGSD", &SQOpPoolGPU::fill_pool_kUpCCGSD)
         .def("fill_pool_kUpCCGSDx", &SQOpPoolGPU::fill_pool_kUpCCGSDx)
