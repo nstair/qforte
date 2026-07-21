@@ -106,6 +106,12 @@ public:
         const std::vector<int>& dag, 
         const std::vector<int>& undag); 
 
+    /// Determines every determinant pair where source is occupied and target is empty
+    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> make_givens_mapping_each(
+        bool alpha,
+        const std::vector<int>& source_orbs,
+        const std::vector<int>& target_orbs);
+
     /// ==> Utility Functions for Bit Math (may need to move) <== ///
 
     /// Combinutorics helper funciton for binomial coefficients

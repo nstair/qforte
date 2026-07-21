@@ -234,6 +234,125 @@ std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::
                     parity);
 }
 
+std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> FCIGraph::make_givens_mapping_each(
+        bool alpha,
+        const std::vector<int>& source_orbs,
+        const std::vector<int>& target_orbs)
+{
+
+    if (source_orbs.size() != target_orbs.size()){
+        throw std::runtime_error("must be same number of alpha annihilators/creators and beta annihilators/creators.");
+    }
+
+    if (source_orbs.size() != 1 && source_orbs.size() != 0) {
+        throw std::invalid_argument("source_orbs must be a single orbital index or empty");
+    }
+
+    if (target_orbs.size() != 1 && target_orbs.size() != 0) {
+        throw std::invalid_argument("target_orbs must be a single orbital index or empty");
+    }
+
+    timer_.reset();
+
+    std::vector<uint64_t> strings;
+    int length;
+    
+    if (alpha) {
+        strings = get_astr();
+        length = lena_;
+    } else {
+        strings = get_bstr();
+        length = lenb_;
+    }
+
+    if (source_orbs.size() == 0 || target_orbs.size() == 0) {
+        std::vector<int> source(length);
+        std::vector<int> target(length);
+        std::vector<int> parity(length, 1);
+
+        for (int index = 0; index < length; index++){
+            source[index] = index;
+            target[index] = index;
+        }
+
+        return std::make_tuple(
+                        length,
+                        source,
+                        target,
+                        parity);
+    }
+
+    int source_orb = source_orbs[0];
+    int target_orb = target_orbs[0];
+
+    std::vector<int> source(length);
+    std::vector<int> target(length);
+    std::vector<int> parity(length);
+
+    uint64_t source_mask = set_bit(0, source_orb);
+    uint64_t target_mask = set_bit(0, target_orb);
+
+    int low_orb = std::min(source_orb, target_orb);
+    int high_orb = std::max(source_orb, target_orb);
+    
+    int count = 0;
+
+    for (int index = 0; index < length; ++index){
+        uint64_t current = strings[index];
+
+        bool source_occupied = (current & source_mask) != 0; 
+        bool target_empty = (current & target_mask) == 0;
+
+        if (!source_occupied || !target_empty){
+            continue;
+        }
+
+        /* Fermionic sign for a_target^dagger a_source:
+         *
+         * (-1)^(number of occupied same-spin orbitals strictly
+         * between source_orb and target_orb).
+         */
+        int occupied_between = 0;
+
+        for (int orb = low_orb + 1; orb < high_orb; ++orb) {
+            occupied_between += static_cast<int>(
+                (current >> orb) & uint64_t{1}
+            );
+        }
+
+        const int parity_value =
+            (occupied_between % 2 == 0) ? 1 : -1;
+
+        uint64_t next = current;
+
+        next = unset_bit(next, source_orb);
+        next = set_bit(next, target_orb);
+
+        source[count] = index;
+
+        if (alpha){
+            target[count] = get_aind_for_str(static_cast<int>(next));
+        } else {
+            target[count] = get_bind_for_str(static_cast<int>(next));
+        }
+
+        parity[count] = parity_value;
+        ++count;
+    }
+
+    source.resize(count);
+    target.resize(count);
+    parity.resize(count);
+
+    timer_.acc_record("make_givens_mapping_each");
+    
+    return std::make_tuple(
+                    count,
+                    source,
+                    target,
+                    parity);
+}
+
 /// NICK: 1. Consider a faster blas veriosn, 2. consider using qubit basis, 3. rename (too long)
 std::vector<uint64_t> FCIGraph::get_lex_bitstrings(int nele, int norb) {
 

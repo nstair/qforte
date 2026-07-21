@@ -144,6 +144,17 @@ Gate make_gate(std::string type, size_t target, size_t control, std::complex<dou
             // };
             return Gate(type, target, control, gate);
         }
+        if ((type == "Givens") or (type == "G")) {
+            std::complex<double> c = std::cos(0.5 * parameter);
+            std::complex<double> s = std::sin(0.5 * parameter);
+            std::complex<double> gate[4][4]{
+                {1.0, 0.0, 0.0, 0.0},
+                {0.0, c,   s,  0.0},
+                {0.0, -s,  c,  0.0},
+                {0.0, 0.0, 0.0, 1.0},
+            };
+            return Gate(type, target, control, gate);
+        }
         if ((type == "cX") or (type == "CNOT")) {
             std::complex<double> gate[4][4]{
                 {1.0, 0.0, 0.0, 0.0},

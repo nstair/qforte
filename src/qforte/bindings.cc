@@ -294,6 +294,7 @@ PYBIND11_MODULE(qforte, m) {
         .def("zero_state", &Computer::zero_state)
         .def("get_timings", &Computer::get_timings)
         .def("clear_timings", &Computer::clear_timings)
+        .def("get_fci_tensor_diff", &Computer::get_fci_tensor_diff)
         .def("str", &Computer::str)
         .def("__str__", &Computer::str)
         .def("__repr__", &Computer::str);
@@ -331,6 +332,12 @@ PYBIND11_MODULE(qforte, m) {
             py::arg("sqop"),
             py::arg("antiherm") = false,
             py::arg("adjoint") = false
+            )
+        .def("apply_givens_rotation",
+            &FCIComputer::apply_givens_rotation,
+            py::arg("q1"),
+            py::arg("q2"),
+            py::arg("theta")
             )
         .def("evolve_pool_trotter_basic", &FCIComputer::evolve_pool_trotter_basic_v2, // Making Faster Version the Default! Check QK and PQE!
             py::arg("sqop"),
@@ -382,6 +389,7 @@ PYBIND11_MODULE(qforte, m) {
     py::class_<FCIGraph>(m, "FCIGraph")
         .def(py::init<int, int, int>(), "nalfa"_a, "nbeta"_a, "norb"_a, "Make a FCIGraph")
         .def("make_mapping_each", &FCIGraph::make_mapping_each)
+        .def("make_givens_mapping_each", &FCIGraph::make_givens_mapping_each)
         .def("get_nalfa", &FCIGraph::get_nalfa)
         .def("get_nbeta", &FCIGraph::get_nbeta)
         .def("get_lena", &FCIGraph::get_lena)

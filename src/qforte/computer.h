@@ -22,6 +22,8 @@ class QubitOperator;
 class SQOperator;
 class QubitOpPool;
 class SparseMatrix;
+class FCIComputer;
+class Tensor;
 
 class Computer {
   public:
@@ -147,6 +149,9 @@ class Computer {
 
     void zero_state();
 
+    /// find a tensor difference between the FCI computer and the Fock quantum computer
+    double get_fci_tensor_diff(const FCIComputer& fci_computer, const bool do_phase_compare);
+
     /// get timings
     std::vector<std::pair<std::string, double>> get_timings() { return timings_; }
 
@@ -186,6 +191,7 @@ class Computer {
 
     /// apply a 2qubit gate to the quantum computer with optimized algorithm
     void apply_2qubit_gate(const Gate& qg);
+
 };
 
 #endif // _computer_h_

@@ -2,6 +2,37 @@
 
 cmake_minimum_required(VERSION 3.18...3.29)
 
+if(NOT DEFINED QFORTE_CONDA_PREFIX)
+  if(DEFINED ENV{CONDA_PREFIX})
+    set(QFORTE_CONDA_PREFIX "$ENV{CONDA_PREFIX}" CACHE PATH "Conda environment used to build qforte")
+  else()
+    message(FATAL_ERROR "QFORTE_CONDA_PREFIX is not set and CONDA_PREFIX is unavailable. Activate the qforte conda environment before building.")
+  endif()
+endif()
+
+if(APPLE AND NOT CMAKE_OSX_SYSROOT)
+  execute_process(
+    COMMAND xcrun --show-sdk-path
+    OUTPUT_VARIABLE QFORTE_MACOS_SDKROOT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+  )
+  if(QFORTE_MACOS_SDKROOT)
+    set(CMAKE_OSX_SYSROOT "${QFORTE_MACOS_SDKROOT}" CACHE PATH "macOS SDK used to build qforte")
+  endif()
+endif()
+
+if(APPLE)
+  set(QFORTE_CONDA_CC "${QFORTE_CONDA_PREFIX}/bin/x86_64-apple-darwin13.4.0-clang")
+  set(QFORTE_CONDA_CXX "${QFORTE_CONDA_PREFIX}/bin/x86_64-apple-darwin13.4.0-clang++")
+  if(EXISTS "${QFORTE_CONDA_CC}" AND NOT CMAKE_C_COMPILER)
+    set(CMAKE_C_COMPILER "${QFORTE_CONDA_CC}" CACHE FILEPATH "C compiler used to build qforte")
+  endif()
+  if(EXISTS "${QFORTE_CONDA_CXX}" AND NOT CMAKE_CXX_COMPILER)
+    set(CMAKE_CXX_COMPILER "${QFORTE_CONDA_CXX}" CACHE FILEPATH "C++ compiler used to build qforte")
+  endif()
+endif()
+
 # -------------------------------------------------------------------
 # CUDA Support Option
 # -------------------------------------------------------------------
@@ -36,14 +67,15 @@ OPTION(USE_OpenMP "Use OpenMP to enamble <omp.h>" OFF)
 cmake_policy(SET CMP0074 NEW)         # find_package() respects *_ROOT vars
 set(BLA_VENDOR "Generic")             # bypass FindBLAS vendor picks
 
-# (Nick) kept as-is so CMake finds headers/libs inside the env.
-# set(CMAKE_PREFIX_PATH "/home/nstair/anaconda3/envs/cuqf_8_25_25_v2")
-# set(CMAKE_PREFIX_PATH "/home/zach_gonzales/anaconda3/envs/qforte")
-set(CMAKE_PREFIX_PATH "/home/nstair/anaconda3/envs/qf-cusv1")
+list(PREPEND CMAKE_PREFIX_PATH "${QFORTE_CONDA_PREFIX}")
 
-set(BLAS_LIBRARIES "${CMAKE_PREFIX_PATH}/lib")
-set(CBLAS_INCLUDE_DIR "${CMAKE_PREFIX_PATH}/include")         # need
-set(OPENBLAS_EXE "${CMAKE_PREFIX_PATH}/lib/libopenblas.so")   # need
+set(BLAS_LIBRARIES "${QFORTE_CONDA_PREFIX}/lib")
+set(CBLAS_INCLUDE_DIR "${QFORTE_CONDA_PREFIX}/include")         # need
+if(APPLE)
+  set(OPENBLAS_EXE "${QFORTE_CONDA_PREFIX}/lib/libopenblas.dylib")   # need
+else()
+  set(OPENBLAS_EXE "${QFORTE_CONDA_PREFIX}/lib/libopenblas.so")      # need
+endif()
 
 # -------------------------------------------------------------------
 # CUDA toolkit & flags

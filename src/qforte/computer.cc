@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <functional>
 #include <stdexcept>
+#include <cmath>
+#include <iostream>
 
 #include "fmt/format.h"
 
@@ -14,7 +16,9 @@
 #include "qubit_op_pool.h"
 #include "timer.h"
 #include "sparse_tensor.h"
+#include "tensor.h"
 #include "sq_operator.h"
+#include "fci_computer.h"
 
 #include "computer.h"
 
@@ -1076,6 +1080,190 @@ void Computer::apply_sq_operator(const SQOperator& mysqop){
 
 }
 
+
+double Computer::get_fci_tensor_diff(const FCIComputer& fci_computer, const bool do_phase_compare){
+    int nel = fci_computer.get_nel();
+    int sz = fci_computer.get_sz();
+    int norb = fci_computer.get_norb();
+
+    if ((nel + sz) % 2 != 0){
+        throw std::invalid_argument("Inconsistent (nel, sz)=(" + std::to_string(nel) + "," + std::to_string(sz) + "): (nel+sz) must be even."); 
+    }
+
+    int n_alpha = std::floor((nel + sz) / 2);
+    int n_beta = std::floor((nel - sz) / 2);
+
+    if (n_alpha < 0 || n_beta < 0 || n_alpha > norb || n_beta > norb) {
+        throw std::invalid_argument("Invalid spin counts from (nel,sz)=(" +
+            std::to_string(nel) + "," + std::to_string(sz) + ") with norb=" + 
+            std::to_string(norb) + ": (n_alpha,n_beta)=(" + std::to_string(n_alpha) + "," + 
+            std::to_string(n_beta) + ")");
+    }
+
+    auto comb = [](int n, int k) -> long long {
+        if (k < 0 || k > n) return 0;
+        if (k == 0 || k == n) return 1;
+
+        k = std::min(k, n - k);
+        long long result = 1;
+
+        for (int i = 1; i <= k; ++i)
+            result = result * (n - k + i) / i;
+
+        return result;
+    };
+
+    auto unrank_comb_lex = [comb](int n, int k, int r) -> int {
+        if (k < 0 || k > n)
+            throw std::invalid_argument("Invalid k for n");
+
+        long long total = comb(n, k);
+
+        if (r < 0 || r >= total)
+            throw std::out_of_range("Combination rank out of range");
+
+        int mask = 0;
+        int start = 0;
+        int remaining = k;
+        int rr = r;
+
+        while (remaining > 0) {
+            // choose next occupied orbital 'a' from [start, n-remaining]
+            for (int a = start; a <= n - remaining; ++a) {
+                long long count = comb(n - a - 1, remaining - 1);
+
+                if (rr < count) {
+                    mask |= (1 << a);
+                    start = a + 1;
+                    remaining -= 1;
+                    break;
+                }
+
+                rr -= count;
+            }
+        }
+
+        return mask;
+    };
+
+    long long nIa = comb(norb, n_alpha);
+    long long nIb = comb(norb, n_beta);
+
+    Tensor T = fci_computer.get_state_deep();
+
+    if (T.ndim() != 2){
+        throw std::invalid_argument("FCI tensor must be 2D, but got " + std::to_string(T.ndim()) + "D.");
+    }
+
+    auto tshape = T.shape();
+    if (tshape[0] != static_cast<size_t>(nIa) || tshape[1] != static_cast<size_t>(nIb)){
+        throw std::invalid_argument("FCI tensor shape mismatch: expected (" + std::to_string(nIa) + "," + std::to_string(nIb) + "), but got (" + std::to_string(tshape[0]) + "," + std::to_string(tshape[1]) + ").");
+    }
+
+    const auto& C = coeff_;
+    double full_abs2 = 0.0;
+
+    for (const auto& amp : C)
+        full_abs2 += std::norm(amp);
+
+    auto phase_abblock_to_abab = [](int alpha_mask, int beta_mask) -> int {
+        int parity = 0;
+        int bm = beta_mask;
+        int am = alpha_mask;
+
+        while (bm) {
+            int lsb = bm & -bm;
+            int b = __builtin_ctz(lsb);  // index of least significant set bit
+
+            parity ^= (__builtin_popcount(am >> (b + 1)) & 1);
+
+            bm ^= lsb;
+        }
+
+        return parity ? -1 : 1;
+    };
+
+    auto masks_to_sv_idx = [norb](int alpha_mask, int beta_mask) -> int {
+        int sv_idx = 0;
+        for (int i = 0; i < norb; ++i) {
+            if ((alpha_mask >> i) & 1)
+                sv_idx |= (1 << (2 * i));
+            if ((beta_mask >> i) & 1)
+                sv_idx |= (1 << (2 * i + 1));
+        }
+        return sv_idx;
+    };
+
+    // --- optional: calibrate a single global phase using HF (Ia=0, Ib=0 in lex unranking) ---
+    std::complex<double> global_phase = {1.0, 0.0};
+
+    if (do_phase_compare) {
+        int hf_alpha_mask = unrank_comb_lex(norb, n_alpha, 0);
+        int hf_beta_mask = unrank_comb_lex(norb, n_beta, 0);
+
+        size_t hf_sv_idx = masks_to_sv_idx(hf_alpha_mask, hf_beta_mask);
+
+        std::complex<double> c_hf = C[hf_sv_idx];
+        std::complex<double> t_hf = T.get(std::vector<size_t>{0, 0});
+        
+        std::complex<double> det_phase_hf = static_cast<double>(phase_abblock_to_abab(hf_alpha_mask, hf_beta_mask));
+
+        // If both are nonzero, solve c_hf ≈ global_phase * det_phase_hf * t_hf
+        if (std::abs(t_hf) > 0 && std::abs(c_hf) > 0) {
+            std::complex<double> ratio = c_hf / (det_phase_hf * t_hf);
+
+            // normalize to unit modulus
+            global_phase = ratio / std::abs(ratio);
+        }
+    }
+
+    double sector_c_abs2 = 0.0;
+    double sector_diff_abs2 = 0.0;
+
+    for (size_t Ia = 0; Ia < nIa; ++Ia) {
+        int alpha_mask = unrank_comb_lex(norb, n_alpha, Ia);
+
+        for (size_t Ib = 0; Ib < nIb; ++Ib) {
+            int beta_mask = unrank_comb_lex(norb, n_beta, Ib);
+            size_t sv_idx = masks_to_sv_idx(alpha_mask, beta_mask);
+
+            std::complex<double> cval = C[sv_idx];
+            std::complex<double> tval = T.get({Ia, Ib});
+
+            sector_c_abs2 += std::norm(cval);
+
+            if (do_phase_compare) {
+                tval = global_phase * static_cast<double>(phase_abblock_to_abab(alpha_mask, beta_mask)) * tval;
+            }
+
+            std::complex<double> diff = cval - tval;
+            sector_diff_abs2 += std::norm(diff);
+        }
+    }
+
+    double outside_abs2 = full_abs2 - sector_c_abs2;
+
+    if (std::abs(outside_abs2) > 1e-10) {
+        std::cout << "outside_abs2: " << outside_abs2 << std::endl;
+        throw std::runtime_error(
+            "Computed non trivial state vector outside symmetry sector!"
+        );
+    }
+
+    if (outside_abs2 < 0.0 && outside_abs2 > -1e-10) {
+        outside_abs2 = 0.0;
+    }
+
+    if (outside_abs2 < 0.0) {
+        throw std::runtime_error(
+            "Computed negative outside-sector norm^2: " + std::to_string(outside_abs2)
+        );
+    }
+
+    return std::sqrt(sector_diff_abs2);
+}
+
+
 void Computer::z_chain(int num){
 
     std::complex<double> z[4][4];
@@ -1108,3 +1296,4 @@ void Computer::z_chain(int num){
     }
 
 }
+

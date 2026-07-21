@@ -355,8 +355,16 @@ class FCIComputer {
       const bool antiherm = false,
       const bool adjoint = false);
 
+    /// Applies a Givens rotation to the FCIComputer state.
+    /// The rotation mixes the two qubits identified by `q1` and `q2`
+    /// by the rotation angle `theta`.
+    void apply_givens_rotation(
+      const int q1,
+      const int q2,
+      const double theta);
+
     /// A function that applies the exponentials of an ordered list of
-    /// two-term (hermitian) SQOperators to the FCIComputer
+    /// two-term (hermitian) Se1ephant5026QOperators to the FCIComputer
     /// The 'basic' implies thet trotterizaiton is 1st order and done in a single step.
     /// The evolution time is assumend to be 1.0,
     /// Onus on the user to assure evolution is unitary.
@@ -625,7 +633,7 @@ class FCIComputer {
     size_t get_sz() const { return sz_; }
     
     /// return the number of spatial orbitals
-    size_t none_ops() const { return norb_; }
+    size_t get_norb() const { return norb_; }
 
     /// return the corresponding FCIGraph for this computer
     FCIGraph get_graph() const { return graph_; }
