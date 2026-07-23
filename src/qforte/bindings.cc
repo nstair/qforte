@@ -390,6 +390,7 @@ PYBIND11_MODULE(qforte, m) {
         .def(py::init<int, int, int>(), "nalfa"_a, "nbeta"_a, "norb"_a, "Make a FCIGraph")
         .def("make_mapping_each", &FCIGraph::make_mapping_each)
         .def("make_givens_mapping_each", &FCIGraph::make_givens_mapping_each)
+        .def("make_givens_matching_each", &FCIGraph::make_givens_matching_each)
         .def("get_nalfa", &FCIGraph::get_nalfa)
         .def("get_nbeta", &FCIGraph::get_nbeta)
         .def("get_lena", &FCIGraph::get_lena)

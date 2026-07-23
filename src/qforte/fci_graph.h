@@ -112,6 +112,12 @@ public:
         const std::vector<int>& source_orbs,
         const std::vector<int>& target_orbs);
 
+    /// Determines compact alpha/beta string pair data for a direct two-qubit Givens gate.
+    std::tuple<std::vector<int>, std::vector<int>, std::vector<int>,
+               std::vector<int>, std::vector<int>, std::vector<int>> make_givens_matching_each(
+        int q1,
+        int q2);
+
     /// ==> Utility Functions for Bit Math (may need to move) <== ///
 
     /// Combinutorics helper funciton for binomial coefficients

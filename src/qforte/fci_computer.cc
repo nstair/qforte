@@ -2002,142 +2002,58 @@ void FCIComputer::apply_givens_rotation(
         throw std::invalid_argument("Givens rotation qubits must be different");
     }
 
-    if (q1 % 2 == 0 && q2 % 2 == 1 || q1 % 2 == 1 && q2 % 2 == 0) {
+    if ((q1 % 2) != (q2 % 2)) {
         throw std::invalid_argument("Givens rotation qubits must not be alpha-beta pairs");
     }
 
-    // turn q1 and q2 into alpha and beta indices (qubit=spin --> spatial)
-    // q1 is the source, q2 is the target
-    int num_alpha_rot = 0;
-    int num_beta_rot = 0;
+    auto givens_pairs = graph_.make_givens_matching_each(q1, q2);
+    const std::vector<int>& sourcea = std::get<0>(givens_pairs);
+    const std::vector<int>& targeta = std::get<1>(givens_pairs);
+    const std::vector<int>& phasea = std::get<2>(givens_pairs);
+    const std::vector<int>& sourceb = std::get<3>(givens_pairs);
+    const std::vector<int>& targetb = std::get<4>(givens_pairs);
+    const std::vector<int>& phaseb = std::get<5>(givens_pairs);
 
-    std::vector<int> source_orbs_a;
-    std::vector<int> target_orbs_a;
-    std::vector<int> source_orbs_b;
-    std::vector<int> target_orbs_b;
-
-    if (q1 % 2 == 0 && q2 % 2 == 0) {
-        // pure alpha rotation
-        // below returns lists of alpha indices
-        num_alpha_rot = 1;
-        source_orbs_a.push_back(std::floor(q1 / 2));
-        target_orbs_a.push_back(std::floor(q2 / 2));
-    } else if (q1 % 2 == 1 && q2 % 2 == 1) {
-        // pure beta rotation
-        // below returns lists of beta indices
-        num_beta_rot = 1;
-        source_orbs_b.push_back(std::floor(q1 / 2));
-        target_orbs_b.push_back(std::floor(q2 / 2));
-    } else {
-        throw std::invalid_argument("Givens rotation qubits must be both alpha or both beta");
-    }
-
-    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> alphamap = graph_.make_givens_mapping_each(
-        true,
-        source_orbs_a,
-        target_orbs_a);
-
-    if (std::get<0>(alphamap) == 0) {
+    if (sourcea.empty() || sourceb.empty()) {
         return;
     }
-
-    const std::vector<int>& sourcea1 = std::get<1>(alphamap);
-    const std::vector<int>& targeta1 = std::get<2>(alphamap);
-    const std::vector<int>& paritya1 = std::get<3>(alphamap);
-
-    // check this block below
-    // for (int i = 0; i < std::get<0>(alphamap); i++) {
-    //     sourcea1[i] = std::get<1>(alphamap)[i];
-    //     targeta1[i] = std::get<2>(alphamap)[i];        
-    // }
-
-    std::tuple<int, std::vector<int>, std::vector<int>, std::vector<int>> betamap = graph_.make_givens_mapping_each(
-        false,
-        source_orbs_b,
-        target_orbs_b);
-
-    if (std::get<0>(betamap) == 0) {
-        return;
-    }
-
-    const std::vector<int>& sourceb1 = std::get<1>(betamap);
-    const std::vector<int>& targetb1 = std::get<2>(betamap);
-    const std::vector<int>& parityb1 = std::get<3>(betamap);
-
-
-    // check this block below
-    // for (int i = 0; i < std::get<0>(betamap); i++) {
-    //     sourceb1[i] = std::get<1>(betamap)[i];
-    //     targetb1[i] = std::get<2>(betamap)[i];
-    // }
 
     std::complex<double> sinfactor = std::sin(theta/2.0);
     std::complex<double> cosfactor = std::cos(theta/2.0);
-
-    // ===> In-place 2×2 Givens-like update (replaces the 4 loops used previously) <===
-    //
-    // This assumes the pairing relationships hold:
-    //   sourcea1 == targeta2,  sourceb1 == targetb2
-    //   sourcea2 == targeta1,  sourceb2 == targetb1
-    // so that each coupled pair of determinants can be updated with a 2×2 block:
-    //
-    //   [ u' ] = [ factor                  acc_coeff2 * p2 ] [ u0 ]
-    //   [ v' ]   [ acc_coeff1 * p1         factor          ] [ v0 ]
-    //
-    // where
-    //   u ≡ Cout[sourcea1[i], sourceb1[j]]
-    //   v ≡ Cout[targeta1[i], targetb1[j]]
-    //   p1 = paritya1[i] * parityb1[j]  (for the g† leg)
-    //   p2 = paritya2[i] * parityb2[j]  (for the g   leg)
-    //
-    // Notes:
-    //   - factor  = cos(time * |ncoeff|)
-    //   - acc_coeff1 = conj(coeff) * phase * (-i) * sin(time*|ncoeff|)/|ncoeff|
-    //   - acc_coeff2 = coeff        *       (-i) * sin(time*|ncoeff|)/|ncoeff|
-    //   - We snapshot u0,v0 before writing so the update is safely in-place.
-    //
-
-    // be aware of sin/cos shuffling and the parity factors (look for bugs within this!!)
     std::complex<double>* __restrict data = C_.data().data();
 
-    for (std::size_t ia = 0; ia < sourcea1.size(); ++ia) {
-        const int sa = sourcea1[ia];
-        const int ta = targeta1[ia];
+    for (std::size_t ia = 0; ia < sourcea.size(); ++ia) {
+        const int sa = sourcea[ia];
+        const int ta = targeta[ia];
+        const double phasea_i = static_cast<double>(phasea[ia]);
 
-        // Precompute row offsets
-        const std::size_t sa_row = static_cast<std::size_t>(sa) * static_cast<std::size_t>(nbeta_strs_);
-        const std::size_t ta_row = static_cast<std::size_t>(ta) * static_cast<std::size_t>(nbeta_strs_);
+        const std::size_t sa_row =
+            static_cast<std::size_t>(sa) * static_cast<std::size_t>(nbeta_strs_);
+        const std::size_t ta_row =
+            static_cast<std::size_t>(ta) * static_cast<std::size_t>(nbeta_strs_);
 
-        for (std::size_t ib = 0; ib < sourceb1.size(); ++ib) {
-            const int sb = sourceb1[ib];
-            const int tb = targetb1[ib];
+        for (std::size_t ib = 0; ib < sourceb.size(); ++ib) {
+            const int sb = sourceb[ib];
+            const int tb = targetb[ib];
+            const std::size_t u_idx = sa_row + static_cast<std::size_t>(sb);
+            const std::size_t v_idx = ta_row + static_cast<std::size_t>(tb);
 
-            // Column indices
-            const std::size_t u_idx = sa_row + static_cast<std::size_t>(sb); // u ≡ (sa,sb)
-            const std::size_t v_idx = ta_row + static_cast<std::size_t>(tb); // v ≡ (ta,tb)
-
-            // Snapshot old values before writing (crucial for in-place correctness)
+            // Snapshot old values before writing (crucial for in-place correctness).
             const std::complex<double> u0 = data[u_idx];
             const std::complex<double> v0 = data[v_idx];
 
-            double parity_factor = static_cast<double>(paritya1[ia] * parityb1[ib]);
+            const double layout_phase =
+                phasea_i * static_cast<double>(phaseb[ib]);
 
-            parity_factor = 1.0;
-
-            // Under current Givens source/target convention, beta-beta rotations require one additional sign.
-            // if (q1 % 2 == 1 && q2 % 2 == 1) {
-            //     parity_factor *= -1.0;
-            // }
-
-            // 2×2 update
-            const std::complex<double> u_new = cosfactor * u0 + parity_factor * sinfactor * v0;
-            const std::complex<double> v_new = -parity_factor * sinfactor * u0 + cosfactor * v0;
-
-            // const std::complex<double> u_new = cosfactor * u0 + sinfactor * v0;
-            // const std::complex<double> v_new = sinfactor * u0 + cosfactor * v0;
-
-            // const std::complex<double> u_new = factor * u0 + acc_coeff2 * p2 * v0;
-            // const std::complex<double> v_new = factor * v0 + acc_coeff1 * p1 * u0;
+            // In Computer's direct two-qubit basis, with q1 as source/control
+            // and q2 as target, the Givens block acts on
+            //   u = |source occupied, target empty>
+            //   v = |source empty, target occupied>
+            // as u' = c u - s v and v' = s u + c v.  The graph supplies compact
+            // alpha/beta phase factors needed to express that same update in
+            // FCI's spin-blocked layout.
+            const std::complex<double> u_new = cosfactor * u0 - layout_phase * sinfactor * v0;
+            const std::complex<double> v_new = layout_phase * sinfactor * u0 + cosfactor * v0;
 
             data[u_idx] = u_new;
             data[v_idx] = v_new;
@@ -3140,6 +3056,3 @@ void FCIComputer::print_vector_uint(const std::vector<uint64_t>& vec, const std:
     }
     std::cout << std::endl;
 }
-
-
-
