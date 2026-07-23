@@ -1,0 +1,29 @@
+Ok successful givens implementation for Computer and FCIComputer gives us the backbone to accomplish the following.
+
+Eventual Checklist:
+
+1 - Computer::qpply_gate(qnp_or)
+Where
+qnp_or = qf.gate("QNP_OR", q1, q2, q3, q4, theta)
+And QNP_OR represented as a 16 x 16 4-qubit gate matrix,
+We will need new member function Computer::apply_4qubit_gate() that follows similar logic to the existing Computer::apply_2qubit_gate() function
+
+2 - FCIComputer::apply_qnp_or(q2, q2, q3, q4, theta)
+Same idea as (1) above but for the FCIComputer class. Likely will just involve two subsequent apply_givens calls, but want to be careful about call order.
+
+3 - Computer::qpply_gate(qnp_px)
+Where
+qnp_px = qf.gate("QNP_PX", q1, q2, q3, q4, theta)
+And QNP_PX represented as a 16 x 16 4-qubit gate matrix. Note that the givens rotation embedded in the QNP_PX gate is “controlled” on q1 and q4
+
+4 - FCIComputer::apply_qnp_px(q2, q2, q3, q4, theta)
+Same idea as (2) above but for the FCIComputer class. Will have to be careful and think about the implementation for this, the “inverse” CNOT gates and controlled givens need to be handled with care
+
+5 - sandbox test case comparing fock and fci computer application for the qnp_or gate
+
+6 - same as 5 but for the qnp_px case
+
+
+
+
+All of these gates are outlined in the article “Local, expressive, quantum-number-preserving VQE ansätze for fermionic systems.” Note that the article gate overview specifically uses local gates on mixed alpha/beta qubits, but we only need to enforce particle number and projected spin conservation for the FCIcomputer. I.e. q1 q2 q3 and q4 an be all alpha, all beta, or two of each.

@@ -192,6 +192,12 @@ class Computer {
     /// apply a 2qubit gate to the quantum computer with optimized algorithm
     void apply_2qubit_gate(const Gate& qg);
 
+    /// apply a 4qubit gate to the quantum computer with standard algorithm
+    void apply_4qubit_gate_safe(const Gate& qg);
+
+    /// apply a 4qubit gate to the quantum computer
+    void apply_4qubit_gate(const Gate& qg);
+
 };
 
 #endif // _computer_h_

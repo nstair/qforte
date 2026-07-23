@@ -198,6 +198,9 @@ def gate(type: str, target: int, control: int) -> Gate: ...
 @overload
 def gate(type: str, target: int, control: int, parameter: Complex = 0.0) -> Gate: ...
 
+@overload
+def gate(type: str, q1: int, q2: int, q3: int, q4: int, parameter: Complex = 0.0) -> Gate: ...
+
 '''
                 elif func_name == 'control_gate':
                     stub_content += 'def control_gate(control: int, gate: Gate) -> Gate: ...\n'

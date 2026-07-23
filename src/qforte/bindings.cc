@@ -498,6 +498,8 @@ PYBIND11_MODULE(qforte, m) {
     py::class_<Gate>(m, "Gate")
         .def("target", &Gate::target)
         .def("control", &Gate::control)
+        .def("qubits", &Gate::qubits)
+        .def("nqubits", &Gate::nqubits)
         .def("gate_id", &Gate::gate_id)
         .def("sparse_matrix", &Gate::sparse_matrix)
         .def("adjoint", &Gate::adjoint)
@@ -695,6 +697,15 @@ PYBIND11_MODULE(qforte, m) {
             return make_gate(type, target, control, parameter);
         },
         "type"_a, "target"_a, "control"_a, "parameter"_a = 0.0, "Make a gate.");
+
+    m.def(
+        "gate",
+        [](std::string type, size_t q1, size_t q2, size_t q3, size_t q4,
+           std::complex<double> parameter) {
+            return make_gate(type, q1, q2, q3, q4, parameter);
+        },
+        "type"_a, "q1"_a, "q2"_a, "q3"_a, "q4"_a, "parameter"_a = 0.0,
+        "Make a gate.");
 
     m.def("control_gate", &make_control_gate, "control"_a, "Gate"_a);
 }

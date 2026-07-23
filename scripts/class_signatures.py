@@ -350,6 +350,8 @@ CLASS_SIGNATURES = {
     'Gate': {
         'target': 'def target(self) -> int: ...',
         'control': 'def control(self) -> int: ...',
+        'qubits': 'def qubits(self) -> List[int]: ...',
+        'nqubits': 'def nqubits(self) -> int: ...',
         'gate_id': 'def gate_id(self) -> str: ...',
         'sparse_matrix': 'def sparse_matrix(self) -> SparseMatrix: ...',
         'adjoint': 'def adjoint(self) -> Gate: ...',

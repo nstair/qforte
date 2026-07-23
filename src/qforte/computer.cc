@@ -29,6 +29,34 @@ extern const bool parallelism_enabled = true;
 extern const bool parallelism_enabled = false;
 #endif
 
+namespace {
+
+size_t local_gate_index(const QubitBasis& basis, const std::vector<size_t>& qubits) {
+    size_t idx = 0;
+    for (const auto& qubit : qubits) {
+        idx <<= 1;
+        idx += basis.get_bit(qubit);
+    }
+    return idx;
+}
+
+bool local_index_bit(size_t idx, size_t qubit, size_t nqubits) {
+    return (idx >> (nqubits - 1 - qubit)) & 1;
+}
+
+bool has_repeated_qubit(const std::vector<size_t>& qubits) {
+    for (size_t i = 0; i < qubits.size(); ++i) {
+        for (size_t j = i + 1; j < qubits.size(); ++j) {
+            if (qubits[i] == qubits[j]) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+} // namespace
+
 
 Computer::Computer(int nqubit, double print_threshold) : nqubit_(nqubit), print_threshold_(print_threshold) {
     nbasis_ = std::pow(2, nqubit_);
@@ -117,6 +145,9 @@ void Computer::apply_gate(const Gate& qg) {
     if (nqubits == 2) {
         apply_2qubit_gate(qg);
     }
+    if (nqubits == 4) {
+        apply_4qubit_gate(qg);
+    }
 }
 
 void Computer::apply_gate_safe(const Gate& qg) {
@@ -127,6 +158,9 @@ void Computer::apply_gate_safe(const Gate& qg) {
     }
     if (nqubits == 2) {
         apply_2qubit_gate_safe(qg);
+    }
+    if (nqubits == 4) {
+        apply_4qubit_gate_safe(qg);
     }
 
     coeff_ = new_coeff_;
@@ -754,6 +788,53 @@ void Computer::apply_2qubit_gate(const Gate& qg) {
 
 }
 
+void Computer::apply_4qubit_gate_safe(const Gate& qg) {
+    const auto& qubits = qg.qubits();
+    if (qubits.size() != 4) {
+        throw std::invalid_argument("apply_4qubit_gate_safe() requires a 4-qubit gate.");
+    }
+    if (has_repeated_qubit(qubits)) {
+        throw std::invalid_argument("apply_4qubit_gate_safe() requires four distinct qubits.");
+    }
+    for (const auto& qubit : qubits) {
+        if (qubit >= nqubit_) {
+            std::string msg = fmt::format(
+                "apply_4qubit_gate_safe()\tqubit index {} is too large for {} qubits.",
+                qubit, nqubit_);
+            throw std::invalid_argument(msg);
+        }
+    }
+
+    const auto& gate = qg.gate4();
+    const size_t nlocal = qubits.size();
+
+    for (const QubitBasis& basis_J : basis_) {
+        const size_t j = local_gate_index(basis_J, qubits);
+        const auto coeff_J = coeff_[basis_J.add()];
+        if (std::abs(coeff_J) < compute_threshold_) {
+            continue;
+        }
+
+        for (size_t i = 0; i < 16; ++i) {
+            const auto op_i_j = gate[i][j];
+            if (std::abs(op_i_j) > compute_threshold_) {
+                QubitBasis basis_I = basis_J;
+                for (size_t local_qubit = 0; local_qubit < nlocal; ++local_qubit) {
+                    basis_I.set_bit(qubits[local_qubit],
+                                    local_index_bit(i, local_qubit, nlocal));
+                }
+                new_coeff_[basis_I.add()] += op_i_j * coeff_J;
+            }
+        }
+    }
+}
+
+void Computer::apply_4qubit_gate(const Gate& qg) {
+    apply_4qubit_gate_safe(qg);
+    coeff_ = new_coeff_;
+    std::fill(new_coeff_.begin(), new_coeff_.end(), 0.0);
+}
+
 std::complex<double> Computer::direct_op_exp_val(const QubitOperator& qo) {
     // local_timer t;
     std::complex<double> result = 0.0;
@@ -1296,4 +1377,3 @@ void Computer::z_chain(int num){
     }
 
 }
-

@@ -4,6 +4,100 @@
 
 #include "gate.h"
 
+namespace {
+
+bool local_bit(size_t idx, size_t qubit) {
+    return (idx >> (3 - qubit)) & 1;
+}
+
+size_t set_local_bit(size_t idx, size_t qubit, bool value) {
+    const size_t mask = static_cast<size_t>(1) << (3 - qubit);
+    if (value) {
+        return idx | mask;
+    }
+    return idx & ~mask;
+}
+
+void apply_local_givens(std::array<std::complex<double>, 16>& vec,
+                        size_t source, size_t target,
+                        std::complex<double> c, std::complex<double> s) {
+    // Match the historical 2-qubit Givens convention: matrix basis is
+    // [source, target], and |10> -> c|10> + s|01> at the vector level.
+    for (size_t idx = 0; idx < 16; ++idx) {
+        if (local_bit(idx, source) and not local_bit(idx, target)) {
+            const size_t idx_source = idx;
+            size_t idx_target = set_local_bit(idx, source, false);
+            idx_target = set_local_bit(idx_target, target, true);
+
+            const auto source_amp = vec[idx_source];
+            const auto target_amp = vec[idx_target];
+            vec[idx_source] = c * source_amp - s * target_amp;
+            vec[idx_target] = s * source_amp + c * target_amp;
+        }
+    }
+}
+
+bool has_repeated_qubit(size_t q1, size_t q2, size_t q3, size_t q4) {
+    return (q1 == q2) or (q1 == q3) or (q1 == q4) or
+           (q2 == q3) or (q2 == q4) or (q3 == q4);
+}
+
+} // namespace
+
+Gate make_gate(std::string type, size_t q1, size_t q2, size_t q3, size_t q4,
+               std::complex<double> parameter) {
+    if (has_repeated_qubit(q1, q2, q3, q4)) {
+        std::string msg = fmt::format(
+            "make_gate()\t{} requires four distinct qubits, got {}, {}, {}, {}",
+            type, q1, q2, q3, q4);
+        throw std::invalid_argument(msg);
+    }
+
+    if (type == "QNP_OR") {
+        std::complex<double> c = std::cos(0.5 * parameter);
+        std::complex<double> s = std::sin(0.5 * parameter);
+        std::complex<double> gate[16][16]{};
+
+        // QNP_OR is an orbital rotation on two qubit pairs.  In the local basis
+        // [q1, q2, q3, q4], this is Givens(q1 -> q3) followed by Givens(q2 -> q4).
+        for (size_t j = 0; j < 16; ++j) {
+            std::array<std::complex<double>, 16> column{};
+            column[j] = 1.0;
+            apply_local_givens(column, 0, 2, c, s);
+            apply_local_givens(column, 1, 3, c, s);
+            for (size_t i = 0; i < 16; ++i) {
+                gate[i][j] = column[i];
+            }
+        }
+
+        return Gate(type, std::vector<size_t>{q1, q2, q3, q4}, gate);
+    }
+    if (type == "QNP_PX") {
+        std::complex<double> c = std::cos(0.5 * parameter);
+        std::complex<double> s = std::sin(0.5 * parameter);
+        std::complex<double> gate[16][16]{};
+        for (size_t i = 0; i < 16; ++i) {
+            gate[i][i] = 1.0;
+        }
+
+        // In the local basis [q1, q2, q3, q4], QNP_PX is the diagonal-pair
+        // Givens block between |0011> and |1100>. This is the matrix-level
+        // effect of the controlled central Givens and its surrounding CNOTs.
+        const size_t pair_01 = 3;  // |0011>
+        const size_t pair_10 = 12; // |1100>
+        gate[pair_01][pair_01] = c;
+        gate[pair_01][pair_10] = s;
+        gate[pair_10][pair_01] = -s;
+        gate[pair_10][pair_10] = c;
+
+        return Gate(type, std::vector<size_t>{q1, q2, q3, q4}, gate);
+    }
+
+    std::string msg =
+        fmt::format("make_gate()\ntype = {} is not a valid 4-qubit quantum gate type", type);
+    throw std::invalid_argument(msg);
+}
+
 Gate make_gate(std::string type, size_t target, size_t control, std::complex<double> parameter) {
     //using namespace std::complex_literals;
     std::complex<double> onei(0.0, 1.0);
